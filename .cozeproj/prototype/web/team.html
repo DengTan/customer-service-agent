@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E6EAF2;
+      --color-surface-container-highest:  #DDE2ED;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #DC2626;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #CBD2E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.10);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <div class="flex h-screen">
+  <!-- @nav:start 导航组件，不需要的页面则不要复制此段 -->
+    <!-- Sidebar -->
+    <aside class="w-60 border-r border-outline-variant/20 flex flex-col bg-surface shrink-0">
+      <!-- Logo -->
+      <div class="h-14 flex items-center gap-2.5 px-5 border-b border-outline-variant/20">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <i data-lucide="bot" class="w-4.5 h-4.5 text-on-primary"></i>
+        </div>
+        <span class="text-base font-semibold text-on-surface">SmartAssist</span>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 px-3">
+        <a href="dashboard.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="bar-chart" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          数据分析
+        </a>
+        <a href="home.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="message-square" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          智能对话
+        </a>
+        <a href="history.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="clock" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          对话历史
+        </a>
+        <a href="customers.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="users" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          客户管理
+        </a>
+        <a href="faq.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="book-open" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识库
+        </a>
+        <a href="knowledge-learning.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="graduation-cap" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识自学习
+        </a>
+        <a href="team.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 bg-primary/10 text-primary" aria-current="page">
+          <i data-lucide="shield" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          团队管理
+        </a>
+        <a href="settings.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="settings" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- Footer -->
+      <div class="p-4 border-t border-outline-variant/20">
+        <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+          <div class="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+          系统运行中
+        </div>
+      </div>
+    </aside>
+  <!-- @nav:end 导航组件，不需要的页面则不要复制此段 -->
+
+  <main class="flex-1 min-w-0 overflow-y-auto bg-background p-6">
+    <!-- @main-content:start -->
+
+    <!-- 页面标题 -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-on-surface">团队管理</h1>
+        <p class="text-sm text-on-surface-variant mt-1">管理团队成员与权限配置，保障系统安全与协作效率</p>
+      </div>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="flex items-center gap-1 bg-surface-container rounded-lg p-1 w-fit mb-6">
+      <button id="tab-members" class="px-5 py-2 text-sm font-medium rounded-md bg-surface shadow-card text-on-surface transition-all">团队成员</button>
+      <button id="tab-permissions" class="px-5 py-2 text-sm font-medium rounded-md text-on-surface-variant hover:text-on-surface transition-all">权限配置</button>
+    </div>
+
+    <!-- ========== Tab 1: 团队成员 ========== -->
+    <div id="panel-members">
+
+      <!-- 筛选栏 -->
+      <div class="flex items-center gap-3 mb-5 flex-wrap">
+        <div class="relative flex-1 min-w-[200px] max-w-xs">
+          <i data-lucide="search" class="w-4 h-4 text-on-surface-variant/50 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <input id="search-input" type="text" placeholder="搜索姓名或邮箱…" class="w-full bg-surface-container border-none rounded-md pl-9 pr-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+        </div>
+        <select id="filter-role" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors appearance-none min-w-[120px]">
+          <option value="all">全部角色</option>
+          <option value="admin">管理员</option>
+          <option value="agent">坐席</option>
+          <option value="observer">观察者</option>
+        </select>
+        <select id="filter-status" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors appearance-none min-w-[120px]">
+          <option value="all">全部状态</option>
+          <option value="online">在线</option>
+          <option value="offline">离线</option>
+          <option value="disabled">禁用</option>
+        </select>
+        <div class="flex-1"></div>
+        <button id="btn-add-member" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>添加成员
+        </button>
+      </div>
+
+      <!-- 成员列表表格 -->
+      <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+        <!-- 表头 -->
+        <div class="grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+          <span>成员</span>
+          <span>邮箱</span>
+          <span>角色</span>
+          <span>状态</span>
+          <span>最后活跃</span>
+          <span class="text-right">操作</span>
+        </div>
+        <!-- 表体 -->
+        <div id="member-list" class="divide-y divide-outline-variant/50">
+
+          <!-- 列表-成员1: 陈思远-管理员-在线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="admin" data-status="online" data-name="陈思远" data-email="chensiyuan@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-semibold shrink-0">陈</div>
+              <span class="text-sm font-medium text-on-surface">陈思远</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">chensiyuan@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary w-fit">管理员</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-success"></span>
+              <span class="text-sm text-on-surface-variant">在线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">刚刚</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="1">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="1">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="1">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员2: 林雨桐-管理员-在线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="admin" data-status="online" data-name="林雨桐" data-email="linyutong@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-semibold shrink-0">林</div>
+              <span class="text-sm font-medium text-on-surface">林雨桐</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">linyutong@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary w-fit">管理员</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-success"></span>
+              <span class="text-sm text-on-surface-variant">在线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">5 分钟前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="2">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="2">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="2">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员3: 王子轩-坐席-在线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="agent" data-status="online" data-name="王子轩" data-email="wangzixuan@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-success/15 text-success flex items-center justify-center text-xs font-semibold shrink-0">王</div>
+              <span class="text-sm font-medium text-on-surface">王子轩</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">wangzixuan@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">坐席</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-success"></span>
+              <span class="text-sm text-on-surface-variant">在线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">12 分钟前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="3">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="3">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="3">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员4: 张晓婷-坐席-离线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="agent" data-status="offline" data-name="张晓婷" data-email="zhangxiaoting@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-success/15 text-success flex items-center justify-center text-xs font-semibold shrink-0">张</div>
+              <span class="text-sm font-medium text-on-surface">张晓婷</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">zhangxiaoting@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">坐席</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-on-surface-variant/40"></span>
+              <span class="text-sm text-on-surface-variant">离线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2 小时前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="4">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="4">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="4">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员5: 刘嘉伟-坐席-在线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="agent" data-status="online" data-name="刘嘉伟" data-email="liujiawei@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-success/15 text-success flex items-center justify-center text-xs font-semibold shrink-0">刘</div>
+              <span class="text-sm font-medium text-on-surface">刘嘉伟</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">liujiawei@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">坐席</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-success"></span>
+              <span class="text-sm text-on-surface-variant">在线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">30 分钟前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="5">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="5">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="5">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员6: 赵明辉-观察者-离线 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="observer" data-status="offline" data-name="赵明辉" data-email="zhaominghui@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-on-surface-variant/10 text-on-surface-variant flex items-center justify-center text-xs font-semibold shrink-0">赵</div>
+              <span class="text-sm font-medium text-on-surface">赵明辉</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">zhaominghui@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-on-surface-variant/10 text-on-surface-variant w-fit">观察者</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-on-surface-variant/40"></span>
+              <span class="text-sm text-on-surface-variant">离线</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">1 天前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="6">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="6">禁用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="6">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员7: 孙雅琪-观察者-禁用 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="observer" data-status="disabled" data-name="孙雅琪" data-email="sunyaqi@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-on-surface-variant/10 text-on-surface-variant flex items-center justify-center text-xs font-semibold shrink-0">孙</div>
+              <span class="text-sm font-medium text-on-surface">孙雅琪</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">sunyaqi@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-on-surface-variant/10 text-on-surface-variant w-fit">观察者</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-error/60"></span>
+              <span class="text-sm text-on-surface-variant">禁用</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">7 天前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="7">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="7">启用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="7">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-成员8: 周浩然-坐席-禁用 -->
+          <div class="member-row grid grid-cols-[2fr_2fr_1fr_1fr_1.2fr_1.5fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-role="agent" data-status="disabled" data-name="周浩然" data-email="zhouhaoran@smartassist.com">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-success/15 text-success flex items-center justify-center text-xs font-semibold shrink-0">周</div>
+              <span class="text-sm font-medium text-on-surface">周浩然</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">zhouhaoran@smartassist.com</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">坐席</span>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-error/60"></span>
+              <span class="text-sm text-on-surface-variant">禁用</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">3 天前</span>
+            <div class="flex items-center gap-3 justify-end">
+              <button class="btn-edit-role text-primary text-sm font-medium hover:underline" data-id="8">编辑角色</button>
+              <button class="btn-toggle-status text-on-surface-variant text-sm font-medium hover:underline" data-id="8">启用</button>
+              <button class="btn-delete text-error text-sm font-medium hover:underline" data-id="8">删除</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 统计栏 -->
+      <div class="flex items-center gap-6 mt-4 text-xs text-on-surface-variant">
+        <span>共 <strong class="text-on-surface">8</strong> 名成员</span>
+        <span>管理员 <strong class="text-primary">2</strong></span>
+        <span>坐席 <strong class="text-success">4</strong></span>
+        <span>观察者 <strong class="text-on-surface-variant">2</strong></span>
+        <span>在线 <strong class="text-success">4</strong></span>
+      </div>
+    </div>
+
+    <!-- ========== Tab 2: 权限配置 ========== -->
+    <div id="panel-permissions" class="hidden">
+
+      <!-- 角色选择 -->
+      <div class="flex items-center gap-4 mb-5">
+        <label class="text-sm font-medium text-on-surface">选择角色</label>
+        <select id="permission-role-select" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors appearance-none min-w-[140px]">
+          <option value="admin">管理员</option>
+          <option value="agent">坐席</option>
+          <option value="observer">观察者</option>
+        </select>
+        <span id="permission-role-desc" class="text-xs text-on-surface-variant">拥有系统所有功能的完整操作权限</span>
+      </div>
+
+      <!-- 权限矩阵 -->
+      <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+
+        <!-- 管理员权限 -->
+        <div id="perm-admin" class="perm-table">
+          <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+            <span>资源</span>
+            <span class="text-center">查看</span>
+            <span class="text-center">编辑</span>
+            <span class="text-center">删除</span>
+          </div>
+          <div class="divide-y divide-outline-variant/50">
+            <!-- 资源-对话管理 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">对话管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-知识库 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">知识库</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-设置 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">设置</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-团队管理 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">团队管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-客户管理 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">客户管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-数据分析 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">数据分析</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 坐席权限 -->
+        <div id="perm-agent" class="perm-table hidden">
+          <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+            <span>资源</span>
+            <span class="text-center">查看</span>
+            <span class="text-center">编辑</span>
+            <span class="text-center">删除</span>
+          </div>
+          <div class="divide-y divide-outline-variant/50">
+            <!-- 资源-对话管理: 查看✓ 编辑✓ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">对话管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-知识库: 查看✓ 编辑✗ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">知识库</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-设置: 查看✓ 编辑✗ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">设置</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-团队管理: 查看✗ 编辑✗ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">团队管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-客户管理: 查看✓ 编辑✓ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">客户管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-数据分析: 查看✓ 编辑✗ 删除✗ -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">数据分析</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 观察者权限 -->
+        <div id="perm-observer" class="perm-table hidden">
+          <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+            <span>资源</span>
+            <span class="text-center">查看</span>
+            <span class="text-center">编辑</span>
+            <span class="text-center">删除</span>
+          </div>
+          <div class="divide-y divide-outline-variant/50">
+            <!-- 资源-对话管理: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">对话管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-知识库: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">知识库</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-设置: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">设置</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-团队管理: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">团队管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-客户管理: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">客户管理</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+            <!-- 资源-数据分析: 仅查看 -->
+            <div class="grid grid-cols-[2fr_1fr_1fr_1fr] px-5 py-3.5 items-center hover:bg-surface-container/50 transition-colors">
+              <span class="text-sm font-medium text-on-surface">数据分析</span>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" checked class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-primary peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+              <div class="flex justify-center"><label class="perm-toggle inline-flex items-center cursor-pointer"><input type="checkbox" class="sr-only peer" disabled /><span class="w-9 h-5 rounded-full bg-on-surface-variant/30 peer-checked:bg-primary relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></span></label></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 权限说明 -->
+      <div class="flex items-center gap-6 mt-4 text-xs text-on-surface-variant">
+        <span>管理员拥有全部权限，坐席可操作对话与客户，观察者仅可查看</span>
+      </div>
+    </div>
+
+    <!-- ========== 添加成员模态框 ========== -->
+    <div id="modal-add-member" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-semibold text-on-surface">添加成员</h2>
+          <button id="btn-close-modal" class="text-on-surface-variant hover:text-on-surface transition-colors">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+        <form id="form-add-member">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">姓名</label>
+              <input id="input-name" type="text" placeholder="请输入成员姓名" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">邮箱</label>
+              <input id="input-email" type="email" placeholder="请输入邮箱地址" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">角色</label>
+              <select id="input-role" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors appearance-none">
+                <option value="agent">坐席</option>
+                <option value="admin">管理员</option>
+                <option value="observer">观察者</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 mt-6">
+            <button type="button" id="btn-cancel-add" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+            <button type="submit" id="btn-confirm-add" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">确认添加</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== 编辑角色模态框 ========== -->
+    <div id="modal-edit-role" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-semibold text-on-surface">编辑角色</h2>
+          <button id="btn-close-edit-modal" class="text-on-surface-variant hover:text-on-surface transition-colors">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">成员</label>
+            <div id="edit-member-name" class="text-sm text-on-surface-variant bg-surface-container rounded-md px-3 py-2">—</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">角色</label>
+            <select id="edit-role-select" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors appearance-none">
+              <option value="admin">管理员</option>
+              <option value="agent">坐席</option>
+              <option value="observer">观察者</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 mt-6">
+          <button id="btn-cancel-edit" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-confirm-edit" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- @main-content:end -->
+  </main>
+  </div>
+
+  <script>
+  $(function() {
+
+    // ======== Tab 切换 ========
+    $('#tab-members').on('click', function() {
+      $(this).addClass('bg-surface shadow-card text-on-surface').removeClass('text-on-surface-variant');
+      $('#tab-permissions').removeClass('bg-surface shadow-card text-on-surface').addClass('text-on-surface-variant');
+      $('#panel-members').removeClass('hidden');
+      $('#panel-permissions').addClass('hidden');
+    });
+
+    $('#tab-permissions').on('click', function() {
+      $(this).addClass('bg-surface shadow-card text-on-surface').removeClass('text-on-surface-variant');
+      $('#tab-members').removeClass('bg-surface shadow-card text-on-surface').addClass('text-on-surface-variant');
+      $('#panel-permissions').removeClass('hidden');
+      $('#panel-members').addClass('hidden');
+    });
+
+    // ======== 权限角色切换 ========
+    var roleDescriptions = {
+      admin: '拥有系统所有功能的完整操作权限',
+      agent: '可操作对话与客户管理，无法管理团队与设置',
+      observer: '仅可查看各模块数据，无法进行编辑和删除操作'
+    };
+
+    $('#permission-role-select').on('change', function() {
+      var role = $(this).val();
+      $('.perm-table').addClass('hidden');
+      $('#perm-' + role).removeClass('hidden');
+      $('#permission-role-desc').text(roleDescriptions[role]);
+    });
+
+    // ======== 添加成员模态框 ========
+    $('#btn-add-member').on('click', function() {
+      $('#modal-add-member').removeClass('hidden');
+    });
+
+    $('#btn-close-modal, #btn-cancel-add').on('click', function() {
+      $('#modal-add-member').addClass('hidden');
+      $('#form-add-member')[0].reset();
+    });
+
+    $('#form-add-member').on('submit', function(e) {
+      e.preventDefault();
+      var name = $('#input-name').val().trim();
+      var email = $('#input-email').val().trim();
+      var role = $('#input-role').val();
+
+      if (!name || !email) {
+        // 表单校验 - 后续应增加更完善的校验提示
+        console.log('请填写完整的成员信息');
+        return;
+      }
+
+      // 添加成员 - 后续应实现：
+      // 1. 将新成员数据发送到后端 API
+      // 2. 成功后在成员列表中插入新行
+      // 3. 更新底部统计数字
+      // 4. 关闭模态框并重置表单
+      console.log('添加成员:', { name: name, email: email, role: role });
+      $('#modal-add-member').addClass('hidden');
+      $('#form-add-member')[0].reset();
+    });
+
+    // 点击遮罩关闭
+    $('#modal-add-member').on('click', function(e) {
+      if ($(e.target).is('#modal-add-member')) {
+        $(this).addClass('hidden');
+        $('#form-add-member')[0].reset();
+      }
+    });
+
+    // ======== 编辑角色模态框 ========
+    $('#member-list').on('click', '.btn-edit-role', function() {
+      var $row = $(this).closest('.member-row');
+      var name = $row.data('name');
+      var role = $row.data('role');
+
+      $('#edit-member-name').text(name);
+      $('#edit-role-select').val(role);
+      $('#modal-edit-role').removeClass('hidden');
+    });
+
+    $('#btn-close-edit-modal, #btn-cancel-edit').on('click', function() {
+      $('#modal-edit-role').addClass('hidden');
+    });
+
+    $('#btn-confirm-edit').on('click', function() {
+      var name = $('#edit-member-name').text();
+      var newRole = $('#edit-role-select').val();
+
+      // 编辑角色 - 后续应实现：
+      // 1. 将角色变更发送到后端 API
+      // 2. 成功后更新对应成员行的角色 Badge 和 data-role 属性
+      // 3. 更新底部统计数字
+      // 4. 关闭模态框
+      console.log('编辑角色:', { name: name, newRole: newRole });
+      $('#modal-edit-role').addClass('hidden');
+    });
+
+    $('#modal-edit-role').on('click', function(e) {
+      if ($(e.target).is('#modal-edit-role')) {
+        $(this).addClass('hidden');
+      }
+    });
+
+    // ======== 禁用/启用切换 ========
+    $('#member-list').on('click', '.btn-toggle-status', function() {
+      var $btn = $(this);
+      var $row = $btn.closest('.member-row');
+      var memberId = $btn.data('id');
+      var currentStatus = $row.data('status');
+
+      if (currentStatus === 'disabled') {
+        // 启用操作 - 后续应实现：
+        // 1. 调用后端 API 启用该成员
+        // 2. 成功后更新该行状态为在线/离线，更新状态小圆点颜色和文字
+        // 3. 更新按钮文字为"禁用"
+        console.log('启用成员:', memberId);
+        $row.data('status', 'online');
+        $row.find('.btn-toggle-status').text('禁用');
+        // 更新状态显示
+        $row.find('.w-2.h-2').first().removeClass('bg-error/60 bg-on-surface-variant/40').addClass('bg-success');
+        $row.find('.w-2.h-2').first().next('span').text('在线');
+      } else {
+        // 禁用操作 - 后续应实现：
+        // 1. 调用后端 API 禁用该成员
+        // 2. 成功后更新该行状态为禁用，更新状态小圆点颜色和文字
+        // 3. 更新按钮文字为"启用"
+        console.log('禁用成员:', memberId);
+        $row.data('status', 'disabled');
+        $row.find('.btn-toggle-status').text('启用');
+        // 更新状态显示
+        $row.find('.w-2.h-2').first().removeClass('bg-success bg-on-surface-variant/40').addClass('bg-error/60');
+        $row.find('.w-2.h-2').first().next('span').text('禁用');
+      }
+    });
+
+    // ======== 删除成员 ========
+    $('#member-list').on('click', '.btn-delete', function() {
+      var $row = $(this).closest('.member-row');
+      var memberId = $(this).data('id');
+      var name = $row.data('name');
+
+      // 删除成员 - 后续应实现：
+      // 1. 弹出确认对话框，提示"确定要删除成员 XXX 吗？此操作不可恢复。"
+      // 2. 用户确认后调用后端 API 删除
+      // 3. 成功后移除该行 DOM 节点
+      // 4. 更新底部统计数字
+      if (confirm('确定要删除成员「' + name + '」吗？此操作不可恢复。')) {
+        $row.fadeOut(300, function() { $(this).remove(); });
+        console.log('删除成员:', memberId);
+      }
+    });
+
+    // ======== 搜索筛选 ========
+    function applyFilters() {
+      var searchText = $('#search-input').val().trim().toLowerCase();
+      var roleFilter = $('#filter-role').val();
+      var statusFilter = $('#filter-status').val();
+
+      $('.member-row').each(function() {
+        var $row = $(this);
+        var name = ($row.data('name') || '').toLowerCase();
+        var email = ($row.data('email') || '').toLowerCase();
+        var role = $row.data('role');
+        var status = $row.data('status');
+
+        var matchSearch = !searchText || name.indexOf(searchText) !== -1 || email.indexOf(searchText) !== -1;
+        var matchRole = roleFilter === 'all' || role === roleFilter;
+        var matchStatus = statusFilter === 'all' || status === statusFilter;
+
+        if (matchSearch && matchRole && matchStatus) {
+          $row.removeClass('hidden');
+        } else {
+          $row.addClass('hidden');
+        }
+      });
+    }
+
+    $('#search-input').on('input', applyFilters);
+    $('#filter-role').on('change', applyFilters);
+    $('#filter-status').on('change', applyFilters);
+
+  });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

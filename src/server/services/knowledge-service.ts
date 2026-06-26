@@ -1,0 +1,322 @@
+import {
+  KnowledgeRepository,
+  type UpdateKnowledgeItemInput,
+  type CreateVersionInput,
+  type RollbackInput,
+  type VersionWithCreator,
+} from '@/server/repositories/knowledge-repository';
+import { knowledgeChunkRepository } from '@/server/repositories/knowledge-chunk-repository';
+import { ServiceError } from './service-error';
+import { toServiceError } from './service-utils';
+import { chunkText, diffChunks, summarizeDiff } from './text-chunker';
+import { createHash } from 'node:crypto';
+
+export interface KnowledgeItemsResult {
+  items: unknown[];
+  categories: Record<string, number>;
+  categoryTree: Record<string, { count: number; children: Record<string, number> }>;
+  total: number;
+}
+
+export class KnowledgeService {
+  constructor(private readonly knowledge = new KnowledgeRepository()) {}
+
+  async listItems(options: { includeArchived?: boolean; includeExpired?: boolean } = {}): Promise<KnowledgeItemsResult> {
+    try {
+      return await this.knowledge.listItems({}, options);
+    } catch (error) {
+      throw toServiceError(error, '获取知识条目失败', 'DB_QUERY_ERROR');
+    }
+  }
+
+  async archiveItem(id: string): Promise<void> {
+    if (!id) {
+      throw new ServiceError('请提供条目ID', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      await this.knowledge.archiveItem(id);
+    } catch (error) {
+      throw toServiceError(error, '归档失败', 'DB_ERROR');
+    }
+  }
+
+  async unarchiveItem(id: string): Promise<void> {
+    if (!id) {
+      throw new ServiceError('请提供条目ID', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      await this.knowledge.unarchiveItem(id);
+    } catch (error) {
+      throw toServiceError(error, '取消归档失败', 'DB_ERROR');
+    }
+  }
+
+  async bulkArchive(ids: string[]): Promise<{ count: number }> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new ServiceError('请选择要归档的条目', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const count = await this.knowledge.bulkArchive(ids);
+      return { count };
+    } catch (error) {
+      throw toServiceError(error, '批量归档失败', 'DB_ERROR');
+    }
+  }
+
+  async bulkUnarchive(ids: string[]): Promise<{ count: number }> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new ServiceError('请选择要恢复的条目', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const count = await this.knowledge.bulkUnarchive(ids);
+      return { count };
+    } catch (error) {
+      throw toServiceError(error, '批量恢复失败', 'DB_ERROR');
+    }
+  }
+
+  async bulkUpdateCategory(input: { ids: string[]; category: string; parent_category?: string | null }): Promise<{ count: number }> {
+    if (!Array.isArray(input.ids) || input.ids.length === 0) {
+      throw new ServiceError('请选择要修改的条目', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    if (!input.category || !input.category.trim()) {
+      throw new ServiceError('分类不能为空', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const count = await this.knowledge.bulkUpdateCategory(input.ids, input.category.trim(), input.parent_category);
+      return { count };
+    } catch (error) {
+      throw toServiceError(error, '批量修改分类失败', 'DB_ERROR');
+    }
+  }
+
+  async bulkDelete(ids: string[]): Promise<{ count: number }> {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new ServiceError('请选择要删除的条目', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const count = await this.knowledge.bulkDelete(ids);
+      return { count };
+    } catch (error) {
+      throw toServiceError(error, '批量删除失败', 'DB_ERROR');
+    }
+  }
+
+  async mergeCategory(input: { from: string; to: string; to_parent_category?: string | null }): Promise<{ count: number }> {
+    if (!input.from || !input.to) {
+      throw new ServiceError('请提供源分类与目标分类', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    if (input.from === input.to) {
+      throw new ServiceError('源分类与目标分类不能相同', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const count = await this.knowledge.mergeCategory(input.from, input.to, input.to_parent_category);
+      return { count };
+    } catch (error) {
+      throw toServiceError(error, '合并分类失败', 'DB_ERROR');
+    }
+  }
+
+  async listAllCategories(): Promise<{ categories: Array<{ category: string; parent_category: string | null; count: number }> }> {
+    try {
+      const categories = await this.knowledge.listAllCategories();
+      return { categories };
+    } catch (error) {
+      throw toServiceError(error, '获取分类列表失败', 'DB_QUERY_ERROR');
+    }
+  }
+
+  async updateItem(input: UpdateKnowledgeItemInput & { existingItem?: { doc_ids?: string[]; chunk_count?: number } }): Promise<{ message: string; new_doc_ids?: string[] }> {
+    if (!input.id) {
+      throw new ServiceError('请提供条目ID', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    try {
+      const existingItem = await this.knowledge.findItemById(input.id);
+      if (!existingItem) {
+        throw new ServiceError('条目不存在', {
+          status: 404,
+          code: 'NOT_FOUND',
+        });
+      }
+
+      if (input.content !== undefined && existingItem.type === 'text') {
+        return {
+          message: '内容已更新（向量更新由Coze SDK在路由层处理）',
+          new_doc_ids: input.doc_ids,
+        };
+      }
+
+      const updateData: UpdateKnowledgeItemInput = { id: input.id };
+      if (input.name) updateData.name = input.name;
+      if (input.category !== undefined) updateData.category = input.category;
+      if (input.parent_category !== undefined) updateData.parent_category = input.parent_category;
+      if (input.image_url !== undefined) updateData.image_url = input.image_url;
+      if (input.expires_at !== undefined) updateData.expires_at = input.expires_at;
+      if (input.archived_at !== undefined) updateData.archived_at = input.archived_at;
+
+      await this.knowledge.updateItem(updateData);
+
+      return { message: '条目已更新' };
+    } catch (error) {
+      if (error instanceof ServiceError) throw error;
+      throw toServiceError(error, '更新知识条目失败', 'DB_ERROR');
+    }
+  }
+
+  async updateItemWithVector(input: {
+    id: string;
+    name?: string;
+    content: string;
+    category?: string;
+    existingDocIds?: string[];
+    existingChunkCount?: number;
+    new_doc_ids?: string[];
+  }): Promise<{ new_doc_ids: string[] }> {
+    const existingItem = await this.knowledge.findItemById(input.id);
+    if (!existingItem) {
+      throw new ServiceError('条目不存在', {
+        status: 404,
+        code: 'NOT_FOUND',
+      });
+    }
+
+    const newDocIds = input.new_doc_ids || [];
+    const allDocIds = [...(input.existingDocIds || []), ...newDocIds];
+
+    await this.knowledge.updateItem({
+      id: input.id,
+      name: input.name,
+      content: (input.content as string).slice(0, 500),
+      category: input.category,
+      doc_ids: allDocIds,
+      chunk_count: (input.existingChunkCount || 0) + newDocIds.length,
+    });
+
+    return { new_doc_ids: newDocIds };
+  }
+
+  async deleteItem(id: string): Promise<void> {
+    if (!id) {
+      throw new ServiceError('请提供条目ID', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    try {
+      await this.knowledge.deleteItem(id);
+    } catch (error) {
+      throw toServiceError(error, '删除知识条目失败', 'DB_ERROR');
+    }
+  }
+
+  async listVersions(itemId: string): Promise<{ versions: VersionWithCreator[] }> {
+    if (!itemId) {
+      throw new ServiceError('知识条目ID不能为空', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    try {
+      const versions = await this.knowledge.listVersions({ item_id: itemId });
+      return { versions };
+    } catch (error) {
+      throw toServiceError(error, '获取版本历史失败', 'DB_QUERY_ERROR');
+    }
+  }
+
+  async createVersion(input: CreateVersionInput): Promise<unknown> {
+    if (!input.item_id || !input.title || !input.content) {
+      throw new ServiceError('知识条目ID、标题和内容不能为空', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    try {
+      // 1) 切分新旧内容为 chunks
+      const newChunks = chunkText(input.content);
+      const oldChunks = await knowledgeChunkRepository.getActiveChunks(input.item_id);
+
+      // 2) 计算 chunk diff（在版本号确定前）
+      // KnowledgeChunk 字段名是 chunk_index，map 成 index 形式
+      const oldChunkDiffs = oldChunks.map(c => ({ index: c.chunk_index, content_hash: c.content_hash }));
+      const diff = diffChunks(oldChunkDiffs, newChunks);
+      const summary = summarizeDiff(diff, newChunks.length);
+
+      // 3) 写新版本（repo 内部计算 nextVersion）
+      const version = await this.knowledge.createVersion({
+        ...input,
+        chunk_diff: diff,
+        chunk_count: summary.total_after,
+      } as CreateVersionInput);
+      const nextVersion = (version as { version_number: number }).version_number;
+
+      // 4) 把旧 chunks 标为已移除
+      if (oldChunks.length > 0) {
+        await knowledgeChunkRepository.markActiveChunksRemoved(input.item_id, nextVersion);
+      }
+
+      // 5) 写入新 chunks
+      if (newChunks.length > 0) {
+        await knowledgeChunkRepository.insertChunks(
+          newChunks.map(c => ({
+            knowledge_item_id: input.item_id,
+            chunk_index: c.index,
+            content: c.content,
+            content_hash: c.content_hash,
+            doc_id: null,
+            version_added: nextVersion,
+          })),
+        );
+      }
+
+      // 6) 更新 knowledge_items.content
+      await this.knowledge.updateKnowledgeItemContent(
+        input.item_id,
+        input.title,
+        input.content,
+      );
+
+      return version;
+    } catch (error) {
+      throw toServiceError(error, '创建版本失败', 'DB_ERROR');
+    }
+  }
+
+  async rollbackToVersion(input: RollbackInput): Promise<{ version: unknown }> {
+    if (!input.version_id) {
+      throw new ServiceError('版本ID不能为空', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    try {
+      // 先获取目标版本的内容
+      const targetVersion = await this.knowledge.findVersionById(input.version_id);
+      if (!targetVersion) {
+        throw new ServiceError('版本不存在', { status: 404, code: 'NOT_FOUND' });
+      }
+
+      // 通过 createVersion 复用 chunk diff 跟踪逻辑
+      // createVersion 会自动计算 diff 并写入 chunk 记录
+      const version = await this.createVersion({
+        item_id: targetVersion.knowledge_item_id,
+        title: targetVersion.title,
+        content: targetVersion.content,
+        change_summary: `回滚至版本 v${targetVersion.version}`,
+        created_by: input.created_by,
+      });
+      return { version };
+    } catch (error) {
+      if (error instanceof ServiceError) throw error;
+      throw toServiceError(error, '回滚失败', 'DB_ERROR');
+    }
+  }
+}

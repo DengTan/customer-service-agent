@@ -1,0 +1,52 @@
+{
+  "elements": [
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/team.html"
+      },
+      "title": "团队管理",
+      "size": "web"
+    },
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/customers.html"
+      },
+      "title": "客户管理",
+      "size": "web"
+    },
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/workspace.html"
+      },
+      "title": "坐席工作台",
+      "size": "web"
+    },
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/quality.html"
+      },
+      "title": "质检管理",
+      "size": "web"
+    },
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/marketing.html"
+      },
+      "title": "营销管理",
+      "size": "web"
+    },
+    {
+      "type": "html",
+      "options": {
+        "path": ".cozeproj/prototype/web/tickets.html"
+      },
+      "title": "工单管理",
+      "size": "web"
+    }
+  ]
+}

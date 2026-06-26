@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E6EAF2;
+      --color-surface-container-highest:  #DDE2ED;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #DC2626;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #CBD2E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.10);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <div class="flex h-screen">
+  <!-- @nav:start -->
+    <!-- Sidebar -->
+    <aside class="w-60 border-r border-outline-variant/20 flex flex-col bg-surface shrink-0">
+      <!-- Logo -->
+      <div class="h-14 flex items-center gap-2.5 px-5 border-b border-outline-variant/20">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <i data-lucide="bot" class="w-4.5 h-4.5 text-on-primary"></i>
+        </div>
+        <span class="text-base font-semibold text-on-surface">SmartAssist</span>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 px-3">
+        <a href="dashboard.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="bar-chart" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          数据分析
+        </a>
+        <a href="home.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="message-square" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          智能对话
+        </a>
+        <a href="history.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="clock" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          对话历史
+        </a>
+        <a href="customers.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="users" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          客户管理
+        </a>
+        <a href="faq.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="book-open" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识库
+        </a>
+        <a href="knowledge-learning.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="graduation-cap" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识自学习
+        </a>
+        <a href="team.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="shield" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          团队管理
+        </a>
+        <a href="quality.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 bg-primary/10 text-primary" aria-current="page">
+          <i data-lucide="clipboard-check" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          质检管理
+        </a>
+        <a href="settings.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="settings" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- Footer -->
+      <div class="p-4 border-t border-outline-variant/20">
+        <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+          <div class="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+          系统运行中
+        </div>
+      </div>
+    </aside>
+  <!-- @nav:end -->
+
+  <main class="flex-1 min-w-0 overflow-y-auto bg-background p-6">
+    <!-- @main-content:start -->
+
+    <!-- 页面标题 -->
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-on-surface">质检管理</h1>
+      <p class="text-sm text-on-surface-variant mt-1">管理对话标签与质检规则，保障客服服务质量</p>
+    </div>
+
+    <!-- Tab 导航 -->
+    <div class="flex items-center gap-1 bg-surface-container rounded-lg p-1 w-fit mb-6" id="tab-nav">
+      <button id="tab-labels" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-all bg-surface shadow-card text-on-surface" data-tab="labels">
+        对话标签
+      </button>
+      <button id="tab-rules" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-all text-on-surface-variant hover:text-on-surface" data-tab="rules">
+        质检规则
+      </button>
+      <button id="tab-records" class="tab-btn px-4 py-2 rounded-md text-sm font-medium transition-all text-on-surface-variant hover:text-on-surface" data-tab="records">
+        质检记录
+      </button>
+    </div>
+
+    <!-- ==================== Tab 1: 对话标签 ==================== -->
+    <div id="panel-labels" class="tab-panel">
+      <!-- 顶部操作栏 -->
+      <div class="flex items-center justify-between mb-5">
+        <div class="relative w-72">
+          <i data-lucide="search" class="w-4 h-4 text-on-surface-variant absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <input id="label-search" type="text" placeholder="搜索标签名称..." class="w-full bg-surface-container border-none rounded-md pl-9 pr-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+        </div>
+        <button id="btn-create-label" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>创建标签
+        </button>
+      </div>
+
+      <!-- 标签卡片网格 -->
+      <div id="label-grid" class="grid grid-cols-4 gap-4">
+
+        <!-- 列表-标签1: 退款咨询 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="1">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-primary"></span>
+              <span class="text-sm font-semibold text-on-surface">退款咨询</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="1">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="1">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">问题类型</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">128</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签2: 物流查询 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="2">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+              <span class="text-sm font-semibold text-on-surface">物流查询</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="2">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="2">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">问题类型</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">96</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签3: 产品咨询 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="3">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-cyan-500"></span>
+              <span class="text-sm font-semibold text-on-surface">产品咨询</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="3">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="3">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">问题类型</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">72</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签4: 情绪激动 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="4">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+              <span class="text-sm font-semibold text-on-surface">情绪激动</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="4">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="4">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">情绪</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">45</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签5: 不满投诉 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="5">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-red-500"></span>
+              <span class="text-sm font-semibold text-on-surface">不满投诉</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="5">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="5">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">情绪</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">33</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签6: 好评感谢 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="6">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-success"></span>
+              <span class="text-sm font-semibold text-on-surface">好评感谢</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="6">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="6">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">情绪</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">61</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签7: 售前 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="7">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-purple-500"></span>
+              <span class="text-sm font-semibold text-on-surface">售前</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="7">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="7">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">业务线</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">154</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签8: 售后 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="8">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-violet-500"></span>
+              <span class="text-sm font-semibold text-on-surface">售后</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="8">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="8">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">业务线</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">203</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签9: 技术支持 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="9">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-fuchsia-500"></span>
+              <span class="text-sm font-semibold text-on-surface">技术支持</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="9">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="9">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">业务线</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">87</span></span>
+          </div>
+        </div>
+
+        <!-- 列表-标签10: 账户问题 -->
+        <div class="label-card bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow" data-id="10">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-indigo-500"></span>
+              <span class="text-sm font-semibold text-on-surface">账户问题</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="btn-edit-label w-7 h-7 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors" data-id="10">
+                <i data-lucide="pencil" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+              </button>
+              <button class="btn-delete-label w-7 h-7 rounded-md hover:bg-error/10 flex items-center justify-center transition-colors" data-id="10">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5 text-on-surface-variant hover:text-error"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">问题类型</span>
+            <span class="text-xs text-on-surface-variant">关联对话 <span class="font-semibold text-on-surface">56</span></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== Tab 2: 质检规则 ==================== -->
+    <div id="panel-rules" class="tab-panel hidden">
+      <!-- 顶部操作栏 -->
+      <div class="flex items-center justify-between mb-5">
+        <div class="flex items-center gap-3">
+          <select id="rule-status-filter" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+            <option value="all">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已禁用</option>
+          </select>
+        </div>
+        <button id="btn-create-rule" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>创建规则
+        </button>
+      </div>
+
+      <!-- 规则表格 -->
+      <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+        <!-- 表头 -->
+        <div class="grid grid-cols-5 px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+          <span>规则名称</span>
+          <span>类型</span>
+          <span>触发条件</span>
+          <span>状态</span>
+          <span>操作</span>
+        </div>
+        <!-- 表体 -->
+        <div class="divide-y divide-outline-variant/50">
+
+          <!-- 列表-规则1: 首响超时告警 -->
+          <div class="rule-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-id="1" data-status="enabled">
+            <span class="text-sm font-medium text-on-surface">首响超时告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning w-fit">首响超时</span>
+            <span class="text-sm text-on-surface-variant">首响时间 &gt; 5分钟</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" class="rule-toggle sr-only" checked data-id="1"/>
+              <div class="toggle-track w-9 h-5 bg-primary rounded-full transition-colors relative">
+                <div class="toggle-dot absolute top-0.5 left-5 w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+            <div class="flex items-center gap-2">
+              <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-id="1">编辑</button>
+              <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-id="1">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-规则2: 违规词检测 -->
+          <div class="rule-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-id="2" data-status="enabled">
+            <span class="text-sm font-medium text-on-surface">违规词检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">关键词违规</span>
+            <span class="text-sm text-on-surface-variant">回复包含违规关键词</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" class="rule-toggle sr-only" checked data-id="2"/>
+              <div class="toggle-track w-9 h-5 bg-primary rounded-full transition-colors relative">
+                <div class="toggle-dot absolute top-0.5 left-5 w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+            <div class="flex items-center gap-2">
+              <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-id="2">编辑</button>
+              <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-id="2">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-规则3: 满意度预警 -->
+          <div class="rule-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-id="3" data-status="enabled">
+            <span class="text-sm font-medium text-on-surface">满意度预警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary w-fit">满意度低于阈值</span>
+            <span class="text-sm text-on-surface-variant">单次满意度低于3分</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" class="rule-toggle sr-only" checked data-id="3"/>
+              <div class="toggle-track w-9 h-5 bg-primary rounded-full transition-colors relative">
+                <div class="toggle-dot absolute top-0.5 left-5 w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+            <div class="flex items-center gap-2">
+              <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-id="3">编辑</button>
+              <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-id="3">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-规则4: 高轮次告警 -->
+          <div class="rule-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-id="4" data-status="disabled">
+            <span class="text-sm font-medium text-on-surface">高轮次告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning w-fit">首响超时</span>
+            <span class="text-sm text-on-surface-variant">对话轮次超过20轮</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" class="rule-toggle sr-only" data-id="4"/>
+              <div class="toggle-track w-9 h-5 bg-surface-container-highest rounded-full transition-colors relative">
+                <div class="toggle-dot absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+            <div class="flex items-center gap-2">
+              <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-id="4">编辑</button>
+              <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-id="4">删除</button>
+            </div>
+          </div>
+
+          <!-- 列表-规则5: 负面情绪检测 -->
+          <div class="rule-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-id="5" data-status="enabled">
+            <span class="text-sm font-medium text-on-surface">负面情绪检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">关键词违规</span>
+            <span class="text-sm text-on-surface-variant">检测到负面情绪关键词</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" class="rule-toggle sr-only" checked data-id="5"/>
+              <div class="toggle-track w-9 h-5 bg-primary rounded-full transition-colors relative">
+                <div class="toggle-dot absolute top-0.5 left-5 w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+            <div class="flex items-center gap-2">
+              <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-id="5">编辑</button>
+              <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-id="5">删除</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab 3: 质检记录 ==================== -->
+    <div id="panel-records" class="tab-panel hidden">
+      <!-- 顶部筛选栏 -->
+      <div class="flex items-center gap-3 mb-5">
+        <input id="record-date-start" type="date" value="2024-12-01" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+        <span class="text-sm text-on-surface-variant">至</span>
+        <input id="record-date-end" type="date" value="2024-12-15" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+        <select id="record-rule-filter" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+          <option value="all">全部规则</option>
+          <option value="首响超时告警">首响超时告警</option>
+          <option value="违规词检测">违规词检测</option>
+          <option value="满意度预警">满意度预警</option>
+          <option value="高轮次告警">高轮次告警</option>
+          <option value="负面情绪检测">负面情绪检测</option>
+        </select>
+        <select id="record-result-filter" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+          <option value="all">全部结果</option>
+          <option value="pass">通过</option>
+          <option value="fail">未通过</option>
+        </select>
+        <button id="btn-filter-records" class="bg-surface-container text-on-surface px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="filter" class="w-3.5 h-3.5"></i>筛选
+        </button>
+      </div>
+
+      <!-- 质检记录表格 -->
+      <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+        <!-- 表头 -->
+        <div class="grid grid-cols-5 px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+          <span>对话ID</span>
+          <span>规则名称</span>
+          <span>结果</span>
+          <span>详情描述</span>
+          <span>检测时间</span>
+        </div>
+        <!-- 表体 -->
+        <div id="record-table-body" class="divide-y divide-outline-variant/50">
+
+          <!-- 列表-记录1 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="fail">
+            <a href="history.html?id=conv-20241201-001" class="text-sm font-medium text-primary hover:underline">conv-20241201-001</a>
+            <span class="text-sm text-on-surface">首响超时告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">未通过</span>
+            <span class="text-sm text-on-surface-variant">首响时间 8 分 32 秒，超过 5 分钟阈值</span>
+            <span class="text-xs text-on-surface-variant">2024-12-01 09:15:22</span>
+          </div>
+
+          <!-- 列表-记录2 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="pass">
+            <a href="history.html?id=conv-20241201-002" class="text-sm font-medium text-primary hover:underline">conv-20241201-002</a>
+            <span class="text-sm text-on-surface">首响超时告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">通过</span>
+            <span class="text-sm text-on-surface-variant">首响时间 1 分 15 秒，在正常范围内</span>
+            <span class="text-xs text-on-surface-variant">2024-12-01 10:32:18</span>
+          </div>
+
+          <!-- 列表-记录3 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="fail">
+            <a href="history.html?id=conv-20241202-003" class="text-sm font-medium text-primary hover:underline">conv-20241202-003</a>
+            <span class="text-sm text-on-surface">违规词检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">未通过</span>
+            <span class="text-sm text-on-surface-variant">回复中包含"保证收益"违禁词</span>
+            <span class="text-xs text-on-surface-variant">2024-12-02 14:05:47</span>
+          </div>
+
+          <!-- 列表-记录4 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="fail">
+            <a href="history.html?id=conv-20241203-004" class="text-sm font-medium text-primary hover:underline">conv-20241203-004</a>
+            <span class="text-sm text-on-surface">满意度预警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">未通过</span>
+            <span class="text-sm text-on-surface-variant">用户评分 2 分，低于 3 分阈值</span>
+            <span class="text-xs text-on-surface-variant">2024-12-03 11:28:33</span>
+          </div>
+
+          <!-- 列表-记录5 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="pass">
+            <a href="history.html?id=conv-20241204-005" class="text-sm font-medium text-primary hover:underline">conv-20241204-005</a>
+            <span class="text-sm text-on-surface">违规词检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">通过</span>
+            <span class="text-sm text-on-surface-variant">回复内容无违规关键词</span>
+            <span class="text-xs text-on-surface-variant">2024-12-04 16:42:09</span>
+          </div>
+
+          <!-- 列表-记录6 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="pass">
+            <a href="history.html?id=conv-20241205-006" class="text-sm font-medium text-primary hover:underline">conv-20241205-006</a>
+            <span class="text-sm text-on-surface">首响超时告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">通过</span>
+            <span class="text-sm text-on-surface-variant">首响时间 2 分 05 秒，在正常范围内</span>
+            <span class="text-xs text-on-surface-variant">2024-12-05 08:55:41</span>
+          </div>
+
+          <!-- 列表-记录7 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="fail">
+            <a href="history.html?id=conv-20241206-007" class="text-sm font-medium text-primary hover:underline">conv-20241206-007</a>
+            <span class="text-sm text-on-surface">负面情绪检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">未通过</span>
+            <span class="text-sm text-on-surface-variant">检测到"愤怒""投诉"等负面情绪关键词</span>
+            <span class="text-xs text-on-surface-variant">2024-12-06 13:17:56</span>
+          </div>
+
+          <!-- 列表-记录8 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="pass">
+            <a href="history.html?id=conv-20241208-008" class="text-sm font-medium text-primary hover:underline">conv-20241208-008</a>
+            <span class="text-sm text-on-surface">满意度预警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">通过</span>
+            <span class="text-sm text-on-surface-variant">用户评分 5 分，满足要求</span>
+            <span class="text-xs text-on-surface-variant">2024-12-08 15:03:22</span>
+          </div>
+
+          <!-- 列表-记录9 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="fail">
+            <a href="history.html?id=conv-20241210-009" class="text-sm font-medium text-primary hover:underline">conv-20241210-009</a>
+            <span class="text-sm text-on-surface">高轮次告警</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error w-fit">未通过</span>
+            <span class="text-sm text-on-surface-variant">对话轮次 28 轮，超过 20 轮阈值</span>
+            <span class="text-xs text-on-surface-variant">2024-12-10 09:48:11</span>
+          </div>
+
+          <!-- 列表-记录10 -->
+          <div class="record-row grid grid-cols-5 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-result="pass">
+            <a href="history.html?id=conv-20241212-010" class="text-sm font-medium text-primary hover:underline">conv-20241212-010</a>
+            <span class="text-sm text-on-surface">负面情绪检测</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success w-fit">通过</span>
+            <span class="text-sm text-on-surface-variant">对话情绪正向，未检测到负面关键词</span>
+            <span class="text-xs text-on-surface-variant">2024-12-12 17:21:38</span>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 创建标签弹窗 ==================== -->
+    <div id="modal-create-label" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-semibold text-on-surface">创建标签</h2>
+          <button id="btn-close-label-modal" class="w-8 h-8 rounded-md hover:bg-surface-container flex items-center justify-center transition-colors">
+            <i data-lucide="x" class="w-4 h-4 text-on-surface-variant"></i>
+          </button>
+        </div>
+
+        <!-- 标签名 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-on-surface mb-1.5">标签名称</label>
+          <input id="input-label-name" type="text" placeholder="输入标签名称" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+        </div>
+
+        <!-- 颜色选择 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-on-surface mb-1.5">标签颜色</label>
+          <div id="color-picker" class="flex items-center gap-2">
+            <button class="color-option w-7 h-7 rounded-full bg-primary ring-2 ring-primary ring-offset-2 transition-all" data-color="#2F6BFF"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-blue-500 hover:ring-2 hover:ring-blue-500 hover:ring-offset-2 transition-all" data-color="#3B82F6"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-cyan-500 hover:ring-2 hover:ring-cyan-500 hover:ring-offset-2 transition-all" data-color="#06B6D4"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-success hover:ring-2 hover:ring-success hover:ring-offset-2 transition-all" data-color="#16A37B"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-orange-500 hover:ring-2 hover:ring-orange-500 hover:ring-offset-2 transition-all" data-color="#F97316"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-red-500 hover:ring-2 hover:ring-red-500 hover:ring-offset-2 transition-all" data-color="#EF4444"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-purple-500 hover:ring-2 hover:ring-purple-500 hover:ring-offset-2 transition-all" data-color="#A855F7"></button>
+            <button class="color-option w-7 h-7 rounded-full bg-fuchsia-500 hover:ring-2 hover:ring-fuchsia-500 hover:ring-offset-2 transition-all" data-color="#D946EF"></button>
+          </div>
+        </div>
+
+        <!-- 分类下拉 -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-on-surface mb-1.5">标签分类</label>
+          <select id="select-label-category" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+            <option value="问题类型">问题类型</option>
+            <option value="情绪">情绪</option>
+            <option value="业务线">业务线</option>
+          </select>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="flex items-center justify-end gap-3">
+          <button id="btn-cancel-label" class="bg-surface-container text-on-surface px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-save-label" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- @main-content:end -->
+  </main>
+  </div>
+
+  <script>lucide.createIcons();</script>
+
+  <script>
+  $(function() {
+
+    // ===== Tab 切换 =====
+    $('#tab-nav').on('click', '.tab-btn', function() {
+      var tab = $(this).data('tab');
+      // 更新按钮样式
+      $('.tab-btn').removeClass('bg-surface shadow-card text-on-surface').addClass('text-on-surface-variant');
+      $(this).removeClass('text-on-surface-variant').addClass('bg-surface shadow-card text-on-surface');
+      // 切换面板
+      $('.tab-panel').addClass('hidden');
+      $('#panel-' + tab).removeClass('hidden');
+    });
+
+    // ===== 创建标签弹窗 =====
+    $('#btn-create-label').on('click', function() {
+      $('#modal-create-label').removeClass('hidden');
+    });
+
+    $('#btn-close-label-modal, #btn-cancel-label').on('click', function() {
+      $('#modal-create-label').addClass('hidden');
+    });
+
+    // 点击遮罩关闭弹窗
+    $('#modal-create-label').on('click', function(e) {
+      if ($(e.target).is('#modal-create-label')) {
+        $('#modal-create-label').addClass('hidden');
+      }
+    });
+
+    // ===== 颜色选择 =====
+    $('#color-picker').on('click', '.color-option', function() {
+      $('.color-option').removeClass('ring-2 ring-offset-2').css('ring-color', '');
+      // 移除所有 ring 相关类
+      $('.color-option').each(function() {
+        $(this).removeClass('ring-primary ring-blue-500 ring-cyan-500 ring-success ring-orange-500 ring-red-500 ring-purple-500 ring-fuchsia-500 ring-2 ring-offset-2');
+      });
+      var color = $(this).data('color');
+      var ringClass = 'ring-2 ring-offset-2';
+      // 根据颜色添加对应 ring
+      var colorMap = {
+        '#2F6BFF': 'ring-primary',
+        '#3B82F6': 'ring-blue-500',
+        '#06B6D4': 'ring-cyan-500',
+        '#16A37B': 'ring-success',
+        '#F97316': 'ring-orange-500',
+        '#EF4444': 'ring-red-500',
+        '#A855F7': 'ring-purple-500',
+        '#D946EF': 'ring-fuchsia-500'
+      };
+      $(this).addClass(ringClass + ' ' + (colorMap[color] || 'ring-primary'));
+    });
+
+    // ===== 保存标签 =====
+    $('#btn-save-label').on('click', function() {
+      var name = $('#input-label-name').val().trim();
+      if (!name) {
+        $('#input-label-name').focus();
+        return;
+      }
+      // 保存标签 - 后续应实现：
+      // 1. 收集标签名、选中颜色、分类信息
+      // 2. 调用后端 API 创建标签
+      // 3. 创建成功后在标签网格中添加新卡片
+      // 4. 清空表单并关闭弹窗
+      console.log('创建标签:', name, '颜色:', $('.color-option.ring-2').data('color'), '分类:', $('#select-label-category').val());
+      $('#modal-create-label').addClass('hidden');
+      $('#input-label-name').val('');
+    });
+
+    // ===== 删除标签 =====
+    $('#label-grid').on('click', '.btn-delete-label', function() {
+      var id = $(this).data('id');
+      if (confirm('确认删除该标签？删除后不可恢复。')) {
+        $(this).closest('.label-card').fadeOut(300, function() {
+          $(this).remove();
+        });
+        console.log('删除标签:', id);
+      }
+    });
+
+    // ===== 编辑标签 =====
+    // 编辑标签按钮 - 点击后应实现：
+    // 1. 打开编辑弹窗，预填当前标签名称、颜色、分类
+    // 2. 用户修改后点击保存
+    // 3. 调用后端 API 更新标签
+    // 4. 成功后更新对应卡片的内容
+    $('#label-grid').on('click', '.btn-edit-label', function() {
+      var id = $(this).data('id');
+      console.log('编辑标签:', id);
+    });
+
+    // ===== 标签搜索 =====
+    $('#label-search').on('input', function() {
+      var keyword = $(this).val().trim().toLowerCase();
+      $('.label-card').each(function() {
+        var name = $(this).find('.text-sm.font-semibold').text().toLowerCase();
+        if (name.indexOf(keyword) > -1) {
+          $(this).show();
+        } else {
+          $(this).hide();
+        }
+      });
+    });
+
+    // ===== 规则状态开关 =====
+    $('.rule-toggle').on('change', function() {
+      var id = $(this).data('id');
+      var isChecked = $(this).is(':checked');
+      var $track = $(this).next('.toggle-track');
+      var $dot = $track.find('.toggle-dot');
+
+      if (isChecked) {
+        $track.removeClass('bg-surface-container-highest').addClass('bg-primary');
+        $dot.css('left', '1.25rem');
+        $(this).closest('.rule-row').data('status', 'enabled');
+      } else {
+        $track.removeClass('bg-primary').addClass('bg-surface-container-highest');
+        $dot.css('left', '0.125rem');
+        $(this).closest('.rule-row').data('status', 'disabled');
+      }
+      console.log('规则', id, isChecked ? '已启用' : '已禁用');
+    });
+
+    // ===== 规则状态筛选 =====
+    $('#rule-status-filter').on('change', function() {
+      var filter = $(this).val();
+      $('.rule-row').each(function() {
+        var status = $(this).data('status');
+        if (filter === 'all') {
+          $(this).show();
+        } else if (filter === 'enabled' && status === 'enabled') {
+          $(this).show();
+        } else if (filter === 'disabled' && status === 'disabled') {
+          $(this).show();
+        } else {
+          $(this).hide();
+        }
+      });
+    });
+
+    // ===== 创建规则 =====
+    // 创建规则按钮 - 点击后应实现：
+    // 1. 打开创建规则弹窗
+    // 2. 表单包含：规则名称、类型选择（首响超时/关键词违规/满意度低于阈值）、触发条件描述
+    // 3. 点击保存后调用后端 API 创建规则
+    // 4. 成功后在规则表格中添加新行
+    $('#btn-create-rule').on('click', function() {
+      console.log('创建规则 - 应打开创建规则弹窗');
+    });
+
+    // ===== 编辑规则 =====
+    // 编辑规则按钮 - 点击后应实现：
+    // 1. 打开编辑规则弹窗，预填当前规则名称、类型、触发条件
+    // 2. 用户修改后点击保存
+    // 3. 调用后端 API 更新规则
+    // 4. 成功后更新对应表格行的内容
+    $('#panel-rules').on('click', '.btn-edit-rule', function() {
+      var id = $(this).data('id');
+      console.log('编辑规则:', id);
+    });
+
+    // ===== 删除规则 =====
+    $('#panel-rules').on('click', '.btn-delete-rule', function() {
+      var id = $(this).data('id');
+      if (confirm('确认删除该规则？删除后不可恢复。')) {
+        $(this).closest('.rule-row').fadeOut(300, function() {
+          $(this).remove();
+        });
+        console.log('删除规则:', id);
+      }
+    });
+
+    // ===== 质检记录筛选 =====
+    $('#btn-filter-records').on('click', function() {
+      var ruleFilter = $('#record-rule-filter').val();
+      var resultFilter = $('#record-result-filter').val();
+
+      $('.record-row').each(function() {
+        var $row = $(this);
+        var rowResult = $row.data('result');
+        var rowRule = $row.find('.text-sm.text-on-surface').not('a').text();
+        var show = true;
+
+        if (ruleFilter !== 'all' && rowRule !== ruleFilter) {
+          show = false;
+        }
+        if (resultFilter !== 'all' && rowResult !== resultFilter) {
+          show = false;
+        }
+
+        if (show) {
+          $row.show();
+        } else {
+          $row.hide();
+        }
+      });
+    });
+
+  });
+  </script>
+
+</body>
+
+</html>

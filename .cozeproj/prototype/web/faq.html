@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link href="https://lf-code-agent.coze.cn/obj/x-ai-cn/fonts/google/inter_400_500_600_700.css" rel="stylesheet" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF1F7;
+      --color-surface-container-high:     #E3E8F0;
+      --color-surface-container-highest:  #D8DEE8;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #ef4444;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #C5CDD8;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.1);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <!-- 导入资料弹窗 -->
+  <div id="import-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-surface rounded-xl shadow-dialog max-w-lg w-full max-h-[90vh] overflow-y-auto">
+      <div class="p-6">
+        <!-- 弹窗标题 -->
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="text-lg font-bold text-on-surface">导入外部资料</h2>
+          <button id="btn-close-modal" class="p-1.5 rounded-md hover:bg-surface-container transition-colors">
+            <i data-lucide="x" class="w-5 h-5 text-on-surface-variant"></i>
+          </button>
+        </div>
+
+        <!-- 导入方式 Tab -->
+        <div class="flex gap-1 mb-5 bg-surface-container rounded-lg p-1">
+          <button id="import-tab-file" class="import-tab flex-1 py-2 rounded-md text-sm font-medium bg-primary text-on-primary transition-colors">文件上传</button>
+          <button id="import-tab-url" class="import-tab flex-1 py-2 rounded-md text-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors">URL 导入</button>
+          <button id="import-tab-text" class="import-tab flex-1 py-2 rounded-md text-sm font-medium text-on-surface-variant hover:text-on-surface transition-colors">文本粘贴</button>
+        </div>
+
+        <!-- 文件上传区域 -->
+        <div id="import-panel-file" class="import-panel">
+          <div id="drop-zone" class="border-2 border-dashed border-outline-variant/40 rounded-lg p-8 text-center hover:border-primary/50 hover:bg-primary/5 transition-colors cursor-pointer">
+            <div class="flex flex-col items-center gap-3">
+              <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <i data-lucide="cloud-upload" class="w-6 h-6 text-primary"></i>
+              </div>
+              <div>
+                <p class="text-sm font-medium text-on-surface">拖拽文件到此处，或<span class="text-primary cursor-pointer">点击选择文件</span></p>
+                <p class="text-xs text-on-surface-variant mt-1">支持 PDF、TXT、Markdown、Word、Excel 格式，单文件不超过 10MB</p>
+              </div>
+            </div>
+            <input id="file-input" type="file" class="hidden" accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx" multiple/>
+          </div>
+          <!-- 已选文件列表 -->
+          <div id="selected-files" class="mt-4 space-y-2 hidden">
+            <p class="text-sm font-medium text-on-surface">已选择的文件：</p>
+            <div class="space-y-1.5" id="file-list"></div>
+          </div>
+        </div>
+
+        <!-- URL 导入区域 -->
+        <div id="import-panel-url" class="import-panel hidden">
+          <div class="space-y-4">
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">网页地址</label>
+              <input id="import-url" type="url" placeholder="https://example.com/help-center" class="w-full bg-surface-container border-none rounded-md px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">资料名称（可选）</label>
+              <input id="import-url-name" type="text" placeholder="为导入的资料命名" class="w-full bg-surface-container border-none rounded-md px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+            </div>
+            <div class="bg-surface-container rounded-lg p-3">
+              <p class="text-xs text-on-surface-variant flex items-center gap-1.5">
+                <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                系统将自动抓取网页内容并解析为知识库条目，支持普通网页和文档链接
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 文本粘贴区域 -->
+        <div id="import-panel-text" class="import-panel hidden">
+          <div class="space-y-4">
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">资料名称</label>
+              <input id="import-text-name" type="text" placeholder="为导入的资料命名" class="w-full bg-surface-container border-none rounded-md px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">粘贴内容</label>
+              <textarea id="import-text-content" rows="6" placeholder="将产品说明、政策文档、FAQ等文本内容粘贴到这里..." class="w-full bg-surface-container border-none rounded-md px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none"></textarea>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">所属分类</label>
+              <select id="import-text-category" class="w-full bg-surface-container border-none rounded-md px-3 py-2.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+                <option value="product">产品介绍</option>
+                <option value="account">账户管理</option>
+                <option value="order">订单与支付</option>
+                <option value="return">退换货政策</option>
+                <option value="tech">技术支持</option>
+                <option value="other">其他</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部操作 -->
+        <div class="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-outline-variant/20">
+          <button id="btn-cancel-import" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-confirm-import" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+            <i data-lucide="upload" class="w-3.5 h-3.5"></i>开始导入
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <!-- @nav:start 导航组件，不需要的页面则不要复制此段 -->
+  <header class="bg-surface sticky top-0 z-40 h-14 flex items-center justify-between px-6 border-b border-outline-variant/20">
+    <div class="flex items-center gap-2.5">
+      <i data-lucide="headset" class="text-primary w-5 h-5"></i>
+      <span class="font-bold text-base">SmartAssist</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-on-surface-variant">小初</span>
+      <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold">初</div>
+    </div>
+  </header>
+
+  <div class="flex" style="height: calc(100vh - 3.5rem)">
+    <aside class="w-56 shrink-0 bg-surface border-r border-outline-variant/20 overflow-y-auto">
+      <div class="p-3 space-y-0.5">
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="message-square" class="w-4 h-4"></i>智能对话
+        </a>
+        <a href="history.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="clock" class="w-4 h-4"></i>对话历史
+        </a>
+        <a href="faq.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm" aria-current="page">
+          <i data-lucide="book-open" class="w-4 h-4"></i>知识库
+        </a>
+        <a href="settings.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="settings" class="w-4 h-4"></i>设置
+        </a>
+      </div>
+    </aside>
+  <!-- @nav:end 导航组件，不需要的页面则不要复制此段 -->
+
+    <!-- @main-content:start -->
+    <main class="flex-1 min-w-0 overflow-y-auto bg-background p-6">
+      <!-- 页面标题区 -->
+      <div class="mb-6">
+        <h1 class="text-2xl font-bold text-on-surface">知识库</h1>
+        <p class="text-sm text-on-surface-variant mt-1">浏览常见问题与产品帮助，快速找到您需要的答案</p>
+      </div>
+
+      <!-- 搜索栏 + 导入按钮 -->
+      <div class="flex gap-3 mb-5">
+        <div class="relative flex-1">
+          <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant/50"></i>
+          <input id="faq-search" type="text" placeholder="搜索知识库内容..." class="w-full bg-surface-container border-none rounded-lg pl-10 pr-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+        </div>
+        <button id="btn-import" class="bg-primary text-on-primary px-4 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2 shrink-0">
+          <i data-lucide="upload" class="w-4 h-4"></i>导入资料
+        </button>
+      </div>
+
+      <!-- 分类标签栏 -->
+      <div id="category-tabs" class="flex flex-wrap gap-2 mb-6">
+        <button id="tab-all" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-primary text-on-primary transition-colors" data-category="all">全部</button>
+        <button id="tab-product" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="product">产品介绍</button>
+        <button id="tab-account" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="account">账户管理</button>
+        <button id="tab-order" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="order">订单与支付</button>
+        <button id="tab-return" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="return">退换货政策</button>
+        <button id="tab-tech" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="tech">技术支持</button>
+        <button id="tab-other" class="faq-tab px-3.5 py-1.5 rounded-full text-sm font-medium bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors" data-category="other">其他</button>
+      </div>
+
+      <!-- 主体内容区：FAQ列表 + 右侧边栏 -->
+      <div class="flex gap-6">
+        <!-- 左侧 FAQ 列表 -->
+        <div class="flex-1 min-w-0 space-y-3">
+
+          <!-- 分类：产品介绍 -->
+          <div class="faq-section" data-category="product">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="package" class="w-4 h-4 text-primary"></i>产品介绍
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-产品介绍1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="p1" data-category="product">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">SmartAssist 是什么产品？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">SmartAssist 是一款智能客服辅助平台，为企业提供 AI 驱动的客户服务解决方案。它支持多渠道接入、智能问答、工单管理和数据分析等功能，帮助企业提升客户服务效率和满意度。无论是电商、金融还是教育行业，SmartAssist 都能提供定制化的智能服务方案。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 2,847 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="p1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>128</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="p1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>5</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-产品介绍2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="p2" data-category="product">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">SmartAssist 支持哪些接入渠道？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">SmartAssist 支持多种客户接入渠道，包括：网页在线客服、微信公众号/小程序、APP 内嵌 SDK、邮件、短信以及电话语音转接。所有渠道的对话记录统一管理，确保客户在不同触点获得一致的服务体验。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,923 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="p2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>96</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="p2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>3</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-产品介绍3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="p3" data-category="product">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何开通 SmartAssist 服务？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">开通 SmartAssist 只需三步：1. 访问官网注册企业账号；2. 选择适合的套餐（基础版/专业版/企业版）并完成支付；3. 按照引导完成基础配置，包括添加客服人员、设置欢迎语和配置接入渠道。全程约 15 分钟即可上线使用。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,567 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="p3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>72</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="p3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>2</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-产品介绍4 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="p4" data-category="product">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">SmartAssist 的定价方案是怎样的？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">SmartAssist 提供三种套餐：基础版（¥299/月）适合小微企业，含 3 个坐席和基础问答功能；专业版（¥799/月）适合中型团队，含 10 个坐席、智能路由和数据分析；企业版（定制报价）支持无限坐席、专属部署和 API 集成。所有套餐均提供 14 天免费试用。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 3,210 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="p4"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>185</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="p4"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>12</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 分类：账户管理 -->
+          <div class="faq-section" data-category="account">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="user-circle" class="w-4 h-4 text-primary"></i>账户管理
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-账户管理1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="a1" data-category="account">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何注册账号？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">注册账号非常简单：点击官网右上角「注册」按钮，输入手机号或邮箱地址，获取并输入验证码，设置登录密码即可完成注册。企业用户还需填写公司名称和联系人信息。注册成功后会收到一封欢迎邮件，引导您完成初始设置。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 4,512 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="a1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>312</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="a1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>8</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-账户管理2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="a2" data-category="account">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">忘记密码怎么办？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">如果忘记密码，请在登录页面点击「忘记密码」，输入注册时使用的手机号或邮箱，系统将发送验证码。验证成功后即可设置新密码。如果无法接收验证码，请联系客服 400-888-9999 人工核实身份后重置密码。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 3,876 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="a2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>267</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="a2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>4</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-账户管理3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="a3" data-category="account">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何修改个人信息？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">登录后进入「设置」→「个人信息」页面，即可修改昵称、头像、联系方式等基本信息。修改手机号或邮箱需要先验证当前绑定的号码。如需修改企业名称等认证信息，需提交营业执照等证明材料，审核通过后 1-2 个工作日内生效。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,432 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="a3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>58</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="a3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>1</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-账户管理4 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="a4" data-category="account">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何注销账号？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">注销账号请进入「设置」→「账号安全」→「注销账号」。注销前请确保：1. 无未处理的订单和售后；2. 账户余额已提现完毕；3. 已备份重要数据。提交注销申请后，有 7 天冷静期，期间可撤销申请。冷静期后账号将永久注销，数据不可恢复。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 987 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="a4"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>34</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="a4"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>6</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 分类：订单与支付 -->
+          <div class="faq-section" data-category="order">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="credit-card" class="w-4 h-4 text-primary"></i>订单与支付
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-订单与支付1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="o1" data-category="order">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">支持哪些支付方式？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">我们支持多种主流支付方式：微信支付、支付宝、银联云闪付、Apple Pay、银行卡快捷支付（支持国内主流银行借记卡和信用卡）。企业用户还可选择对公转账，请在下单时选择「对公转账」并按要求填写开票信息，财务将在 1 个工作日内确认到账。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 5,234 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="o1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>456</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="o1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>9</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-订单与支付2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="o2" data-category="order">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何查询订单状态？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">查询订单状态有两种方式：1. 登录后进入「我的订单」页面，可查看所有历史订单及其当前状态；2. 在订单详情页点击「查看物流」，可追踪商品的实时配送信息。订单状态包括：待付款、待发货、配送中、已完成、已取消。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 4,128 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="o2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>289</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="o2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>3</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-订单与支付3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="o3" data-category="order">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">支付失败怎么办？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">支付失败可能是以下原因：1. 银行卡余额不足或单笔限额——请更换支付方式或联系银行调整限额；2. 网络超时——请检查网络后重试；3. 支付密码错误——请确认密码后重新输入。如多次支付失败，建议清除浏览器缓存后重试，或联系客服 400-888-9999 获取帮助。已扣款但订单未生成的情况，资金将在 1-3 个工作日内自动退回。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 2,651 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="o3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>143</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="o3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>18</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-订单与支付4 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="o4" data-category="order">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何开具发票？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">在订单完成支付后，进入「我的订单」→ 选择对应订单 →「申请发票」。支持电子发票和纸质发票两种形式。电子发票申请后即时发送至邮箱，纸质发票需填写收件地址，3-5 个工作日内寄出。企业用户可申请增值税专用发票，需提供开票资质审核。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,876 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="o4"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>91</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="o4"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>5</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-订单与支付5 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="o5" data-category="order">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">订单可以取消吗？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">未发货的订单可以直接取消，退款将按原支付渠道退回，到账时间 1-5 个工作日。已发货的订单无法直接取消，需在收到商品后申请退货退款。虚拟商品（如会员、充值卡）一经购买不支持取消。限时促销订单取消后优惠可能无法保留。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 2,193 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="o5"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>112</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="o5"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>7</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 分类：退换货政策 -->
+          <div class="faq-section" data-category="return">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="refresh-ccw" class="w-4 h-4 text-primary"></i>退换货政策
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-退换货1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="r1" data-category="return">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">退换货的申请流程是什么？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">退换货申请流程：1. 登录账号进入「我的订单」，找到需要退换的订单；2. 点击「申请售后」选择退货退款或换货；3. 填写退换原因并上传相关凭证照片；4. 提交申请等待审核（1-2 个工作日）；5. 审核通过后按指引寄回商品；6. 我们收到商品后 3 个工作日内完成退款或发出新商品。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 6,321 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="r1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>523</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="r1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>11</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-退换货2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="r2" data-category="return">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">退换货的时间限制是多久？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">自签收之日起 7 天内可申请无理由退货，15 天内可申请换货。超过 15 天的售后申请将根据具体情况处理。特殊商品（如定制商品、食品、贴身衣物等）不支持无理由退货，但如有质量问题可在签收后 7 天内申请售后。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 4,567 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="r2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>389</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="r2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>6</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-退换货3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="r3" data-category="return">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">退货运费由谁承担？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">因商品质量问题导致的退货，运费由我方全额承担，可选择上门取件或自行寄回后报销运费。非质量问题的退货（如不喜欢、尺码不合适等），运费由买家承担。换货场景下，寄回运费买家承担，重新发货运费我方承担。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 3,892 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="r3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>267</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="r3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>14</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-退换货4 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="r4" data-category="return">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">哪些商品不支持退换货？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">以下商品不支持无理由退换货：1. 定制类商品（印字、刻字等个性化定制）；2. 生鲜食品及保质期较短的商品；3. 贴身衣物、泳装等卫生类商品（未拆封除外）；4. 已激活的电子产品及软件授权商品；5. 虚拟商品（充值卡、会员等）。但以上商品如存在质量问题，仍可在规定时间内申请售后。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 2,345 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="r4"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>156</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="r4"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>9</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 分类：技术支持 -->
+          <div class="faq-section" data-category="tech">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="wrench" class="w-4 h-4 text-primary"></i>技术支持
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-技术支持1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="t1" data-category="tech">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何查看物流信息？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">查看物流信息：登录后进入「我的订单」→ 点击对应订单的「查看物流」按钮，即可查看实时配送状态和物流轨迹。我们与顺丰、中通、韵达等多家物流公司合作，大部分订单支持实时追踪。如物流信息长时间未更新，可联系在线客服查询。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 3,456 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="t1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>198</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="t1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>4</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-技术支持2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="t2" data-category="tech">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">页面加载缓慢如何处理？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">页面加载缓慢可能的原因和解决方案：1. 网络问题——切换到更稳定的网络环境或刷新页面；2. 浏览器缓存——清除浏览器缓存和 Cookie 后重试；3. 浏览器兼容性——推荐使用 Chrome、Edge、Safari 最新版本；4. 插件冲突——尝试关闭浏览器扩展插件。如问题持续存在，请截图反馈至技术支持邮箱 support@smartassist.com。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,234 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="t2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>67</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="t2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>8</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-技术支持3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="t3" data-category="tech">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何联系在线客服？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">联系在线客服的方式：1. 网页端——点击页面右下角的客服图标，进入在线对话；2. APP 端——「我的」→「帮助与反馈」→「在线客服」；3. 微信公众号——关注「SmartAssist 官方」后发送消息。客服服务时间：工作日 9:00-21:00，周末 10:00-18:00。非服务时间可通过留言或邮件联系我们。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 2,987 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="t3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>176</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="t3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>2</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-技术支持4 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="t4" data-category="tech">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">APP 无法正常使用怎么办？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">APP 无法正常使用时请尝试以下步骤：1. 检查是否为最新版本——前往应用商店更新到最新版本；2. 清除 APP 缓存——在手机「设置」→「应用管理」中清除缓存数据；3. 重启 APP 或重启手机；4. 检查手机系统版本——我们支持 iOS 14+ 和 Android 8.0+。如以上方法无效，请卸载重装并确保从官方渠道下载。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,567 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="t4"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>89</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="t4"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>13</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 分类：其他 -->
+          <div class="faq-section" data-category="other">
+            <h2 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="more-horizontal" class="w-4 h-4 text-primary"></i>其他
+            </h2>
+            <div class="space-y-2">
+
+              <!-- 列表-其他1 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="m1" data-category="other">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何成为平台合作伙伴？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">我们欢迎各类合作伙伴加入！合作方式包括：1. 渠道合作——推广 SmartAssist 产品获取佣金；2. 技术合作——API 对接和系统集成；3. 内容合作——共同打造行业知识库。请发送合作意向至 partner@smartassist.com，商务团队将在 3 个工作日内回复。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 876 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="m1"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>42</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="m1"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>1</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-其他2 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="m2" data-category="other">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">平台有哪些安全措施保障数据？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">我们高度重视数据安全，采取了以下措施：1. 数据传输采用 TLS 1.3 加密；2. 数据存储使用 AES-256 加密算法；3. 通过 ISO 27001 信息安全认证和等保三级认证；4. 定期进行安全审计和渗透测试；5. 完善的权限管理和操作审计日志。企业版用户还可选择私有化部署，数据完全自主可控。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,654 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="m2"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>98</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="m2"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>0</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 列表-其他3 -->
+              <div class="faq-item bg-surface rounded-lg shadow-card overflow-hidden" data-id="m3" data-category="other">
+                <button class="faq-toggle w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-surface-container/50 transition-colors">
+                  <span class="text-sm font-medium text-on-surface pr-4">如何提交产品建议或反馈？</span>
+                  <i data-lucide="chevron-down" class="w-4 h-4 text-on-surface-variant/50 shrink-0 faq-icon transition-transform duration-200"></i>
+                </button>
+                <div class="faq-body hidden px-4 pb-4">
+                  <p class="text-sm text-on-surface-variant leading-relaxed">我们非常重视用户的反馈！提交建议的方式：1. 在 APP 内「我的」→「意见反馈」直接提交；2. 发送邮件至 feedback@smartassist.com；3. 在官方社区论坛发帖讨论；4. 加入用户体验群参与产品内测。产品团队会定期查阅所有反馈，优秀建议将获得精美礼品。</p>
+                  <div class="flex items-center justify-between mt-3 pt-3 border-t border-outline-variant/20">
+                    <span class="text-xs text-on-surface-variant">浏览 1,123 次</span>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-on-surface-variant">是否有帮助？</span>
+                      <button class="faq-like flex items-center gap-1 text-xs text-on-surface-variant hover:text-primary transition-colors" data-id="m3"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i><span>56</span></button>
+                      <button class="faq-dislike flex items-center gap-1 text-xs text-on-surface-variant hover:text-error transition-colors" data-id="m3"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i><span>3</span></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 右侧边栏 -->
+        <div class="w-72 shrink-0 space-y-5">
+
+          <!-- 已导入资料 -->
+          <div class="bg-surface rounded-lg shadow-card p-4">
+            <h3 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="database" class="w-4 h-4 text-primary"></i>已导入资料
+            </h3>
+            <div id="imported-list" class="space-y-2">
+              <!-- 导入项1 - 已完成 -->
+              <div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">
+                <div class="shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center mt-0.5">
+                  <i data-lucide="file-text" class="w-4 h-4 text-primary"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-on-surface font-medium truncate">产品售后服务政策_v3.2.pdf</p>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs text-on-surface-variant">1.2 MB</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已入库</span>
+                  </div>
+                </div>
+                <button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="产品售后服务政策_v3.2.pdf">
+                  <i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>
+                </button>
+              </div>
+              <!-- 导入项2 - 已完成 -->
+              <div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">
+                <div class="shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center mt-0.5">
+                  <i data-lucide="file-spreadsheet" class="w-4 h-4 text-primary"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-on-surface font-medium truncate">常见问题汇总_2025Q1.xlsx</p>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs text-on-surface-variant">856 KB</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已入库</span>
+                  </div>
+                </div>
+                <button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="常见问题汇总_2025Q1.xlsx">
+                  <i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>
+                </button>
+              </div>
+              <!-- 导入项3 - 处理中 -->
+              <div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">
+                <div class="shrink-0 w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center mt-0.5">
+                  <i data-lucide="file-code" class="w-4 h-4 text-warning"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-on-surface font-medium truncate">API技术文档_v2.md</p>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs text-on-surface-variant">324 KB</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">处理中</span>
+                  </div>
+                  <div class="mt-1.5 w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
+                    <div class="h-full bg-warning rounded-full" style="width: 65%"></div>
+                  </div>
+                </div>
+                <button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="API技术文档_v2.md">
+                  <i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>
+                </button>
+              </div>
+              <!-- 导入项4 - URL导入已完成 -->
+              <div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">
+                <div class="shrink-0 w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center mt-0.5">
+                  <i data-lucide="globe" class="w-4 h-4 text-primary"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-on-surface font-medium truncate">帮助中心 - 官方网站</p>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs text-on-surface-variant">URL 导入</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已入库</span>
+                  </div>
+                </div>
+                <button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="帮助中心 - 官方网站">
+                  <i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>
+                </button>
+              </div>
+              <!-- 导入项5 - 导入失败 -->
+              <div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">
+                <div class="shrink-0 w-8 h-8 rounded-md bg-error/10 flex items-center justify-center mt-0.5">
+                  <i data-lucide="file-x" class="w-4 h-4 text-error"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm text-on-surface font-medium truncate">旧版用户手册.doc</p>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-xs text-on-surface-variant">4.5 MB</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">导入失败</span>
+                  </div>
+                  <p class="text-xs text-error mt-0.5">文件格式不受支持</p>
+                </div>
+                <button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="旧版用户手册.doc">
+                  <i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>
+                </button>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-outline-variant/20">
+              <p class="text-xs text-on-surface-variant">共 5 份资料，4.92 MB</p>
+            </div>
+          </div>
+
+          <!-- 热门问题排行 -->
+          <div class="bg-surface rounded-lg shadow-card p-4">
+            <h3 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="flame" class="w-4 h-4 text-error"></i>热门问题
+            </h3>
+            <div class="space-y-0.5">
+              <!-- 热门-1 -->
+              <a href="javascript:void(0)" class="hot-question flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-surface-container/50 transition-colors" data-target="r1">
+                <span class="shrink-0 w-5 h-5 rounded-full bg-error/15 text-error text-xs font-bold flex items-center justify-center">1</span>
+                <span class="text-sm text-on-surface leading-snug">退换货的申请流程是什么？</span>
+              </a>
+              <!-- 热门-2 -->
+              <a href="javascript:void(0)" class="hot-question flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-surface-container/50 transition-colors" data-target="o1">
+                <span class="shrink-0 w-5 h-5 rounded-full bg-error/15 text-error text-xs font-bold flex items-center justify-center">2</span>
+                <span class="text-sm text-on-surface leading-snug">支持哪些支付方式？</span>
+              </a>
+              <!-- 热门-3 -->
+              <a href="javascript:void(0)" class="hot-question flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-surface-container/50 transition-colors" data-target="r2">
+                <span class="shrink-0 w-5 h-5 rounded-full bg-warning/15 text-warning text-xs font-bold flex items-center justify-center">3</span>
+                <span class="text-sm text-on-surface leading-snug">退换货的时间限制是多久？</span>
+              </a>
+              <!-- 热门-4 -->
+              <a href="javascript:void(0)" class="hot-question flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-surface-container/50 transition-colors" data-target="a1">
+                <span class="shrink-0 w-5 h-5 rounded-full bg-warning/15 text-warning text-xs font-bold flex items-center justify-center">4</span>
+                <span class="text-sm text-on-surface leading-snug">如何注册账号？</span>
+              </a>
+              <!-- 热门-5 -->
+              <a href="javascript:void(0)" class="hot-question flex items-start gap-2.5 px-2 py-2 rounded-md hover:bg-surface-container/50 transition-colors" data-target="o2">
+                <span class="shrink-0 w-5 h-5 rounded-full bg-surface-container-high text-on-surface-variant text-xs font-bold flex items-center justify-center">5</span>
+                <span class="text-sm text-on-surface leading-snug">如何查询订单状态？</span>
+              </a>
+            </div>
+          </div>
+
+          <!-- 最近更新 -->
+          <div class="bg-surface rounded-lg shadow-card p-4">
+            <h3 class="text-base font-semibold text-on-surface mb-3 flex items-center gap-2">
+              <i data-lucide="clock" class="w-4 h-4 text-primary"></i>最近更新
+            </h3>
+            <div class="space-y-3">
+              <!-- 更新-1 -->
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-on-surface font-medium leading-snug">新增 Apple Pay 支付方式</span>
+                <span class="text-xs text-on-surface-variant">2025-01-15 更新</span>
+              </div>
+              <!-- 更新-2 -->
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-on-surface font-medium leading-snug">退换货流程优化说明</span>
+                <span class="text-xs text-on-surface-variant">2025-01-12 更新</span>
+              </div>
+              <!-- 更新-3 -->
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-on-surface font-medium leading-snug">企业版专属部署指南</span>
+                <span class="text-xs text-on-surface-variant">2025-01-10 更新</span>
+              </div>
+              <!-- 更新-4 -->
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-on-surface font-medium leading-snug">APP 闪退问题修复说明</span>
+                <span class="text-xs text-on-surface-variant">2025-01-08 更新</span>
+              </div>
+              <!-- 更新-5 -->
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-on-surface font-medium leading-snug">数据安全认证信息更新</span>
+                <span class="text-xs text-on-surface-variant">2025-01-05 更新</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 快速联系 -->
+          <div class="bg-primary-container rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-on-surface mb-2">没有找到答案？</h3>
+            <p class="text-xs text-on-surface-variant mb-3">联系在线客服，获取实时帮助</p>
+            <a href="home.html" class="inline-flex items-center gap-1.5 bg-primary text-on-primary px-3.5 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">
+              <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>在线咨询
+            </a>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+    <!-- @main-content:end -->
+  </div>
+
+  <script>
+    $(function () {
+
+      // === 分类标签切换 ===
+      $('#category-tabs').on('click', '.faq-tab', function () {
+        // 更新标签样式
+        $('.faq-tab').removeClass('bg-primary text-on-primary').addClass('bg-surface-container text-on-surface-variant');
+        $(this).removeClass('bg-surface-container text-on-surface-variant').addClass('bg-primary text-on-primary');
+
+        var category = $(this).data('category');
+
+        if (category === 'all') {
+          // 显示所有分类
+          $('.faq-section').show();
+        } else {
+          // 隐藏非当前分类，显示当前分类
+          $('.faq-section').hide();
+          $('.faq-section[data-category="' + category + '"]').show();
+        }
+      });
+
+      // === 手风琴展开/折叠 ===
+      $('.faq-item').on('click', '.faq-toggle', function () {
+        var $item = $(this).closest('.faq-item');
+        var $body = $item.find('.faq-body');
+        var $icon = $(this).find('.faq-icon');
+
+        if ($body.is(':hidden')) {
+          // 展开当前项
+          $body.slideDown(200);
+          $icon.css('transform', 'rotate(180deg)');
+        } else {
+          // 折叠当前项
+          $body.slideUp(200);
+          $icon.css('transform', 'rotate(0deg)');
+        }
+      });
+
+      // === 点赞/点踩反馈 ===
+      $('.faq-item').on('click', '.faq-like', function (e) {
+        e.stopPropagation();
+        var $btn = $(this);
+        var $count = $btn.find('span');
+        var currentCount = parseInt($count.text());
+
+        if ($btn.hasClass('text-primary')) {
+          // 已点赞，取消
+          $btn.removeClass('text-primary').addClass('text-on-surface-variant');
+          $count.text(currentCount - 1);
+        } else {
+          // 点赞
+          $btn.removeClass('text-on-surface-variant').addClass('text-primary');
+          $count.text(currentCount + 1);
+          // 取消同组的点踩
+          var $dislike = $btn.siblings('.faq-dislike');
+          if ($dislike.hasClass('text-error')) {
+            $dislike.removeClass('text-error').addClass('text-on-surface-variant');
+            var dCount = parseInt($dislike.find('span').text());
+            $dislike.find('span').text(dCount - 1);
+          }
+        }
+      });
+
+      $('.faq-item').on('click', '.faq-dislike', function (e) {
+        e.stopPropagation();
+        var $btn = $(this);
+        var $count = $btn.find('span');
+        var currentCount = parseInt($count.text());
+
+        if ($btn.hasClass('text-error')) {
+          // 已点踩，取消
+          $btn.removeClass('text-error').addClass('text-on-surface-variant');
+          $count.text(currentCount - 1);
+        } else {
+          // 点踩
+          $btn.removeClass('text-on-surface-variant').addClass('text-error');
+          $count.text(currentCount + 1);
+          // 取消同组的点赞
+          var $like = $btn.siblings('.faq-like');
+          if ($like.hasClass('text-primary')) {
+            $like.removeClass('text-primary').addClass('text-on-surface-variant');
+            var lCount = parseInt($like.find('span').text());
+            $like.find('span').text(lCount - 1);
+          }
+        }
+      });
+
+      // === 搜索功能 ===
+      $('#faq-search').on('input', function () {
+        var keyword = $(this).val().trim().toLowerCase();
+
+        if (keyword === '') {
+          // 清空搜索时恢复当前分类的显示
+          var activeCategory = $('.faq-tab.bg-primary').data('category');
+          if (activeCategory === 'all') {
+            $('.faq-section').show();
+          } else {
+            $('.faq-section').hide();
+            $('.faq-section[data-category="' + activeCategory + '"]').show();
+          }
+          $('.faq-item').show();
+          return;
+        }
+
+        // 搜索时显示所有分类
+        $('.faq-section').show();
+
+        // 过滤匹配的FAQ项
+        $('.faq-item').each(function () {
+          var questionText = $(this).find('.faq-toggle span').text().toLowerCase();
+          var answerText = $(this).find('.faq-body p').text().toLowerCase();
+          if (questionText.indexOf(keyword) > -1 || answerText.indexOf(keyword) > -1) {
+            $(this).show();
+            // 显示所属分类标题
+            $(this).closest('.faq-section').show();
+          } else {
+            $(this).hide();
+          }
+        });
+
+        // 隐藏没有匹配项的分类
+        $('.faq-section').each(function () {
+          if ($(this).find('.faq-item:visible').length === 0) {
+            $(this).hide();
+          }
+        });
+      });
+
+      // === 热门问题点击跳转 ===
+      $('.hot-question').on('click', function () {
+        var targetId = $(this).data('target');
+        var $targetItem = $('.faq-item[data-id="' + targetId + '"]');
+
+        if ($targetItem.length) {
+          // 确保目标分类可见
+          var targetCategory = $targetItem.data('category');
+          $('.faq-section').show();
+          $('.faq-item').show();
+
+          // 确保目标分类标签激活
+          $('.faq-tab').removeClass('bg-primary text-on-primary').addClass('bg-surface-container text-on-surface-variant');
+          $('#tab-all').removeClass('bg-surface-container text-on-surface-variant').addClass('bg-primary text-on-primary');
+
+          // 展开目标FAQ
+          var $body = $targetItem.find('.faq-body');
+          if ($body.is(':hidden')) {
+            $body.slideDown(200);
+            $targetItem.find('.faq-icon').css('transform', 'rotate(180deg)');
+          }
+
+          // 滚动到目标位置
+          $('html, body').animate({
+            scrollTop: $targetItem.offset().top - 80
+          }, 300);
+
+          // 高亮效果
+          $targetItem.addClass('ring-2 ring-primary/30');
+          setTimeout(function () {
+            $targetItem.removeClass('ring-2 ring-primary/30');
+          }, 2000);
+        }
+      });
+
+      // === 导入资料弹窗 ===
+      // 打开弹窗
+      $('#btn-import').on('click', function () {
+        $('#import-modal').removeClass('hidden');
+      });
+
+      // 关闭弹窗
+      function closeModal() {
+        $('#import-modal').addClass('hidden');
+        // 重置状态
+        $('#file-list').empty();
+        $('#selected-files').addClass('hidden');
+        $('#import-url').val('');
+        $('#import-url-name').val('');
+        $('#import-text-name').val('');
+        $('#import-text-content').val('');
+      }
+      $('#btn-close-modal, #btn-cancel-import').on('click', closeModal);
+      // 点击遮罩关闭
+      $('#import-modal').on('click', function (e) {
+        if ($(e.target).is('#import-modal')) closeModal();
+      });
+
+      // === 导入方式 Tab 切换 ===
+      $('.import-tab').on('click', function () {
+        var tabId = $(this).attr('id');
+        // 切换 tab 样式
+        $('.import-tab').removeClass('bg-primary text-on-primary').addClass('text-on-surface-variant');
+        $(this).removeClass('text-on-surface-variant').addClass('bg-primary text-on-primary');
+        // 切换面板
+        $('.import-panel').addClass('hidden');
+        if (tabId === 'import-tab-file') {
+          $('#import-panel-file').removeClass('hidden');
+        } else if (tabId === 'import-tab-url') {
+          $('#import-panel-url').removeClass('hidden');
+        } else if (tabId === 'import-tab-text') {
+          $('#import-panel-text').removeClass('hidden');
+        }
+      });
+
+      // === 文件上传 ===
+      // 点击拖拽区域触发文件选择
+      $('#drop-zone').on('click', function () {
+        $('#file-input').trigger('click');
+      });
+
+      // 文件选择变化
+      $('#file-input').on('change', function () {
+        var files = this.files;
+        if (files.length > 0) {
+          showSelectedFiles(files);
+        }
+      });
+
+      // 拖拽上传
+      $('#drop-zone').on('dragover', function (e) {
+        e.preventDefault();
+        $(this).addClass('border-primary bg-primary/5');
+      }).on('dragleave drop', function (e) {
+        e.preventDefault();
+        $(this).removeClass('border-primary bg-primary/5');
+      }).on('drop', function (e) {
+        var files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+          showSelectedFiles(files);
+        }
+      });
+
+      function showSelectedFiles(files) {
+        $('#selected-files').removeClass('hidden');
+        var $list = $('#file-list');
+        $list.empty();
+        for (var i = 0; i < files.length; i++) {
+          var f = files[i];
+          var sizeKB = (f.size / 1024).toFixed(0);
+          var sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
+          var ext = f.name.split('.').pop().toLowerCase();
+          var icon = ext === 'pdf' ? 'file-text' : (ext === 'xlsx' || ext === 'xls' ? 'file-spreadsheet' : (ext === 'md' ? 'file-code' : 'file'));
+          $list.append(
+            '<div class="flex items-center gap-2.5 bg-surface-container rounded-md px-3 py-2">' +
+              '<i data-lucide="' + icon + '" class="w-4 h-4 text-primary shrink-0"></i>' +
+              '<span class="text-sm text-on-surface flex-1 truncate">' + f.name + '</span>' +
+              '<span class="text-xs text-on-surface-variant shrink-0">' + sizeStr + '</span>' +
+            '</div>'
+          );
+        }
+        lucide.createIcons();
+      }
+
+      // === 确认导入 ===
+      $('#btn-confirm-import').on('click', function () {
+        var activeTab = $('.import-tab.bg-primary').attr('id');
+        // 导入确认 - 关闭弹窗并在已导入列表中添加一条处理中的记录：
+        // 1. 根据当前激活的 Tab 获取对应数据（文件/URL/文本）
+        // 2. 调用后端接口上传资料，后端将进行内容解析、分块和向量化入库
+        // 3. 在「已导入资料」列表顶部添加一条新记录，状态为"处理中"
+        // 4. 后端处理完成后通过轮询或 WebSocket 推送更新状态为"已入库"或"导入失败"
+        console.log('确认导入，当前方式：' + activeTab);
+        // 模拟添加一条处理中记录
+        var $list = $('#imported-list');
+        var itemName = '新导入的资料';
+        var itemIcon = 'file-text';
+        var itemMeta = '文件上传';
+        if (activeTab === 'import-tab-url') {
+          itemName = $('#import-url-name').val() || $('#import-url').val() || '网页资料';
+          itemIcon = 'globe';
+          itemMeta = 'URL 导入';
+        } else if (activeTab === 'import-tab-text') {
+          itemName = $('#import-text-name').val() || '文本资料';
+          itemIcon = 'file-text';
+          itemMeta = '文本粘贴';
+        }
+        $list.prepend(
+          '<div class="imported-item flex items-start gap-2.5 p-2 rounded-md hover:bg-surface-container/50 transition-colors">' +
+            '<div class="shrink-0 w-8 h-8 rounded-md bg-warning/10 flex items-center justify-center mt-0.5">' +
+              '<i data-lucide="' + itemIcon + '" class="w-4 h-4 text-warning"></i>' +
+            '</div>' +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-sm text-on-surface font-medium truncate">' + itemName + '</p>' +
+              '<div class="flex items-center gap-2 mt-0.5">' +
+                '<span class="text-xs text-on-surface-variant">' + itemMeta + '</span>' +
+                '<span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">处理中</span>' +
+              '</div>' +
+              '<div class="mt-1.5 w-full h-1.5 bg-surface-container rounded-full overflow-hidden">' +
+                '<div class="h-full bg-warning rounded-full transition-all duration-1000" style="width: 10%"></div>' +
+              '</div>' +
+            '</div>' +
+            '<button class="btn-delete-import shrink-0 p-1 rounded hover:bg-surface-container-high transition-colors" data-name="' + itemName + '">' +
+              '<i data-lucide="x" class="w-3.5 h-3.5 text-on-surface-variant/50"></i>' +
+            '</button>' +
+          '</div>'
+        );
+        lucide.createIcons();
+        closeModal();
+      });
+
+      // === 删除已导入资料 ===
+      $(document).on('click', '.btn-delete-import', function (e) {
+        e.stopPropagation();
+        var name = $(this).data('name');
+        var $item = $(this).closest('.imported-item');
+        // 删除确认 - 实际实现应弹出二次确认弹窗：
+        // 1. 提示"确定要从知识库中移除该资料？移除后相关问答将无法引用此资料内容"
+        // 2. 确认后调用后端接口删除资料及其关联的向量数据
+        // 3. 成功后从前端列表中移除
+        console.log('删除资料：' + name);
+        $item.fadeOut(300, function () { $(this).remove(); });
+      });
+
+    });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

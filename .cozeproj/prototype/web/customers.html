@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E6EAF2;
+      --color-surface-container-highest:  #DDE2ED;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #DC2626;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #CBD2E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.10);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <div class="flex h-screen">
+  <!-- @nav:start -->
+    <!-- Sidebar -->
+    <aside class="w-60 border-r border-outline-variant/20 flex flex-col bg-surface shrink-0">
+      <!-- Logo -->
+      <div class="h-14 flex items-center gap-2.5 px-5 border-b border-outline-variant/20">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <i data-lucide="bot" class="w-4.5 h-4.5 text-on-primary"></i>
+        </div>
+        <span class="text-base font-semibold text-on-surface">SmartAssist</span>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 px-3">
+        <a href="dashboard.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="bar-chart" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          数据分析
+        </a>
+        <a href="home.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="message-square" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          智能对话
+        </a>
+        <a href="history.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="clock" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          对话历史
+        </a>
+        <a href="customers.html" aria-current="page" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 bg-primary/10 text-primary">
+          <i data-lucide="users" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          客户管理
+        </a>
+        <a href="faq.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="book-open" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识库
+        </a>
+        <a href="knowledge-learning.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="graduation-cap" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识自学习
+        </a>
+        <a href="team.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="shield" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          团队管理
+        </a>
+        <a href="settings.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="settings" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- Footer -->
+      <div class="p-4 border-t border-outline-variant/20">
+        <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+          <div class="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+          系统运行中
+        </div>
+      </div>
+    </aside>
+  <!-- @nav:end -->
+
+  <main class="flex-1 min-w-0 overflow-y-auto bg-background p-6">
+    <!-- @main-content:start -->
+
+    <!-- 页面标题 -->
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-on-surface">客户管理</h1>
+      <button id="btn-create-customer" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+        <i data-lucide="plus" class="w-3.5 h-3.5"></i>新建客户
+      </button>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="flex items-center gap-1 mb-6 bg-surface-container rounded-lg p-1 w-fit">
+      <button id="tab-customer-list" class="px-4 py-2 rounded-md text-sm font-medium transition-all bg-surface text-on-surface shadow-sm">客户列表</button>
+      <button id="tab-tag-manage" class="px-4 py-2 rounded-md text-sm font-medium transition-all text-on-surface-variant hover:text-on-surface">标签管理</button>
+    </div>
+
+    <!-- ==================== Tab 1: 客户列表 ==================== -->
+    <div id="panel-customer-list">
+      <!-- 筛选栏 -->
+      <div class="bg-surface rounded-lg shadow-card p-4 mb-4">
+        <div class="flex items-center gap-3 flex-wrap">
+          <!-- 搜索框 -->
+          <div class="relative flex-1 min-w-[220px] max-w-xs">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/50"></i>
+            <input id="search-input" type="text" placeholder="搜索姓名/手机/邮箱" class="w-full bg-surface-container border-none rounded-md pl-9 pr-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+          </div>
+
+          <!-- 标签筛选 -->
+          <div class="relative" id="tag-filter-wrap">
+            <button id="btn-tag-filter" class="inline-flex items-center gap-2 bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
+              <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+              <span id="tag-filter-label">标签筛选</span>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+            </button>
+            <!-- 下拉面板 -->
+            <div id="tag-filter-dropdown" class="absolute top-full left-0 mt-1 bg-surface rounded-lg shadow-float border border-outline-variant/20 py-2 w-48 z-30 hidden">
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="VIP" /> VIP</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="新客户" /> 新客户</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="退货高频" /> 退货高频</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="情绪敏感" /> 情绪敏感</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="大额消费" /> 大额消费</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="重复咨询" /> 重复咨询</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="好评客户" /> 好评客户</label>
+              <label class="flex items-center gap-2 px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 cursor-pointer"><input type="checkbox" class="tag-filter-cb accent-primary" value="投诉风险" /> 投诉风险</label>
+            </div>
+          </div>
+
+          <!-- 来源平台筛选 -->
+          <div class="relative" id="platform-filter-wrap">
+            <button id="btn-platform-filter" class="inline-flex items-center gap-2 bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface-variant hover:bg-surface-container-high transition-colors">
+              <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+              <span id="platform-filter-label">全部平台</span>
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+            </button>
+            <div id="platform-filter-dropdown" class="absolute top-full left-0 mt-1 bg-surface rounded-lg shadow-float border border-outline-variant/20 py-2 w-36 z-30 hidden">
+              <button class="platform-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-value="全部">全部平台</button>
+              <button class="platform-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-value="Web">Web</button>
+              <button class="platform-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-value="千牛">千牛</button>
+              <button class="platform-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-value="抖店">抖店</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 客户表格 -->
+      <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+        <!-- 表头 -->
+        <div class="grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+          <span>客户</span>
+          <span>手机号</span>
+          <span>来源</span>
+          <span>标签</span>
+          <span>对话</span>
+          <span>最后联系</span>
+          <span class="text-right">操作</span>
+        </div>
+        <div id="customer-table-body" class="divide-y divide-outline-variant/50">
+
+          <!-- 列表-客户1: 陈思远 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="1">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-primary/15 text-primary text-xs font-semibold flex items-center justify-center shrink-0">陈</div>
+              <span class="text-sm font-medium text-on-surface">陈思远</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">138****5678</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="globe" class="w-3.5 h-3.5"></i>Web</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-700">VIP</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-100 text-blue-700">新客户</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">12</span>
+            <span class="text-sm text-on-surface-variant">2024-12-20</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户2: 王晓丽 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="2">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-rose-500/15 text-rose-600 text-xs font-semibold flex items-center justify-center shrink-0">王</div>
+              <span class="text-sm font-medium text-on-surface">王晓丽</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">139****1234</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i>千牛</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-600">退货高频</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-orange-100 text-orange-600">情绪敏感</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">28</span>
+            <span class="text-sm text-on-surface-variant">2024-12-19</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户3: 李建国 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="3">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-600 text-xs font-semibold flex items-center justify-center shrink-0">李</div>
+              <span class="text-sm font-medium text-on-surface">李建国</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">137****9999</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="globe" class="w-3.5 h-3.5"></i>Web</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-700">VIP</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-100 text-purple-700">大额消费</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-700">好评客户</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">45</span>
+            <span class="text-sm text-on-surface-variant">2024-12-18</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户4: 赵敏 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="4">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-violet-500/15 text-violet-600 text-xs font-semibold flex items-center justify-center shrink-0">赵</div>
+              <span class="text-sm font-medium text-on-surface">赵敏</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">136****4321</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="music" class="w-3.5 h-3.5"></i>抖店</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-orange-100 text-orange-600">情绪敏感</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-600">投诉风险</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">8</span>
+            <span class="text-sm text-on-surface-variant">2024-12-17</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户5: 孙浩然 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="5">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-sky-500/15 text-sky-600 text-xs font-semibold flex items-center justify-center shrink-0">孙</div>
+              <span class="text-sm font-medium text-on-surface">孙浩然</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">135****8765</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i>千牛</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-cyan-100 text-cyan-700">重复咨询</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-100 text-blue-700">新客户</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">6</span>
+            <span class="text-sm text-on-surface-variant">2024-12-16</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户6: 刘雪梅 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="6">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-pink-500/15 text-pink-600 text-xs font-semibold flex items-center justify-center shrink-0">刘</div>
+              <span class="text-sm font-medium text-on-surface">刘雪梅</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">158****6543</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="music" class="w-3.5 h-3.5"></i>抖店</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-700">VIP</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-700">好评客户</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">33</span>
+            <span class="text-sm text-on-surface-variant">2024-12-15</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户7: 张伟 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="7">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-teal-500/15 text-teal-600 text-xs font-semibold flex items-center justify-center shrink-0">张</div>
+              <span class="text-sm font-medium text-on-surface">张伟</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">133****7788</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="globe" class="w-3.5 h-3.5"></i>Web</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-600">退货高频</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-cyan-100 text-cyan-700">重复咨询</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-red-100 text-red-600">投诉风险</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">52</span>
+            <span class="text-sm text-on-surface-variant">2024-12-14</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户8: 周婷婷 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="8">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-indigo-500/15 text-indigo-600 text-xs font-semibold flex items-center justify-center shrink-0">周</div>
+              <span class="text-sm font-medium text-on-surface">周婷婷</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">186****2233</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="shopping-bag" class="w-3.5 h-3.5"></i>千牛</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-blue-100 text-blue-700">新客户</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">3</span>
+            <span class="text-sm text-on-surface-variant">2024-12-13</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户9: 吴磊 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="9">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-orange-500/15 text-orange-600 text-xs font-semibold flex items-center justify-center shrink-0">吴</div>
+              <span class="text-sm font-medium text-on-surface">吴磊</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">159****3344</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="music" class="w-3.5 h-3.5"></i>抖店</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-100 text-purple-700">大额消费</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-100 text-amber-700">VIP</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">19</span>
+            <span class="text-sm text-on-surface-variant">2024-12-12</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+          <!-- 列表-客户10: 黄思琪 -->
+          <div class="customer-row grid grid-cols-[2fr_1.2fr_1fr_1.8fr_0.7fr_1fr_1.2fr] px-5 py-3.5 hover:bg-surface-container/50 transition-colors cursor-pointer items-center" data-id="10">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-full bg-lime-500/15 text-lime-600 text-xs font-semibold flex items-center justify-center shrink-0">黄</div>
+              <span class="text-sm font-medium text-on-surface">黄思琪</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">177****5566</span>
+            <span class="inline-flex items-center gap-1 text-sm text-on-surface-variant"><i data-lucide="globe" class="w-3.5 h-3.5"></i>Web</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-green-100 text-green-700">好评客户</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-cyan-100 text-cyan-700">重复咨询</span>
+            </div>
+            <span class="text-sm text-on-surface-variant">15</span>
+            <span class="text-sm text-on-surface-variant">2024-12-11</span>
+            <div class="flex items-center gap-2 justify-end">
+              <button class="btn-view-detail text-primary text-xs font-medium hover:underline">详情</button>
+              <button class="btn-edit-customer text-on-surface-variant text-xs font-medium hover:text-on-surface">编辑</button>
+              <button class="btn-add-tag text-on-surface-variant text-xs font-medium hover:text-on-surface">打标签</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab 2: 标签管理 ==================== -->
+    <div id="panel-tag-manage" class="hidden">
+      <!-- 标签管理顶部 -->
+      <div class="flex items-center justify-between mb-5">
+        <p class="text-sm text-on-surface-variant">共 <span class="font-semibold text-on-surface">8</span> 个标签</p>
+        <button id="btn-create-tag" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>创建标签
+        </button>
+      </div>
+
+      <!-- 标签卡片网格 -->
+      <div class="grid grid-cols-4 gap-4">
+
+        <!-- 标签卡片-VIP -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-amber-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">VIP</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">手动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">24</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-新客户 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-blue-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">新客户</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">56</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-退货高频 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-red-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">退货高频</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">18</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-情绪敏感 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-orange-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">情绪敏感</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">12</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-大额消费 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-purple-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">大额消费</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">9</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-重复咨询 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-cyan-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">重复咨询</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">31</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-好评客户 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-green-500 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">好评客户</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">手动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">42</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+        <!-- 标签卡片-投诉风险 -->
+        <div class="tag-card bg-surface rounded-lg shadow-card p-5 hover:shadow-float transition-shadow">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-3 h-3 rounded-full bg-rose-600 shrink-0"></span>
+            <span class="text-base font-semibold text-on-surface">投诉风险</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">自动</span>
+            <span class="text-sm text-on-surface-variant">关联 <span class="font-semibold text-on-surface">7</span> 位客户</span>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-outline-variant/20">
+            <button class="btn-edit-tag flex items-center gap-1 text-xs text-primary font-medium hover:underline"><i data-lucide="pencil" class="w-3 h-3"></i>编辑</button>
+            <button class="btn-delete-tag flex items-center gap-1 text-xs text-error font-medium hover:underline"><i data-lucide="trash-2" class="w-3 h-3"></i>删除</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== 右侧详情抽屉 ==================== -->
+    <div id="drawer-overlay" class="fixed inset-0 bg-black/30 z-40 hidden"></div>
+    <div id="customer-drawer" class="fixed top-0 right-0 h-full w-[480px] bg-surface shadow-dialog z-50 transform translate-x-full transition-transform duration-300 ease-in-out overflow-y-auto">
+      <!-- 抽屉头部 -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/20">
+        <h2 class="text-lg font-semibold text-on-surface">客户详情</h2>
+        <button id="btn-close-drawer" class="p-1.5 rounded-md hover:bg-surface-container transition-colors text-on-surface-variant">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- 基本信息 -->
+      <div class="px-6 py-5 border-b border-outline-variant/20">
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-14 h-14 rounded-full bg-primary/15 text-primary text-lg font-semibold flex items-center justify-center shrink-0">陈</div>
+          <div>
+            <h3 class="text-lg font-semibold text-on-surface">陈思远</h3>
+            <p class="text-sm text-on-surface-variant">VIP 客户</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <span class="text-on-surface-variant">手机号</span>
+            <p class="text-on-surface font-medium mt-0.5">138****5678</p>
+          </div>
+          <div>
+            <span class="text-on-surface-variant">邮箱</span>
+            <p class="text-on-surface font-medium mt-0.5">chensy@example.com</p>
+          </div>
+          <div>
+            <span class="text-on-surface-variant">来源平台</span>
+            <p class="text-on-surface font-medium mt-0.5 inline-flex items-center gap-1"><i data-lucide="globe" class="w-3.5 h-3.5"></i>Web</p>
+          </div>
+          <div>
+            <span class="text-on-surface-variant">首次联系</span>
+            <p class="text-on-surface font-medium mt-0.5">2024-06-15</p>
+          </div>
+          <div>
+            <span class="text-on-surface-variant">最后联系</span>
+            <p class="text-on-surface font-medium mt-0.5">2024-12-20</p>
+          </div>
+          <div>
+            <span class="text-on-surface-variant">对话次数</span>
+            <p class="text-on-surface font-medium mt-0.5">12 次</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 标签区域 -->
+      <div class="px-6 py-5 border-b border-outline-variant/20">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="text-sm font-semibold text-on-surface">标签</h4>
+          <div class="relative" id="drawer-add-tag-wrap">
+            <button id="btn-drawer-add-tag" class="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
+              <i data-lucide="plus" class="w-3 h-3"></i>添加标签
+            </button>
+            <div id="drawer-add-tag-dropdown" class="absolute top-full right-0 mt-1 bg-surface rounded-lg shadow-float border border-outline-variant/20 py-2 w-40 z-30 hidden">
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="VIP">VIP</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="新客户">新客户</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="退货高频">退货高频</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="情绪敏感">情绪敏感</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="大额消费">大额消费</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="重复咨询">重复咨询</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="好评客户">好评客户</button>
+              <button class="drawer-tag-option w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container/50 transition-colors" data-tag="投诉风险">投诉风险</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-700">VIP <button class="drawer-tag-remove hover:text-amber-900 ml-0.5"><i data-lucide="x" class="w-3 h-3"></i></button></span>
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-700">新客户 <button class="drawer-tag-remove hover:text-blue-900 ml-0.5"><i data-lucide="x" class="w-3 h-3"></i></button></span>
+        </div>
+      </div>
+
+      <!-- 历史对话 -->
+      <div class="px-6 py-5 border-b border-outline-variant/20">
+        <h4 class="text-sm font-semibold text-on-surface mb-3">历史对话</h4>
+        <div class="space-y-3">
+          <!-- 对话1 -->
+          <div class="bg-surface-container rounded-md p-3 hover:bg-surface-container-high transition-colors cursor-pointer">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium text-on-surface">退换货政策咨询</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2024-12-20 14:32</span>
+          </div>
+          <!-- 对话2 -->
+          <div class="bg-surface-container rounded-md p-3 hover:bg-surface-container-high transition-colors cursor-pointer">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium text-on-surface">物流进度查询</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2024-12-18 09:15</span>
+          </div>
+          <!-- 对话3 -->
+          <div class="bg-surface-container rounded-md p-3 hover:bg-surface-container-high transition-colors cursor-pointer">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium text-on-surface">商品规格确认</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待跟进</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2024-12-15 16:40</span>
+          </div>
+          <!-- 对话4 -->
+          <div class="bg-surface-container rounded-md p-3 hover:bg-surface-container-high transition-colors cursor-pointer">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium text-on-surface">会员权益说明</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2024-12-10 11:20</span>
+          </div>
+          <!-- 对话5 -->
+          <div class="bg-surface-container rounded-md p-3 hover:bg-surface-container-high transition-colors cursor-pointer">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium text-on-surface">支付方式问题</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span>
+            </div>
+            <span class="text-xs text-on-surface-variant">2024-12-05 08:55</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 客户备注 -->
+      <div class="px-6 py-5">
+        <h4 class="text-sm font-semibold text-on-surface mb-3">客户备注</h4>
+        <textarea id="customer-notes" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none" rows="4" placeholder="添加备注...">高价值客户，偏好电子类产品，关注会员专属活动。每次沟通态度友好，建议定期回访维护关系。</textarea>
+      </div>
+    </div>
+
+    <!-- ==================== 创建标签弹窗 ==================== -->
+    <div id="modal-create-tag" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="text-lg font-semibold text-on-surface">创建标签</h3>
+          <button id="btn-close-create-tag" class="p-1.5 rounded-md hover:bg-surface-container transition-colors text-on-surface-variant">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <!-- 标签名称 -->
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">标签名称</label>
+            <input id="input-tag-name" type="text" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="请输入标签名称" />
+          </div>
+
+          <!-- 颜色选择 -->
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">标签颜色</label>
+            <div id="color-picker" class="flex items-center gap-2">
+              <button class="color-option w-7 h-7 rounded-full bg-amber-500 ring-2 ring-amber-500/30 ring-offset-2 transition-all" data-color="amber"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-blue-500 transition-all hover:ring-2 hover:ring-blue-500/30 hover:ring-offset-2" data-color="blue"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-red-500 transition-all hover:ring-2 hover:ring-red-500/30 hover:ring-offset-2" data-color="red"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-orange-500 transition-all hover:ring-2 hover:ring-orange-500/30 hover:ring-offset-2" data-color="orange"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-purple-500 transition-all hover:ring-2 hover:ring-purple-500/30 hover:ring-offset-2" data-color="purple"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-cyan-500 transition-all hover:ring-2 hover:ring-cyan-500/30 hover:ring-offset-2" data-color="cyan"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-green-500 transition-all hover:ring-2 hover:ring-green-500/30 hover:ring-offset-2" data-color="green"></button>
+              <button class="color-option w-7 h-7 rounded-full bg-rose-600 transition-all hover:ring-2 hover:ring-rose-600/30 hover:ring-offset-2" data-color="rose"></button>
+            </div>
+          </div>
+
+          <!-- 分类选择 -->
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">标签分类</label>
+            <div class="flex items-center gap-3">
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="tag-category" value="手动" class="accent-primary" checked />
+                <span class="text-sm text-on-surface">手动标签</span>
+              </label>
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="tag-category" value="自动" class="accent-primary" />
+                <span class="text-sm text-on-surface">自动标签</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 mt-6">
+          <button id="btn-cancel-create-tag" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-confirm-create-tag" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 新建客户弹窗 ==================== -->
+    <div id="modal-create-customer" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h3 class="text-lg font-semibold text-on-surface">新建客户</h3>
+          <button id="btn-close-create-customer" class="p-1.5 rounded-md hover:bg-surface-container transition-colors text-on-surface-variant">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">姓名</label>
+            <input id="input-customer-name" type="text" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="请输入客户姓名" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">手机号</label>
+            <input id="input-customer-phone" type="text" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="请输入手机号" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">邮箱</label>
+            <input id="input-customer-email" type="text" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="请输入邮箱地址" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-on-surface mb-1.5">来源平台</label>
+            <select id="select-customer-platform" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+              <option value="Web">Web</option>
+              <option value="千牛">千牛</option>
+              <option value="抖店">抖店</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-3 mt-6">
+          <button id="btn-cancel-create-customer" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-confirm-create-customer" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- @main-content:end -->
+  </main>
+  </div>
+
+  <script>
+  $(function() {
+
+    // ========== Tab 切换 ==========
+    $('#tab-customer-list').on('click', function() {
+      $(this).addClass('bg-surface text-on-surface shadow-sm').removeClass('text-on-surface-variant');
+      $('#tab-tag-manage').removeClass('bg-surface text-on-surface shadow-sm').addClass('text-on-surface-variant');
+      $('#panel-customer-list').removeClass('hidden');
+      $('#panel-tag-manage').addClass('hidden');
+    });
+
+    $('#tab-tag-manage').on('click', function() {
+      $(this).addClass('bg-surface text-on-surface shadow-sm').removeClass('text-on-surface-variant');
+      $('#tab-customer-list').removeClass('bg-surface text-on-surface shadow-sm').addClass('text-on-surface-variant');
+      $('#panel-tag-manage').removeClass('hidden');
+      $('#panel-customer-list').addClass('hidden');
+    });
+
+    // ========== 标签筛选下拉 ==========
+    $('#btn-tag-filter').on('click', function(e) {
+      e.stopPropagation();
+      $('#tag-filter-dropdown').toggleClass('hidden');
+      $('#platform-filter-dropdown').addClass('hidden');
+    });
+
+    // 标签筛选 - 选中后更新按钮文案
+    $('.tag-filter-cb').on('change', function() {
+      var checked = [];
+      $('.tag-filter-cb:checked').each(function() { checked.push($(this).val()); });
+      if (checked.length > 0) {
+        $('#tag-filter-label').text('标签: ' + checked.join(', '));
+      } else {
+        $('#tag-filter-label').text('标签筛选');
+      }
+    });
+
+    // ========== 来源平台筛选下拉 ==========
+    $('#btn-platform-filter').on('click', function(e) {
+      e.stopPropagation();
+      $('#platform-filter-dropdown').toggleClass('hidden');
+      $('#tag-filter-dropdown').addClass('hidden');
+    });
+
+    $('.platform-option').on('click', function() {
+      var val = $(this).data('value');
+      $('#platform-filter-label').text(val === '全部' ? '全部平台' : val);
+      $('#platform-filter-dropdown').addClass('hidden');
+    });
+
+    // 点击外部关闭下拉
+    $(document).on('click', function() {
+      $('#tag-filter-dropdown').addClass('hidden');
+      $('#platform-filter-dropdown').addClass('hidden');
+      $('#drawer-add-tag-dropdown').addClass('hidden');
+    });
+
+    // ========== 右侧详情抽屉 ==========
+    function openDrawer() {
+      $('#customer-drawer').css('transform', 'translateX(0)');
+      $('#drawer-overlay').removeClass('hidden');
+    }
+
+    function closeDrawer() {
+      $('#customer-drawer').css('transform', 'translateX(100%)');
+      $('#drawer-overlay').addClass('hidden');
+    }
+
+    // 点击客户行打开抽屉
+    $('#customer-table-body').on('click', '.customer-row', function(e) {
+      // 如果点击的是操作按钮区域，不打开抽屉
+      if ($(e.target).closest('.btn-edit-customer, .btn-add-tag').length) return;
+      openDrawer();
+    });
+
+    // 点击"详情"按钮打开抽屉
+    $('#customer-table-body').on('click', '.btn-view-detail', function(e) {
+      e.stopPropagation();
+      openDrawer();
+    });
+
+    $('#btn-close-drawer').on('click', closeDrawer);
+    $('#drawer-overlay').on('click', closeDrawer);
+
+    // 抽屉中添加标签下拉
+    $('#btn-drawer-add-tag').on('click', function(e) {
+      e.stopPropagation();
+      $('#drawer-add-tag-dropdown').toggleClass('hidden');
+    });
+
+    // 选择标签 - 点击后添加标签到标签区域
+    // 添加标签 - 点击后应实现：
+    // 1. 在标签区域新增一个对应颜色的 Badge 节点
+    // 2. 从下拉列表中移除该选项（避免重复添加）
+    // 3. 同时更新客户列表中该客户的标签显示
+    $('.drawer-tag-option').on('click', function(e) {
+      e.stopPropagation();
+      var tag = $(this).data('tag');
+      console.log('添加标签:', tag);
+      $('#drawer-add-tag-dropdown').addClass('hidden');
+    });
+
+    // 移除标签
+    // 移除标签 - 点击后应实现：
+    // 1. 从标签区域移除该 Badge 节点
+    // 2. 将该标签重新添加到下拉选项中
+    // 3. 同时更新客户列表中该客户的标签显示
+    $('#customer-drawer').on('click', '.drawer-tag-remove', function(e) {
+      e.stopPropagation();
+      var tagBadge = $(this).closest('span');
+      console.log('移除标签:', tagBadge.text().trim());
+      tagBadge.remove();
+    });
+
+    // ========== 编辑客户 ==========
+    // 编辑客户 - 点击后应实现：
+    // 1. 打开客户编辑弹窗（与新建客户弹窗结构相同，但预填当前客户信息）
+    // 2. 允许修改姓名、手机号、邮箱、来源平台等字段
+    // 3. 保存后更新客户列表中对应行的信息
+    $('#customer-table-body').on('click', '.btn-edit-customer', function(e) {
+      e.stopPropagation();
+      var customerId = $(this).closest('.customer-row').data('id');
+      console.log('编辑客户 ID:', customerId);
+    });
+
+    // ========== 打标签 ==========
+    // 打标签 - 点击后应实现：
+    // 1. 弹出标签选择面板（与筛选下拉类似的多选列表）
+    // 2. 已有标签默认选中
+    // 3. 确认后更新该客户行的标签显示
+    $('#customer-table-body').on('click', '.btn-add-tag', function(e) {
+      e.stopPropagation();
+      var customerId = $(this).closest('.customer-row').data('id');
+      console.log('为客户 ID 打标签:', customerId);
+    });
+
+    // ========== 新建客户弹窗 ==========
+    $('#btn-create-customer').on('click', function() {
+      $('#modal-create-customer').removeClass('hidden');
+    });
+
+    $('#btn-close-create-customer, #btn-cancel-create-customer').on('click', function() {
+      $('#modal-create-customer').addClass('hidden');
+    });
+
+    // 创建客户 - 点击后应实现：
+    // 1. 校验姓名和手机号是否为空
+    // 2. 在客户列表中新增一行数据
+    // 3. 关闭弹窗并清空表单
+    $('#btn-confirm-create-customer').on('click', function() {
+      var name = $('#input-customer-name').val().trim();
+      var phone = $('#input-customer-phone').val().trim();
+      console.log('创建客户:', name, phone);
+      $('#modal-create-customer').addClass('hidden');
+    });
+
+    // ========== 创建标签弹窗 ==========
+    $('#btn-create-tag').on('click', function() {
+      $('#modal-create-tag').removeClass('hidden');
+    });
+
+    $('#btn-close-create-tag, #btn-cancel-create-tag').on('click', function() {
+      $('#modal-create-tag').addClass('hidden');
+    });
+
+    // 颜色选择交互
+    $('.color-option').on('click', function() {
+      $('.color-option').removeClass('ring-2 ring-offset-2').each(function() {
+        var color = $(this).data('color');
+        $(this).removeClass('ring-' + color + '-500/30');
+      });
+      var color = $(this).data('color');
+      $(this).addClass('ring-2 ring-offset-2 ring-' + color + '-500/30');
+    });
+
+    // 创建标签 - 点击后应实现：
+    // 1. 校验标签名称是否为空，是否重复
+    // 2. 在标签管理页面新增一张标签卡片
+    // 3. 关闭弹窗并清空表单
+    $('#btn-confirm-create-tag').on('click', function() {
+      var name = $('#input-tag-name').val().trim();
+      console.log('创建标签:', name);
+      $('#modal-create-tag').addClass('hidden');
+    });
+
+    // ========== 标签管理 - 编辑/删除 ==========
+    // 编辑标签 - 点击后应实现：
+    // 1. 打开编辑弹窗（与创建标签弹窗结构相同，预填当前标签信息）
+    // 2. 允许修改标签名称、颜色、分类
+    // 3. 保存后更新标签卡片和所有关联客户的标签显示
+    $('#panel-tag-manage').on('click', '.btn-edit-tag', function() {
+      var card = $(this).closest('.tag-card');
+      var name = card.find('.text-base').text();
+      console.log('编辑标签:', name);
+    });
+
+    // 删除标签 - 点击后应实现：
+    // 1. 弹出确认对话框
+    // 2. 确认后移除该标签卡片
+    // 3. 同时清除所有关联客户上的该标签
+    $('#panel-tag-manage').on('click', '.btn-delete-tag', function() {
+      var card = $(this).closest('.tag-card');
+      var name = card.find('.text-base').text();
+      console.log('删除标签:', name);
+    });
+
+    // ========== 搜索交互 ==========
+    // 搜索 - 输入后应实现：
+    // 1. 根据搜索关键词过滤客户列表，匹配姓名/手机/邮箱
+    // 2. 无匹配结果时显示空状态提示
+    // 3. 清空搜索框恢复全部列表
+    $('#search-input').on('input', function() {
+      var keyword = $(this).val().trim().toLowerCase();
+      console.log('搜索关键词:', keyword);
+    });
+
+  });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

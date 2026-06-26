@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link href="https://lf-code-agent.coze.cn/obj/x-ai-cn/fonts/google/inter_400_500_600_700.css" rel="stylesheet" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF1F7;
+      --color-surface-container-high:     #E3E8F0;
+      --color-surface-container-highest:  #D8DEE8;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #ef4444;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #C5CDD8;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.1);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <!-- @nav:start -->
+  <header class="bg-surface sticky top-0 z-40 h-14 flex items-center justify-between px-6 border-b border-outline-variant/20">
+    <div class="flex items-center gap-2.5">
+      <i data-lucide="headset" class="text-primary w-5 h-5"></i>
+      <span class="font-bold text-base">SmartAssist</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-on-surface-variant">小初</span>
+      <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-semibold">初</div>
+    </div>
+  </header>
+
+  <div class="flex" style="height: calc(100vh - 3.5rem)">
+    <aside class="w-56 shrink-0 bg-surface border-r border-outline-variant/20 overflow-y-auto">
+      <div class="p-3 space-y-0.5">
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="message-square" class="w-4 h-4"></i>智能对话
+        </a>
+        <a href="history.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="clock" class="w-4 h-4"></i>对话历史
+        </a>
+        <a href="faq.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="book-open" class="w-4 h-4"></i>知识库
+        </a>
+        <a href="settings.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm" aria-current="page">
+          <i data-lucide="settings" class="w-4 h-4"></i>设置
+        </a>
+      </div>
+    </aside>
+  <!-- @nav:end -->
+
+    <!-- @main-content:start -->
+    <main class="flex-1 min-w-0 overflow-y-auto bg-background p-6">
+      <!-- 页面标题 -->
+      <div class="mb-8">
+        <h1 class="text-2xl font-bold text-on-surface">系统设置</h1>
+        <p class="text-sm text-on-surface-variant mt-1">配置智能客服的自动回复规则、对话行为与通知偏好</p>
+      </div>
+
+      <!-- 自动回复规则配置区域 -->
+      <section id="section-rules" class="mb-10">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <i data-lucide="zap" class="w-5 h-5 text-primary"></i>
+            <h2 class="text-base font-semibold text-on-surface">自动回复规则</h2>
+          </div>
+          <button id="btn-add-rule" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>添加规则
+          </button>
+        </div>
+
+        <!-- 添加新规则表单（默认隐藏） -->
+        <div id="form-add-rule" class="bg-surface rounded-lg shadow-card p-5 mb-4 hidden">
+          <h3 class="text-sm font-semibold text-on-surface mb-4">新建自动回复规则</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">触发关键词</label>
+              <input id="input-keyword" type="text" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="输入触发关键词，如：退款"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">匹配模式</label>
+              <select id="select-match-mode" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+                <option value="exact">精确匹配</option>
+                <option value="fuzzy">模糊匹配</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">回复内容</label>
+              <textarea id="input-reply" rows="3" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none" placeholder="输入自动回复的内容"></textarea>
+            </div>
+            <div class="flex items-center justify-end gap-3">
+              <button id="btn-cancel-rule" class="bg-surface-container text-on-surface border-none px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+              <button id="btn-save-rule" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">保存规则</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 规则列表 -->
+        <div class="bg-surface rounded-lg shadow-card overflow-hidden">
+          <!-- 表头 -->
+          <div class="grid grid-cols-12 px-5 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
+            <span class="col-span-2">关键词</span>
+            <span class="col-span-2">匹配模式</span>
+            <span class="col-span-5">回复内容</span>
+            <span class="col-span-1 text-center">状态</span>
+            <span class="col-span-2 text-right">操作</span>
+          </div>
+          <div id="rule-list" class="divide-y divide-outline-variant/50">
+            <!-- 列表-规则1：退款 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="1">
+              <span class="col-span-2 text-sm font-medium text-on-surface">退款</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/10 text-primary">精确匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">您好，关于退款问题，请在订单详情页点击"申请退款"，或联系人工客服协助处理。退款将在3-5个工作日内原路返回。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" checked data-rule-id="1"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="1">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="1">删除</button>
+              </span>
+            </div>
+            <!-- 列表-规则2：人工 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="2">
+              <span class="col-span-2 text-sm font-medium text-on-surface">人工</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">模糊匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">好的，正在为您转接人工客服，请稍候。当前排队人数为2人，预计等待时间约3分钟。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" checked data-rule-id="2"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="2">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="2">删除</button>
+              </span>
+            </div>
+            <!-- 列表-规则3：物流 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="3">
+              <span class="col-span-2 text-sm font-medium text-on-surface">物流</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">模糊匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">您可以在"我的订单"中查看物流信息，也可回复订单号快速查询最新物流状态。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" checked data-rule-id="3"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="3">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="3">删除</button>
+              </span>
+            </div>
+            <!-- 列表-规则4：价格 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="4">
+              <span class="col-span-2 text-sm font-medium text-on-surface">价格</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">模糊匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">关于商品价格，请以页面展示的最终成交价为准。如有价格疑问，可联系人工客服核实。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" data-rule-id="4"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="4">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="4">删除</button>
+              </span>
+            </div>
+            <!-- 列表-规则5：投诉 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="5">
+              <span class="col-span-2 text-sm font-medium text-on-surface">投诉</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/10 text-primary">精确匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">非常抱歉给您带来不便，我们会认真处理您的投诉。请描述具体问题，我们会尽快反馈处理结果。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" checked data-rule-id="5"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="5">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="5">删除</button>
+              </span>
+            </div>
+            <!-- 列表-规则6：营业时间 -->
+            <div class="rule-item grid grid-cols-12 px-5 py-3.5 hover:bg-surface-container/50 transition-colors items-center" data-rule-id="6">
+              <span class="col-span-2 text-sm font-medium text-on-surface">营业时间</span>
+              <span class="col-span-2"><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/10 text-primary">精确匹配</span></span>
+              <span class="col-span-5 text-sm text-on-surface-variant truncate">我们的客服服务时间为每日9:00-21:00（含节假日）。非服务时间可留言，我们会尽快回复。</span>
+              <span class="col-span-1 flex justify-center">
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" class="sr-only peer toggle-switch" checked data-rule-id="6"/>
+                  <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                </label>
+              </span>
+              <span class="col-span-2 flex justify-end gap-3">
+                <button class="btn-edit-rule text-primary text-sm font-medium hover:underline" data-rule-id="6">编辑</button>
+                <button class="btn-delete-rule text-error text-sm font-medium hover:underline" data-rule-id="6">删除</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 对话设置区域 -->
+      <section id="section-chat" class="mb-10">
+        <div class="flex items-center gap-2 mb-4">
+          <i data-lucide="message-circle" class="w-5 h-5 text-primary"></i>
+          <h2 class="text-base font-semibold text-on-surface">对话设置</h2>
+        </div>
+        <div class="bg-surface rounded-lg shadow-card p-5">
+          <div class="space-y-6">
+            <!-- 欢迎语配置 -->
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">欢迎语</label>
+              <p class="text-xs text-on-surface-variant mb-2">用户进入对话时自动发送的欢迎消息</p>
+              <textarea id="input-welcome" rows="3" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none" placeholder="输入欢迎语">您好！欢迎联系 SmartAssist 智能客服，我是您的在线助手，有任何问题都可以随时问我。</textarea>
+            </div>
+            <!-- 对话超时时间 -->
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">对话超时时间</label>
+              <p class="text-xs text-on-surface-variant mb-2">用户无响应超过该时间后自动结束对话</p>
+              <div class="flex items-center gap-3">
+                <input id="input-timeout" type="number" value="30" min="5" max="120" class="w-28 bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+                <span class="text-sm text-on-surface-variant">分钟</span>
+              </div>
+            </div>
+            <!-- 最大对话轮次 -->
+            <div>
+              <label class="block text-sm font-medium text-on-surface mb-1.5">最大对话轮次</label>
+              <p class="text-xs text-on-surface-variant mb-2">单次对话允许的最大交互轮次，超出后提示转人工</p>
+              <div class="flex items-center gap-3">
+                <input id="input-max-turns" type="number" value="20" min="5" max="100" class="w-28 bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+                <span class="text-sm text-on-surface-variant">轮</span>
+              </div>
+            </div>
+            <!-- 满意度评价开关 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-on-surface">满意度评价</label>
+                <p class="text-xs text-on-surface-variant mt-0.5">对话结束后自动邀请用户进行满意度评价</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="toggle-satisfaction" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 通知设置区域 -->
+      <section id="section-notification" class="mb-10">
+        <div class="flex items-center gap-2 mb-4">
+          <i data-lucide="bell" class="w-5 h-5 text-primary"></i>
+          <h2 class="text-base font-semibold text-on-surface">通知设置</h2>
+        </div>
+        <div class="bg-surface rounded-lg shadow-card p-5">
+          <div class="space-y-6">
+            <!-- 新对话通知 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-on-surface">新对话通知</label>
+                <p class="text-xs text-on-surface-variant mt-0.5">有新用户发起对话时发送通知提醒</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="toggle-new-chat" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+              </label>
+            </div>
+            <!-- 未处理对话提醒 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-on-surface">未处理对话提醒</label>
+                <p class="text-xs text-on-surface-variant mt-0.5">用户消息超过5分钟未回复时发送提醒</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="toggle-unhandled" class="sr-only peer" checked/>
+                <div class="w-9 h-5 bg-surface-container-high rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 保存按钮 -->
+      <div class="flex items-center justify-end gap-3 pb-6">
+        <button id="btn-reset" class="bg-surface-container text-on-surface border-none px-5 py-2.5 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">重置</button>
+        <button id="btn-save-all" class="bg-primary text-on-primary px-5 py-2.5 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+          <i data-lucide="save" class="w-4 h-4"></i>保存设置
+        </button>
+      </div>
+
+      <!-- 保存成功提示（默认隐藏） -->
+      <div id="toast-success" class="fixed top-6 right-6 bg-success text-white px-5 py-3 rounded-lg shadow-float text-sm font-medium inline-flex items-center gap-2 transition-all opacity-0 translate-y-[-8px] z-50">
+        <i data-lucide="check-circle" class="w-4 h-4"></i>设置已保存
+      </div>
+    </main>
+    <!-- @main-content:end -->
+  </div>
+
+  <script>
+    $(function() {
+
+      // === 添加规则表单交互 ===
+      // 点击"添加规则"按钮展开表单
+      $('#btn-add-rule').on('click', function() {
+        $('#form-add-rule').removeClass('hidden');
+        $('#input-keyword').focus();
+      });
+
+      // 取消添加规则
+      $('#btn-cancel-rule').on('click', function() {
+        $('#form-add-rule').addClass('hidden');
+        $('#input-keyword').val('');
+        $('#select-match-mode').val('exact');
+        $('#input-reply').val('');
+      });
+
+      // 保存新规则
+      // 后续应实现：1. 校验关键词和回复内容不为空
+      // 2. 校验关键词是否与已有规则重复
+      // 3. 将新规则追加到规则列表 DOM 中
+      // 4. 清空表单并隐藏
+      $('#btn-save-rule').on('click', function() {
+        var keyword = $('#input-keyword').val().trim();
+        var matchMode = $('#select-match-mode').val();
+        var reply = $('#input-reply').val().trim();
+
+        if (!keyword || !reply) {
+          console.log('保存规则：关键词和回复内容不能为空');
+          return;
+        }
+
+        console.log('保存规则：', { keyword: keyword, matchMode: matchMode, reply: reply });
+        // 原型阶段：清空表单并隐藏
+        $('#input-keyword').val('');
+        $('#select-match-mode').val('exact');
+        $('#input-reply').val('');
+        $('#form-add-rule').addClass('hidden');
+      });
+
+      // === 规则列表交互 ===
+      // 切换规则启用/禁用状态
+      $('#rule-list').on('change', '.toggle-switch', function() {
+        var ruleId = $(this).data('rule-id');
+        var isEnabled = $(this).is(':checked');
+        console.log('规则 ' + ruleId + ' 已' + (isEnabled ? '启用' : '禁用'));
+      });
+
+      // 编辑规则
+      // 后续应实现内联编辑：
+      // 1. 将当前行的关键词替换为 input 输入框，匹配模式替换为 select，回复内容替换为 textarea
+      // 2. 自动聚焦关键词输入框并全选
+      // 3. 操作栏按钮变为"保存"和"取消"
+      // 4. 按 Enter 或点击保存时更新当前行数据
+      // 5. 按 ESC 或点击取消时恢复原始内容
+      $('#rule-list').on('click', '.btn-edit-rule', function() {
+        var ruleId = $(this).data('rule-id');
+        console.log('编辑规则：', ruleId);
+      });
+
+      // 删除规则
+      // 后续应实现：1. 弹出确认对话框
+      // 2. 确认后从 DOM 中移除该规则行
+      // 3. 后端调用删除接口
+      $('#rule-list').on('click', '.btn-delete-rule', function() {
+        var ruleId = $(this).data('rule-id');
+        console.log('删除规则：', ruleId);
+        // 原型阶段：直接移除该行
+        $(this).closest('.rule-item').fadeOut(200, function() {
+          $(this).remove();
+        });
+      });
+
+      // === 保存全部设置 ===
+      $('#btn-save-all').on('click', function() {
+        var settings = {
+          welcome: $('#input-welcome').val(),
+          timeout: $('#input-timeout').val(),
+          maxTurns: $('#input-max-turns').val(),
+          satisfaction: $('#toggle-satisfaction').is(':checked'),
+          newChatNotify: $('#toggle-new-chat').is(':checked'),
+          unhandledRemind: $('#toggle-unhandled').is(':checked')
+        };
+        console.log('保存全部设置：', settings);
+
+        // 显示成功提示
+        $('#toast-success').css({ opacity: 1, transform: 'translateY(0)' });
+        setTimeout(function() {
+          $('#toast-success').css({ opacity: 0, transform: 'translateY(-8px)' });
+        }, 2500);
+      });
+
+      // === 重置设置 ===
+      // 后续应实现：1. 将所有表单项恢复为后端存储的默认值
+      // 2. 或弹出确认框后恢复到上次保存的状态
+      $('#btn-reset').on('click', function() {
+        console.log('重置设置：恢复到上次保存的状态');
+        // 原型阶段：恢复为默认值
+        $('#input-welcome').val('您好！欢迎联系 SmartAssist 智能客服，我是您的在线助手，有任何问题都可以随时问我。');
+        $('#input-timeout').val(30);
+        $('#input-max-turns').val(20);
+        $('#toggle-satisfaction').prop('checked', true);
+        $('#toggle-new-chat').prop('checked', true);
+        $('#toggle-unhandled').prop('checked', true);
+      });
+
+    });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

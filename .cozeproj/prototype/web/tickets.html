@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E6EAF2;
+      --color-surface-container-highest:  #DDE2ED;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #DC2626;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #CBD2E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.10);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <div class="flex h-screen">
+  <!-- @nav:start -->
+    <!-- Sidebar -->
+    <aside class="w-60 border-r border-outline-variant/20 flex flex-col bg-surface shrink-0">
+      <!-- Logo -->
+      <div class="h-14 flex items-center gap-2.5 px-5 border-b border-outline-variant/20">
+        <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+          <i data-lucide="bot" class="w-4.5 h-4.5 text-on-primary"></i>
+        </div>
+        <span class="text-base font-semibold text-on-surface">SmartAssist</span>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 px-3">
+        <a href="dashboard.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="bar-chart" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          数据分析
+        </a>
+        <a href="home.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="message-square" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          智能对话
+        </a>
+        <a href="history.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="clock" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          对话历史
+        </a>
+        <a href="customers.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="users" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          客户管理
+        </a>
+        <a href="faq.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="book-open" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识库
+        </a>
+        <a href="knowledge-learning.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="graduation-cap" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          知识自学习
+        </a>
+        <a href="team.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="shield" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          团队管理
+        </a>
+        <a href="tickets.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 bg-primary/10 text-primary" aria-current="page">
+          <i data-lucide="ticket" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          工单管理
+        </a>
+        <a href="settings.html" class="group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+          <i data-lucide="settings" class="w-4.5 h-4.5 transition-transform duration-200 group-hover:scale-110"></i>
+          设置
+        </a>
+      </nav>
+
+      <!-- Footer -->
+      <div class="p-4 border-t border-outline-variant/20">
+        <div class="flex items-center gap-2 text-xs text-on-surface-variant">
+          <div class="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+          系统运行中
+        </div>
+      </div>
+    </aside>
+  <!-- @nav:end -->
+
+  <main class="flex-1 min-w-0 overflow-y-auto bg-background">
+    <!-- @main-content:start -->
+
+    <!-- 页面头部 -->
+    <div class="px-6 pt-6 pb-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-bold text-on-surface">工单管理</h1>
+          <p class="text-sm text-on-surface-variant mt-1">将复杂对话转为工单跟踪，高效协同处理客户问题</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 text-sm text-on-surface-variant">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待处理 3</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">处理中 2</span>
+          </div>
+          <button id="btn-create-ticket" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>创建工单
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主体区域：左侧列表 + 右侧详情 -->
+    <div class="px-6 pb-6 flex gap-5" style="height: calc(100vh - 8.5rem);">
+
+      <!-- 左侧 - 工单列表 -->
+      <div class="flex flex-col" style="width: 60%;">
+
+        <!-- 筛选栏 -->
+        <div class="bg-surface rounded-lg shadow-card p-4 mb-4">
+          <div class="flex items-center gap-3 flex-wrap">
+            <!-- 搜索框 -->
+            <div class="relative flex-1 min-w-[200px]">
+              <i data-lucide="search" class="w-4 h-4 text-on-surface-variant absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input id="input-search" type="text" placeholder="搜索工单编号、标题..." class="w-full bg-surface-container border-none rounded-md pl-9 pr-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+            </div>
+            <!-- 状态筛选 -->
+            <select id="select-status" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+              <option value="all">全部状态</option>
+              <option value="pending">待处理</option>
+              <option value="processing">处理中</option>
+              <option value="waiting">待客户回复</option>
+              <option value="resolved">已解决</option>
+              <option value="closed">已关闭</option>
+            </select>
+            <!-- 优先级筛选 -->
+            <select id="select-priority" class="bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+              <option value="all">全部优先级</option>
+              <option value="urgent">紧急</option>
+              <option value="high">高</option>
+              <option value="medium">中</option>
+              <option value="low">低</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 工单表格 -->
+        <div class="bg-surface rounded-lg shadow-card overflow-hidden flex-1 flex flex-col">
+          <!-- 表头 -->
+          <div class="grid grid-cols-8 px-4 py-3 bg-surface-container text-xs font-semibold text-on-surface-variant uppercase tracking-wide border-b border-outline-variant/30">
+            <span>工单编号</span>
+            <span class="col-span-2">标题</span>
+            <span>分类</span>
+            <span>优先级</span>
+            <span>状态</span>
+            <span>负责人</span>
+            <span>操作</span>
+          </div>
+          <!-- 表体 -->
+          <div id="ticket-list" class="divide-y divide-outline-variant/50 overflow-y-auto flex-1">
+
+            <!-- 列表-工单1 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024001" data-status="pending" data-priority="urgent">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024001</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">客户退款申请未处理超过7天</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">退款</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">紧急</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待处理</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-medium flex items-center justify-center shrink-0">李</div>
+                <span class="text-sm text-on-surface-variant truncate">李明</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单2 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024002" data-status="processing" data-priority="high">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024002</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">物流配送延迟3天未更新</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">物流</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">高</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">处理中</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-success/20 text-success text-[10px] font-medium flex items-center justify-center shrink-0">王</div>
+                <span class="text-sm text-on-surface-variant truncate">王芳</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单3 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024003" data-status="waiting" data-priority="medium">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024003</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">产品使用教程链接失效</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">产品</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">中</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">待客户回复</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-warning/20 text-warning text-[10px] font-medium flex items-center justify-center shrink-0">张</div>
+                <span class="text-sm text-on-surface-variant truncate">张伟</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单4 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024004" data-status="resolved" data-priority="low">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024004</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">账户密码重置请求</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">账户</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">低</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-error/15 text-error text-[10px] font-medium flex items-center justify-center shrink-0">陈</div>
+                <span class="text-sm text-on-surface-variant truncate">陈静</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单5 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024005" data-status="pending" data-priority="high">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024005</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">破损商品退款与补发协商</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">退款</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">高</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待处理</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-medium flex items-center justify-center shrink-0">李</div>
+                <span class="text-sm text-on-surface-variant truncate">李明</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单6 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024006" data-status="processing" data-priority="urgent">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024006</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">VIP客户账户异常登录问题</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">账户</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">紧急</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">处理中</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-success/20 text-success text-[10px] font-medium flex items-center justify-center shrink-0">王</div>
+                <span class="text-sm text-on-surface-variant truncate">王芳</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单7 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024007" data-status="closed" data-priority="medium">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024007</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">快递地址修改未生效</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">物流</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">中</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">已关闭</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-warning/20 text-warning text-[10px] font-medium flex items-center justify-center shrink-0">张</div>
+                <span class="text-sm text-on-surface-variant truncate">张伟</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单8 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024008" data-status="pending" data-priority="medium">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024008</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">产品功能与宣传描述不符</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">产品</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">中</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待处理</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-error/15 text-error text-[10px] font-medium flex items-center justify-center shrink-0">陈</div>
+                <span class="text-sm text-on-surface-variant truncate">陈静</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单9 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024009" data-status="waiting" data-priority="low">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024009</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">会员积分兑换规则咨询</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">账户</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-surface-container-high text-on-surface-variant">低</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-purple-500/15 text-purple-600">待客户回复</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-primary/20 text-primary text-[10px] font-medium flex items-center justify-center shrink-0">李</div>
+                <span class="text-sm text-on-surface-variant truncate">李明</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+            <!-- 列表-工单10 -->
+            <div class="ticket-row grid grid-cols-8 px-4 py-3 hover:bg-primary/5 cursor-pointer transition-colors" data-id="TK-2024010" data-status="resolved" data-priority="high">
+              <span class="text-sm font-medium text-primary hover:underline">TK-2024010</span>
+              <span class="text-sm font-medium text-on-surface col-span-2 truncate">批量订单物流信息同步异常</span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">物流</span></span>
+              <span><span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">高</span></span>
+              <span><span class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-success/15 text-success">已解决</span></span>
+              <span class="flex items-center gap-1.5">
+                <div class="w-5 h-5 rounded-full bg-success/20 text-success text-[10px] font-medium flex items-center justify-center shrink-0">王</div>
+                <span class="text-sm text-on-surface-variant truncate">王芳</span>
+              </span>
+              <span class="flex items-center gap-2">
+                <button class="btn-view-ticket text-primary text-xs font-medium hover:underline">查看</button>
+                <button class="btn-close-ticket text-on-surface-variant text-xs hover:text-error transition-colors">关闭</button>
+              </span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧 - 工单详情面板 -->
+      <div id="detail-panel" class="hidden" style="width: 40%;">
+        <div class="bg-surface rounded-lg shadow-card h-full flex flex-col overflow-hidden">
+
+          <!-- 详情头部 -->
+          <div class="px-5 pt-5 pb-4 border-b border-outline-variant/30">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span id="detail-ticket-id" class="text-sm font-semibold text-primary">TK-2024001</span>
+                <span id="detail-status-badge" class="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-warning/15 text-warning">待处理</span>
+                <span id="detail-priority-badge" class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-xs font-medium bg-error/15 text-error">紧急</span>
+              </div>
+              <button id="btn-close-detail" class="p-1 rounded hover:bg-surface-container transition-colors">
+                <i data-lucide="x" class="w-4 h-4 text-on-surface-variant"></i>
+              </button>
+            </div>
+            <h2 id="detail-title" class="text-lg font-bold text-on-surface">客户退款申请未处理超过7天</h2>
+          </div>
+
+          <!-- 基本信息 -->
+          <div class="px-5 py-4 border-b border-outline-variant/30">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <span class="text-xs text-on-surface-variant">分类</span>
+                <p id="detail-category" class="text-sm font-medium text-on-surface mt-0.5">退款</p>
+              </div>
+              <div>
+                <span class="text-xs text-on-surface-variant">创建人</span>
+                <p id="detail-creator" class="text-sm font-medium text-on-surface mt-0.5">系统自动</p>
+              </div>
+              <div>
+                <span class="text-xs text-on-surface-variant">负责人</span>
+                <p id="detail-assignee" class="text-sm font-medium text-on-surface mt-0.5 flex items-center gap-1.5">
+                  <span class="w-4 h-4 rounded-full bg-primary/20 text-primary text-[8px] font-medium flex items-center justify-center">李</span>李明
+                </p>
+              </div>
+              <div>
+                <span class="text-xs text-on-surface-variant">关联对话</span>
+                <p class="text-sm font-medium mt-0.5"><a id="detail-conversation-link" href="history.html" class="text-primary hover:underline">CONV-88291</a></p>
+              </div>
+              <div>
+                <span class="text-xs text-on-surface-variant">创建时间</span>
+                <p id="detail-create-time" class="text-sm font-medium text-on-surface mt-0.5">2024-01-15 09:23</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 描述区域 -->
+          <div class="px-5 py-4 border-b border-outline-variant/30">
+            <span class="text-xs text-on-surface-variant">描述</span>
+            <p id="detail-description" class="text-sm text-on-surface mt-1 leading-relaxed">客户张先生于1月8日提交退款申请，订单号 ORD-20240108-0032，金额 ¥299.00。至今已超过7个工作日未收到退款，客户多次催促，情绪较为激动。需尽快核实退款进度并回复客户。</p>
+          </div>
+
+          <!-- 状态操作按钮组 -->
+          <div id="detail-actions" class="px-5 py-3 border-b border-outline-variant/30 flex items-center gap-2 flex-wrap">
+            <button id="btn-start-process" class="bg-primary text-on-primary px-3 py-1.5 rounded-md text-xs font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-1.5">
+              <i data-lucide="play" class="w-3 h-3"></i>开始处理
+            </button>
+            <button id="btn-wait-reply" class="bg-surface-container text-on-surface px-3 py-1.5 rounded-md text-xs font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all inline-flex items-center gap-1.5">
+              <i data-lucide="message-circle" class="w-3 h-3"></i>待客户回复
+            </button>
+            <button id="btn-resolve" class="bg-success/15 text-success px-3 py-1.5 rounded-md text-xs font-medium hover:bg-success/25 active:scale-[0.98] transition-all inline-flex items-center gap-1.5">
+              <i data-lucide="check-circle" class="w-3 h-3"></i>已解决
+            </button>
+            <button id="btn-close-ticket-detail" class="bg-surface-container text-on-surface-variant px-3 py-1.5 rounded-md text-xs font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all inline-flex items-center gap-1.5">
+              <i data-lucide="archive" class="w-3 h-3"></i>已关闭
+            </button>
+          </div>
+
+          <!-- 评论/备注区 -->
+          <div class="px-5 py-4 flex-1 overflow-y-auto">
+            <span class="text-xs text-on-surface-variant font-semibold uppercase tracking-wide">评论与备注</span>
+            <div id="comment-list" class="mt-3 space-y-4">
+
+              <!-- 评论1 - 对外回复 -->
+              <div class="comment-item flex gap-3">
+                <div class="w-7 h-7 rounded-full bg-success/20 text-success text-[10px] font-medium flex items-center justify-center shrink-0 mt-0.5">王</div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-on-surface">王芳</span>
+                    <span class="text-xs text-on-surface-variant">2024-01-15 10:45</span>
+                  </div>
+                  <p class="text-sm text-on-surface mt-1 leading-relaxed">已联系财务部门核实，退款流程已进入最后审核阶段，预计1-2个工作日内到账。</p>
+                </div>
+              </div>
+
+              <!-- 评论2 - 内部备注 -->
+              <div class="comment-item flex gap-3">
+                <div class="w-7 h-7 rounded-full bg-primary/20 text-primary text-[10px] font-medium flex items-center justify-center shrink-0 mt-0.5">李</div>
+                <div class="flex-1 min-w-0 border-l-2 border-warning pl-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-on-surface">李明</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-warning/15 text-warning">内部备注</span>
+                    <span class="text-xs text-on-surface-variant">2024-01-15 14:20</span>
+                  </div>
+                  <p class="text-sm text-on-surface mt-1 leading-relaxed">该客户为VIP会员，建议优先处理并额外赠送50元优惠券作为补偿，需主管审批。</p>
+                </div>
+              </div>
+
+              <!-- 评论3 - 对外回复 -->
+              <div class="comment-item flex gap-3">
+                <div class="w-7 h-7 rounded-full bg-success/20 text-success text-[10px] font-medium flex items-center justify-center shrink-0 mt-0.5">王</div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-on-surface">王芳</span>
+                    <span class="text-xs text-on-surface-variant">2024-01-16 09:10</span>
+                  </div>
+                  <p class="text-sm text-on-surface mt-1 leading-relaxed">已通知客户退款进展，客户表示理解，同意继续等待。已发送邮件确认。</p>
+                </div>
+              </div>
+
+              <!-- 评论4 - 内部备注 -->
+              <div class="comment-item flex gap-3">
+                <div class="w-7 h-7 rounded-full bg-error/15 text-error text-[10px] font-medium flex items-center justify-center shrink-0 mt-0.5">陈</div>
+                <div class="flex-1 min-w-0 border-l-2 border-warning pl-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-on-surface">陈静</span>
+                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium bg-warning/15 text-warning">内部备注</span>
+                    <span class="text-xs text-on-surface-variant">2024-01-16 11:30</span>
+                  </div>
+                  <p class="text-sm text-on-surface mt-1 leading-relaxed">主管已审批优惠券补偿方案，待退款完成后一并发放。需要在系统中记录补偿操作。</p>
+                </div>
+              </div>
+
+              <!-- 评论5 - 对外回复 -->
+              <div class="comment-item flex gap-3">
+                <div class="w-7 h-7 rounded-full bg-primary/20 text-primary text-[10px] font-medium flex items-center justify-center shrink-0 mt-0.5">李</div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-on-surface">李明</span>
+                    <span class="text-xs text-on-surface-variant">2024-01-16 15:00</span>
+                  </div>
+                  <p class="text-sm text-on-surface mt-1 leading-relaxed">退款已于今日到账，50元优惠券已同步发放至客户账户，客户确认收到。</p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 评论输入区 -->
+          <div class="px-5 py-4 border-t border-outline-variant/30 bg-surface-container/30">
+            <div class="flex items-center gap-2 mb-2">
+              <label class="text-xs text-on-surface-variant">内部备注</label>
+              <button id="toggle-internal" class="relative w-8 h-4 rounded-full bg-surface-container-high transition-colors" role="switch" aria-checked="false">
+                <span class="absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-on-surface-variant transition-transform"></span>
+              </button>
+            </div>
+            <div class="flex gap-2">
+              <input id="input-comment" type="text" placeholder="输入评论或备注..." class="flex-1 bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+              <button id="btn-submit-comment" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all shrink-0">提交</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 右侧空状态（无选中工单时显示） -->
+      <div id="empty-panel" style="width: 40%;">
+        <div class="bg-surface rounded-lg shadow-card h-full flex flex-col items-center justify-center text-center">
+          <div class="w-16 h-16 rounded-2xl bg-surface-container flex items-center justify-center mb-4">
+            <i data-lucide="ticket" class="w-8 h-8 text-on-surface-variant/40"></i>
+          </div>
+          <p class="text-sm font-medium text-on-surface-variant">点击左侧工单查看详情</p>
+          <p class="text-xs text-on-surface-variant/60 mt-1">选择一条工单以查看完整信息和操作</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 创建工单弹窗 -->
+    <div id="modal-create-ticket" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 hidden">
+      <div class="bg-surface rounded-xl shadow-dialog max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <!-- 弹窗头部 -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-outline-variant/30">
+          <h3 class="text-base font-bold text-on-surface">创建工单</h3>
+          <button id="btn-close-modal" class="p-1 rounded hover:bg-surface-container transition-colors">
+            <i data-lucide="x" class="w-4 h-4 text-on-surface-variant"></i>
+          </button>
+        </div>
+        <!-- 弹窗内容 -->
+        <div class="px-6 py-5 space-y-4">
+          <!-- 标题 -->
+          <div>
+            <label class="text-sm font-medium text-on-surface mb-1.5 block">标题 <span class="text-error">*</span></label>
+            <input id="input-ticket-title" type="text" placeholder="输入工单标题" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+          </div>
+          <!-- 分类 + 优先级 -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">分类 <span class="text-error">*</span></label>
+              <select id="input-ticket-category" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+                <option value="">请选择分类</option>
+                <option value="refund">退款</option>
+                <option value="logistics">物流</option>
+                <option value="product">产品</option>
+                <option value="account">账户</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-on-surface mb-1.5 block">优先级 <span class="text-error">*</span></label>
+              <select id="input-ticket-priority" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+                <option value="">请选择优先级</option>
+                <option value="urgent">紧急</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+          </div>
+          <!-- 关联对话ID -->
+          <div>
+            <label class="text-sm font-medium text-on-surface mb-1.5 block">关联对话ID <span class="text-on-surface-variant text-xs font-normal">(可选)</span></label>
+            <input id="input-ticket-conversation" type="text" placeholder="如 CONV-88291" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" />
+          </div>
+          <!-- 负责人 -->
+          <div>
+            <label class="text-sm font-medium text-on-surface mb-1.5 block">负责人 <span class="text-error">*</span></label>
+            <select id="input-ticket-assignee" class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors">
+              <option value="">请选择负责人</option>
+              <option value="liming">李明</option>
+              <option value="wangfang">王芳</option>
+              <option value="zhangwei">张伟</option>
+              <option value="chenjing">陈静</option>
+            </select>
+          </div>
+          <!-- 描述 -->
+          <div>
+            <label class="text-sm font-medium text-on-surface mb-1.5 block">描述 <span class="text-error">*</span></label>
+            <textarea id="input-ticket-desc" rows="4" placeholder="详细描述工单内容..." class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none"></textarea>
+          </div>
+        </div>
+        <!-- 弹窗底部 -->
+        <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-outline-variant/30">
+          <button id="btn-cancel-create" class="bg-surface-container text-on-surface px-4 py-2 rounded-md text-sm font-medium hover:bg-surface-container-high active:scale-[0.98] transition-all">取消</button>
+          <button id="btn-save-ticket" class="bg-primary text-on-primary px-4 py-2 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- @main-content:end -->
+  </main>
+  </div>
+
+  <script>
+    $(function () {
+
+      // === 点击工单行 - 显示右侧详情面板 ===
+      $('#ticket-list').on('click', '.ticket-row', function (e) {
+        // 如果点击的是操作按钮，不触发详情展示
+        if ($(e.target).hasClass('btn-view-ticket') || $(e.target).hasClass('btn-close-ticket')) return;
+
+        var $row = $(this);
+        var ticketId = $row.data('id');
+
+        // 高亮选中行
+        $('.ticket-row').removeClass('bg-primary/5');
+        $row.addClass('bg-primary/5');
+
+        // 显示详情面板，隐藏空状态
+        $('#empty-panel').addClass('hidden');
+        $('#detail-panel').removeClass('hidden');
+
+        // 更新详情面板中的工单编号
+        $('#detail-ticket-id').text(ticketId);
+
+        console.log('查看工单详情:', ticketId);
+      });
+
+      // === 查看按钮 ===
+      $('#ticket-list').on('click', '.btn-view-ticket', function (e) {
+        e.stopPropagation();
+        var $row = $(this).closest('.ticket-row');
+        $row.trigger('click');
+      });
+
+      // === 关闭工单按钮（列表中） ===
+      $('#ticket-list').on('click', '.btn-close-ticket', function (e) {
+        e.stopPropagation();
+        var $row = $(this).closest('.ticket-row');
+        var ticketId = $row.data('id');
+        // 关闭工单 - 应实现：
+        // 1. 弹出确认对话框，提示"确认关闭工单 XXX？"
+        // 2. 确认后调用后端接口关闭工单
+        // 3. 更新该行的状态Badge为"已关闭"（灰色）
+        // 4. 更新 data-status 为 "closed"
+        console.log('关闭工单:', ticketId);
+      });
+
+      // === 关闭详情面板 ===
+      $('#btn-close-detail').on('click', function () {
+        $('#detail-panel').addClass('hidden');
+        $('#empty-panel').removeClass('hidden');
+        $('.ticket-row').removeClass('bg-primary/5');
+      });
+
+      // === 状态操作按钮 - 开始处理 ===
+      $('#btn-start-process').on('click', function () {
+        // 开始处理 - 应实现：
+        // 1. 调用后端接口更新工单状态为"处理中"
+        // 2. 更新详情面板状态Badge为"处理中"（蓝色）
+        // 3. 更新左侧列表对应行的状态Badge
+        // 4. 更新可用操作按钮组（隐藏"开始处理"，显示其他按钮）
+        console.log('开始处理工单');
+      });
+
+      // === 状态操作按钮 - 待客户回复 ===
+      $('#btn-wait-reply').on('click', function () {
+        // 待客户回复 - 应实现：
+        // 1. 调用后端接口更新工单状态为"待客户回复"
+        // 2. 更新详情面板状态Badge为"待客户回复"（紫色）
+        // 3. 更新左侧列表对应行的状态Badge
+        // 4. 更新可用操作按钮组
+        console.log('标记待客户回复');
+      });
+
+      // === 状态操作按钮 - 已解决 ===
+      $('#btn-resolve').on('click', function () {
+        // 已解决 - 应实现：
+        // 1. 调用后端接口更新工单状态为"已解决"
+        // 2. 更新详情面板状态Badge为"已解决"（绿色）
+        // 3. 更新左侧列表对应行的状态Badge
+        // 4. 更新可用操作按钮组（仅显示"已关闭"按钮）
+        console.log('标记工单已解决');
+      });
+
+      // === 状态操作按钮 - 已关闭 ===
+      $('#btn-close-ticket-detail').on('click', function () {
+        // 已关闭 - 应实现：
+        // 1. 弹出确认对话框
+        // 2. 确认后调用后端接口更新工单状态为"已关闭"
+        // 3. 更新详情面板状态Badge为"已关闭"（灰色）
+        // 4. 更新左侧列表对应行的状态Badge
+        // 5. 更新可用操作按钮组（全部禁用）
+        console.log('关闭工单');
+      });
+
+      // === 内部备注 toggle 开关 ===
+      var isInternal = false;
+      $('#toggle-internal').on('click', function () {
+        isInternal = !isInternal;
+        $(this).attr('aria-checked', isInternal);
+        if (isInternal) {
+          $(this).removeClass('bg-surface-container-high').addClass('bg-primary');
+          $(this).find('span').removeClass('bg-on-surface-variant').addClass('bg-on-primary').css('transform', 'translateX(16px)');
+        } else {
+          $(this).removeClass('bg-primary').addClass('bg-surface-container-high');
+          $(this).find('span').removeClass('bg-on-primary').addClass('bg-on-surface-variant').css('transform', 'translateX(0)');
+        }
+      });
+
+      // === 提交评论 ===
+      $('#btn-submit-comment').on('click', function () {
+        var content = $.trim($('#input-comment').val());
+        if (!content) return;
+        // 提交评论 - 应实现：
+        // 1. 调用后端接口保存评论/备注
+        // 2. 根据 isInternal 状态决定是否标记为内部备注
+        // 3. 在评论列表中追加新评论节点
+        // 4. 清空输入框
+        console.log('提交评论:', content, isInternal ? '(内部备注)' : '(对外回复)');
+        $('#input-comment').val('');
+      });
+
+      // === 创建工单弹窗 - 打开 ===
+      $('#btn-create-ticket').on('click', function () {
+        $('#modal-create-ticket').removeClass('hidden');
+      });
+
+      // === 创建工单弹窗 - 关闭 ===
+      $('#btn-close-modal').on('click', function () {
+        $('#modal-create-ticket').addClass('hidden');
+      });
+      $('#btn-cancel-create').on('click', function () {
+        $('#modal-create-ticket').addClass('hidden');
+      });
+
+      // === 点击弹窗遮罩层关闭 ===
+      $('#modal-create-ticket').on('click', function (e) {
+        if ($(e.target).is('#modal-create-ticket')) {
+          $('#modal-create-ticket').addClass('hidden');
+        }
+      });
+
+      // === 保存工单 ===
+      $('#btn-save-ticket').on('click', function () {
+        // 保存工单 - 应实现：
+        // 1. 校验必填字段（标题、分类、优先级、负责人、描述）
+        // 2. 调用后端接口创建工单
+        // 3. 创建成功后在左侧列表顶部追加新工单行
+        // 4. 关闭弹窗并重置表单
+        var title = $.trim($('#input-ticket-title').val());
+        var category = $('#input-ticket-category').val();
+        var priority = $('#input-ticket-priority').val();
+        var assignee = $('#input-ticket-assignee').val();
+        var desc = $.trim($('#input-ticket-desc').val());
+
+        if (!title || !category || !priority || !assignee || !desc) {
+          console.log('请填写所有必填字段');
+          return;
+        }
+
+        console.log('保存工单:', { title: title, category: category, priority: priority, assignee: assignee, desc: desc });
+        $('#modal-create-ticket').addClass('hidden');
+        // 重置表单
+        $('#input-ticket-title').val('');
+        $('#input-ticket-category').val('');
+        $('#input-ticket-priority').val('');
+        $('#input-ticket-conversation').val('');
+        $('#input-ticket-assignee').val('');
+        $('#input-ticket-desc').val('');
+      });
+
+      // === 搜索筛选 ===
+      $('#input-search').on('input', function () {
+        var keyword = $.trim($(this).val()).toLowerCase();
+        // 搜索筛选 - 应实现：
+        // 1. 遍历所有 .ticket-row
+        // 2. 匹配工单编号或标题中是否包含关键词
+        // 3. 隐藏不匹配的行，显示匹配的行
+        $('.ticket-row').each(function () {
+          var id = ($(this).data('id') || '').toLowerCase();
+          var title = $(this).find('.col-span-2').text().toLowerCase();
+          if (!keyword || id.indexOf(keyword) > -1 || title.indexOf(keyword) > -1) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      });
+
+      $('#select-status').on('change', function () {
+        var status = $(this).val();
+        // 状态筛选 - 应实现：
+        // 1. 遍历所有 .ticket-row
+        // 2. 匹配 data-status 属性
+        // 3. "all" 显示全部，否则仅显示匹配的行
+        $('.ticket-row').each(function () {
+          var rowStatus = $(this).data('status');
+          if (status === 'all' || rowStatus === status) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      });
+
+      $('#select-priority').on('change', function () {
+        var priority = $(this).val();
+        // 优先级筛选 - 应实现：
+        // 1. 遍历所有 .ticket-row
+        // 2. 匹配 data-priority 属性
+        // 3. "all" 显示全部，否则仅显示匹配的行
+        $('.ticket-row').each(function () {
+          var rowPriority = $(this).data('priority');
+          if (priority === 'all' || rowPriority === priority) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      });
+
+    });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

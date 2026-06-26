@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link href="https://lf-code-agent.coze.cn/obj/x-ai-cn/fonts/google/google-all-fonts.css" rel="stylesheet"/>
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E3E8F1;
+      --color-surface-container-highest:  #D9DEE9;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #ef4444;
+      --color-warning:  #f59e0b;
+      /* === 边框 === */
+      --color-outline:          #D0D5E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.25rem;
+      --radius-md:   0.375rem;
+      --radius-lg:   0.5rem;
+      --radius-xl:   0.75rem;
+      --radius-2xl:  1rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.1);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", "IBM Plex Sans", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <!-- @nav:start -->
+  <header class="bg-surface sticky top-0 z-40 h-14 flex items-center justify-between px-6 border-b border-outline-variant/30">
+    <div class="flex items-center gap-2.5">
+      <i data-lucide="headphones" class="text-primary w-5 h-5"></i>
+      <span class="font-bold text-base text-on-surface">SmartAssist</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-xs text-on-surface-variant">小初</span>
+      <div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">初</div>
+    </div>
+  </header>
+
+  <div class="flex" style="height: calc(100vh - 3.5rem)">
+    <aside class="w-52 shrink-0 bg-surface-container-lowest overflow-y-auto border-r border-outline-variant/20">
+      <div class="p-3 space-y-0.5">
+        <a href="home-image.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm" aria-current="page">
+          <i data-lucide="image" class="w-4 h-4"></i>图片理解
+        </a>
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="message-square" class="w-4 h-4"></i>智能对话
+        </a>
+        <a href="history.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="clock" class="w-4 h-4"></i>对话历史
+        </a>
+        <a href="faq.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="book-open" class="w-4 h-4"></i>知识库
+        </a>
+        <a href="knowledge-learning.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="graduation-cap" class="w-4 h-4"></i>知识自学习
+        </a>
+        <a href="proactive-push.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="send" class="w-4 h-4"></i>主动推送
+        </a>
+        <a href="settings.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="settings" class="w-4 h-4"></i>系统设置
+        </a>
+      </div>
+    </aside>
+  <!-- @nav:end -->
+
+    <!-- @main-content:start -->
+    <main class="flex-1 min-w-0 overflow-hidden bg-background flex">
+
+      <!-- 左侧：对话列表 -->
+      <div class="w-72 shrink-0 bg-surface-container-lowest border-r border-outline-variant/20 flex flex-col">
+        <!-- 对话列表头部 -->
+        <div class="px-4 py-3 border-b border-outline-variant/20 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-on-surface">对话列表</h2>
+          <button id="btn-new-chat" class="w-7 h-7 rounded-md bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <!-- 搜索框 -->
+        <div class="px-3 py-2">
+          <div class="relative">
+            <i data-lucide="search" class="w-3.5 h-3.5 text-on-surface-variant/50 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+            <input id="input-search" class="w-full bg-surface-container border-none rounded-md pl-8 pr-3 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors" placeholder="搜索对话..." />
+          </div>
+        </div>
+        <!-- 对话列表 -->
+        <div id="chat-list" class="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
+
+          <!-- 列表-对话1：当前激活的图片理解对话 -->
+          <div class="chat-item bg-primary/8 rounded-lg px-3 py-2.5 cursor-pointer border border-primary/10" data-chat-id="1">
+            <div class="flex items-start gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="package-x" class="w-4 h-4"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-on-surface truncate">订单 #20240115 售后</span>
+                  <span class="text-[10px] text-on-surface-variant shrink-0 ml-2">10:32</span>
+                </div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <img src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=80&h=80&fit=crop" alt="破损商品照片缩略图" data-category="商业科技" class="w-5 h-5 rounded object-cover shrink-0" />
+                  <span class="text-xs text-on-surface-variant truncate">商品破损照片已发送</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 列表-对话2：带图片的对话 -->
+          <div class="chat-item rounded-lg px-3 py-2.5 cursor-pointer hover:bg-surface-container/80 transition-colors" data-chat-id="2">
+            <div class="flex items-start gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-warning/10 text-warning flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="shirt" class="w-4 h-4"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-on-surface truncate">订单 #20240108 换货</span>
+                  <span class="text-[10px] text-on-surface-variant shrink-0 ml-2">昨天</span>
+                </div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <img src="https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=80&h=80&fit=crop" alt="衣服尺码对比照片" data-category="服饰时尚" class="w-5 h-5 rounded object-cover shrink-0" />
+                  <span class="text-xs text-on-surface-variant truncate">尺码对比图已发送</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 列表-对话3：纯文字对话 -->
+          <div class="chat-item rounded-lg px-3 py-2.5 cursor-pointer hover:bg-surface-container/80 transition-colors" data-chat-id="3">
+            <div class="flex items-start gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="truck" class="w-4 h-4"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-on-surface truncate">物流查询咨询</span>
+                  <span class="text-[10px] text-on-surface-variant shrink-0 ml-2">1月12日</span>
+                </div>
+                <p class="text-xs text-on-surface-variant truncate mt-1">您的快递预计明天送达</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 列表-对话4：纯文字对话 -->
+          <div class="chat-item rounded-lg px-3 py-2.5 cursor-pointer hover:bg-surface-container/80 transition-colors" data-chat-id="4">
+            <div class="flex items-start gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-on-surface truncate">退货流程咨询</span>
+                  <span class="text-[10px] text-on-surface-variant shrink-0 ml-2">1月10日</span>
+                </div>
+                <p class="text-xs text-on-surface-variant truncate mt-1">退货申请已提交，请等待审核</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 右侧：聊天窗口 -->
+      <div class="flex-1 min-w-0 flex flex-col bg-background">
+
+        <!-- 聊天窗口头部 -->
+        <div class="bg-surface px-5 py-3 border-b border-outline-variant/20 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center">
+              <i data-lucide="package-x" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-on-surface">订单 #20240115 售后</h3>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+                <span class="text-[10px] text-on-surface-variant">AI 在线 · 图片理解模式</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-chat-info" class="w-7 h-7 rounded-md text-on-surface-variant hover:bg-surface-container flex items-center justify-center transition-colors" title="对话详情">
+              <i data-lucide="info" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-chat-more" class="w-7 h-7 rounded-md text-on-surface-variant hover:bg-surface-container flex items-center justify-center transition-colors" title="更多操作">
+              <i data-lucide="more-vertical" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 聊天消息区域 -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          <!-- 系统提示 -->
+          <div class="flex justify-center">
+            <span class="text-[10px] text-on-surface-variant/60 bg-surface-container/60 px-3 py-1 rounded-full">今天 10:28</span>
+          </div>
+
+          <!-- 用户消息1：纯文字 -->
+          <div class="flex justify-end">
+            <div class="max-w-[70%]">
+              <div class="bg-primary text-on-primary rounded-2xl rounded-br-md px-4 py-2.5">
+                <p class="text-sm leading-relaxed">我收到的商品有破损</p>
+              </div>
+              <div class="text-[10px] text-on-surface-variant/60 mt-1 text-right">10:28</div>
+            </div>
+          </div>
+
+          <!-- AI回复1 -->
+          <div class="flex justify-start">
+            <div class="max-w-[70%]">
+              <div class="flex items-start gap-2.5">
+                <div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+                </div>
+                <div>
+                  <div class="bg-surface rounded-2xl rounded-bl-md px-4 py-2.5 shadow-card">
+                    <p class="text-sm leading-relaxed text-on-surface">非常抱歉给您带来不好的购物体验！请您拍摄商品破损部位的照片，我可以帮您快速识别问题类型并提供处理方案。</p>
+                  </div>
+                  <div class="text-[10px] text-on-surface-variant/60 mt-1">10:28</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 用户消息2：发送图片 -->
+          <div class="flex justify-end">
+            <div class="max-w-[70%]">
+              <div class="bg-primary text-on-primary rounded-2xl rounded-br-md px-3 py-2.5">
+                <img src="https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=300&fit=crop" alt="商品破损照片，外包装严重变形" data-category="商业科技" class="rounded-lg max-w-[280px] max-h-[200px] object-cover" />
+                <p class="text-sm leading-relaxed mt-2">这是收到的商品照片，外包装已经完全变形了</p>
+              </div>
+              <div class="text-[10px] text-on-surface-variant/60 mt-1 text-right">10:30</div>
+            </div>
+          </div>
+
+          <!-- AI回复2：图片分析中 -->
+          <div class="flex justify-start" id="msg-analyzing">
+            <div class="max-w-[70%]">
+              <div class="flex items-start gap-2.5">
+                <div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+                </div>
+                <div>
+                  <div class="bg-surface rounded-2xl rounded-bl-md px-4 py-3 shadow-card">
+                    <div class="flex items-center gap-2 text-primary">
+                      <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <span class="text-sm">图片分析中...</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI回复3：图片识别完成 - 包含标签+分析+建议 -->
+          <div class="flex justify-start" id="msg-analysis-result">
+            <div class="max-w-[75%]">
+              <div class="flex items-start gap-2.5">
+                <div class="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="bg-surface rounded-2xl rounded-bl-md px-4 py-3.5 shadow-card space-y-3">
+
+                    <!-- 识别标签区域 -->
+                    <div>
+                      <div class="flex items-center gap-1.5 mb-2">
+                        <i data-lucide="scan-eye" class="w-3.5 h-3.5 text-primary"></i>
+                        <span class="text-xs font-semibold text-primary">智能识别结果</span>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-error/12 text-error">商品瑕疵</span>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-warning/12 text-warning">快递破损</span>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-primary/12 text-primary">包装损坏</span>
+                      </div>
+                    </div>
+
+                    <!-- 分隔线 -->
+                    <div class="border-t border-outline-variant/20"></div>
+
+                    <!-- 问题分析描述 -->
+                    <div>
+                      <div class="flex items-center gap-1.5 mb-1.5">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5 text-on-surface-variant"></i>
+                        <span class="text-xs font-semibold text-on-surface-variant">问题分析</span>
+                      </div>
+                      <div class="text-sm leading-relaxed text-on-surface space-y-1.5">
+                        <p>根据图片分析，您的商品存在以下问题：</p>
+                        <div class="bg-surface-container/60 rounded-lg px-3 py-2 space-y-1">
+                          <p>1. <span class="font-medium">外包装严重变形</span>——纸箱多处凹陷，封口胶带断裂</p>
+                          <p>2. <span class="font-medium">内部商品受损</span>——商品外壳有明显挤压痕迹和裂纹</p>
+                          <p>3. <span class="font-medium">物流运输原因</span>——判断为运输途中遭到重压或摔落</p>
+                        </div>
+                        <p class="text-on-surface-variant text-xs">综合判定：责任方为物流公司，属于运输损坏，建议优先选择补发或赔付方案。</p>
+                      </div>
+                    </div>
+
+                    <!-- 分隔线 -->
+                    <div class="border-t border-outline-variant/20"></div>
+
+                    <!-- 建议处理策略 -->
+                    <div>
+                      <div class="flex items-center gap-1.5 mb-2">
+                        <i data-lucide="lightbulb" class="w-3.5 h-3.5 text-warning"></i>
+                        <span class="text-xs font-semibold text-on-surface-variant">建议处理策略</span>
+                      </div>
+                      <div class="flex gap-2">
+                        <button id="btn-refund" class="flex-1 flex items-center justify-center gap-1.5 bg-error/8 text-error px-3 py-2 rounded-lg text-xs font-medium hover:bg-error/15 active:scale-[0.98] transition-all border border-error/10">
+                          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>退货退款
+                        </button>
+                        <button id="btn-resend" class="flex-1 flex items-center justify-center gap-1.5 bg-primary/8 text-primary px-3 py-2 rounded-lg text-xs font-medium hover:bg-primary/15 active:scale-[0.98] transition-all border border-primary/10">
+                          <i data-lucide="package" class="w-3.5 h-3.5"></i>免费补发
+                        </button>
+                        <button id="btn-compensate" class="flex-1 flex items-center justify-center gap-1.5 bg-warning/8 text-warning px-3 py-2 rounded-lg text-xs font-medium hover:bg-warning/15 active:scale-[0.98] transition-all border border-warning/10">
+                          <i data-lucide="coins" class="w-3.5 h-3.5"></i>差价赔付
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                  <div class="text-[10px] text-on-surface-variant/60 mt-1">10:32</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="bg-surface border-t border-outline-variant/20 px-5 py-3 shrink-0">
+          <div class="flex items-end gap-2">
+            <!-- 图片上传按钮 -->
+            <input type="file" id="input-file-upload" accept="image/*" class="hidden" />
+            <button id="btn-upload-image" class="w-9 h-9 rounded-lg bg-surface-container text-on-surface-variant flex items-center justify-center hover:bg-surface-container-high hover:text-on-surface transition-colors shrink-0" title="上传图片">
+              <i data-lucide="paperclip" class="w-4 h-4"></i>
+            </button>
+            <!-- 输入框 -->
+            <div class="flex-1 relative">
+              <textarea id="input-message" rows="1" class="w-full bg-surface-container border-none rounded-xl px-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none" placeholder="输入消息，或上传图片进行智能识别..."></textarea>
+            </div>
+            <!-- 发送按钮 -->
+            <button id="btn-send" class="w-9 h-9 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:opacity-90 active:scale-[0.98] transition-all shrink-0" title="发送">
+              <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <!-- 图片预览区（上传图片后显示） -->
+          <div id="image-preview-area" class="hidden mt-2 flex items-center gap-2 bg-surface-container/60 rounded-lg px-3 py-2">
+            <img id="preview-thumbnail" src="" alt="待发送图片预览" data-category="其他" class="w-12 h-12 rounded object-cover" />
+            <div class="flex-1 min-w-0">
+              <p id="preview-filename" class="text-xs text-on-surface truncate">image.jpg</p>
+              <p class="text-[10px] text-on-surface-variant">图片将随消息一起发送</p>
+            </div>
+            <button id="btn-remove-preview" class="w-5 h-5 rounded-full bg-on-surface-variant/20 text-on-surface-variant flex items-center justify-center hover:bg-on-surface-variant/30 transition-colors shrink-0">
+              <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+    <!-- @main-content:end -->
+  </div>
+
+  <script>lucide.createIcons();</script>
+
+  <script>
+  $(function() {
+
+    // ===== 图片上传交互 =====
+    $('#btn-upload-image').on('click', function() {
+      $('#input-file-upload').trigger('click');
+    });
+
+    $('#input-file-upload').on('change', function() {
+      var file = $(this).prop('files')[0];
+      if (file) {
+        // 显示图片预览区域
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          $('#preview-thumbnail').attr('src', e.target.result);
+          $('#preview-filename').text(file.name);
+          $('#image-preview-area').removeClass('hidden');
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    $('#btn-remove-preview').on('click', function() {
+      $('#image-preview-area').addClass('hidden');
+      $('#preview-thumbnail').attr('src', '');
+      $('#input-file-upload').val('');
+    });
+
+    // ===== 发送消息交互 =====
+    $('#btn-send').on('click', function() {
+      var text = $.trim($('#input-message').val());
+      var hasImage = !$('#image-preview-area').hasClass('hidden');
+
+      if (!text && !hasImage) return;
+
+      // 发送消息逻辑 - 后续应实现：
+      // 1. 将用户消息追加到聊天区域（文字气泡/图片气泡）
+      // 2. 如果有图片，显示图片缩略图在气泡中
+      // 3. 清空输入框和图片预览
+      // 4. 自动滚动到底部
+      // 5. 触发AI回复的模拟流程（显示"图片分析中..."加载态，延时后显示识别结果）
+      console.log('发送消息:', text, hasImage ? '（含图片）' : '');
+
+      // 清空输入
+      $('#input-message').val('');
+      $('#image-preview-area').addClass('hidden');
+      $('#preview-thumbnail').attr('src', '');
+      $('#input-file-upload').val('');
+    });
+
+    // Enter 发送
+    $('#input-message').on('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        $('#btn-send').trigger('click');
+      }
+    });
+
+    // ===== 对话列表点击 =====
+    $('#chat-list').on('click', '.chat-item', function() {
+      var chatId = $(this).data('chat-id');
+      // 切换对话逻辑 - 后续应实现：
+      // 1. 移除所有对话项的激活态样式
+      // 2. 为当前点击项添加激活态
+      // 3. 根据chatId加载对应的聊天记录
+      // 4. 更新右侧聊天窗口头部信息
+      console.log('切换到对话:', chatId);
+
+      // 切换激活态样式
+      $('.chat-item').removeClass('bg-primary/8 border border-primary/10').addClass('hover:bg-surface-container/80');
+      $(this).removeClass('hover:bg-surface-container/80').addClass('bg-primary/8 border border-primary/10');
+    });
+
+    // ===== 建议策略按钮交互 =====
+    $('#btn-refund').on('click', function() {
+      // 退货退款 - 后续应实现：
+      // 1. 弹出确认对话框，展示退货退款详情（退款金额、退货地址等）
+      // 2. 确认后自动生成退货工单
+      // 3. 在对话中追加一条系统消息确认操作
+      console.log('选择退货退款策略');
+    });
+
+    $('#btn-resend').on('click', function() {
+      // 免费补发 - 后续应实现：
+      // 1. 弹出确认对话框，展示补发商品信息（商品名称、预计到达时间等）
+      // 2. 确认后自动创建补发订单
+      // 3. 在对话中追加一条系统消息确认操作
+      console.log('选择免费补发策略');
+    });
+
+    $('#btn-compensate').on('click', function() {
+      // 差价赔付 - 后续应实现：
+      // 1. 弹出确认对话框，展示赔付金额计算详情（原价、当前价、差价等）
+      // 2. 确认后自动发起赔付流程
+      // 3. 在对话中追加一条系统消息确认操作
+      console.log('选择差价赔付策略');
+    });
+
+    // ===== 新建对话 =====
+    $('#btn-new-chat').on('click', function() {
+      // 新建对话 - 后续应实现：
+      // 1. 在对话列表顶部新增一个对话项
+      // 2. 清空右侧聊天窗口
+      // 3. 自动聚焦输入框
+      console.log('新建对话');
+    });
+
+    // ===== 搜索对话 =====
+    $('#input-search').on('input', function() {
+      var keyword = $.trim($(this).val()).toLowerCase();
+      // 搜索逻辑 - 后续应实现：
+      // 1. 遍历对话列表，根据关键词匹配对话标题或最后消息
+      // 2. 隐藏不匹配的对话项，显示匹配的
+      console.log('搜索对话:', keyword);
+    });
+
+    // ===== 对话详情 =====
+    $('#btn-chat-info').on('click', function() {
+      // 对话详情 - 后续应实现：
+      // 1. 弹出侧边面板或模态框
+      // 2. 展示订单信息、用户画像、历史对话摘要等
+      console.log('查看对话详情');
+    });
+
+    // ===== 更多操作 =====
+    $('#btn-chat-more').on('click', function() {
+      // 更多操作 - 后续应实现：
+      // 1. 弹出下拉菜单
+      // 2. 包含选项：转人工客服、导出对话记录、标记重要、结束对话等
+      console.log('更多操作');
+    });
+
+    // ===== 自动滚动到底部 =====
+    var $messages = $('#chat-messages');
+    $messages.scrollTop($messages[0].scrollHeight);
+
+  });
+  </script>
+
+</body>
+
+</html>

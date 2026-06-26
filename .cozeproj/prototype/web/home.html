@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/jquery/jquery-3.7.1.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/lucide/lucide-1.11.0.min.js"></script>
+  <script src="https://lf-code-agent.coze.cn/obj/x-ai-cn/cdn/tailwindcss/tailwindcss-browser-4.2.4.min.js"></script>
+
+  <style type="text/tailwindcss">
+    @theme {
+      /* === 品牌色 === */
+      --color-primary:              #2F6BFF;
+      --color-primary-container:    #E8F0FF;
+      --color-on-primary:           #ffffff;
+      /* === 背景 / 表面 === */
+      --color-background:                 #F6F8FB;
+      --color-surface-container-lowest:   #FFFFFF;
+      --color-surface:                    #FFFFFF;
+      --color-surface-container:          #EDF0F7;
+      --color-surface-container-high:     #E6EAF2;
+      --color-surface-container-highest:  #DDE2ED;
+      /* === 文字 === */
+      --color-on-surface:           #152033;
+      --color-on-surface-variant:   #637089;
+      /* === 功能色 === */
+      --color-success:  #16A37B;
+      --color-error:    #DC2626;
+      --color-warning:  #F59E0B;
+      /* === 边框 === */
+      --color-outline:          #CBD2E0;
+      --color-outline-variant:  #E6EAF2;
+      /* === 圆角 === */
+      --radius-sm:   0.375rem;
+      --radius-md:   0.5rem;
+      --radius-lg:   0.75rem;
+      --radius-xl:   1rem;
+      --radius-2xl:  1.5rem;
+      --radius-full: 9999px;
+      /* === 阴影 === */
+      --shadow-card:   0 2px 8px rgba(0,0,0,0.08);
+      --shadow-float:  0 10px 25px rgba(0,0,0,0.10);
+      --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+      /* === 字体 === */
+      --font-sans: "Inter", system-ui, sans-serif;
+    }
+  </style>
+
+  <!-- 图片兜底 -->
+  <script>
+    document.addEventListener('error', function (e) {
+      const img = e.target;
+      if (img.tagName !== 'IMG' || img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cat = img.getAttribute('data-category') || '其他';
+      const alt = img.getAttribute('alt') || '';
+      const label = esc(alt.length > 8 ? alt.slice(0, 8) + '…' : alt);
+      const icons = { '人物': '👤', '自然风景': '🏞', '动物': '🐾', '建筑城市': '🏙', '运动体育': '⚽', '交通工具': '🚗', '食物': '🍽', '服饰时尚': '👗', '商业科技': '💼', '游戏娱乐': '🎮', '艺术': '🎨', '其他': '🖼' };
+      const icon = icons[cat] || '🖼';
+      const w = img.width || 400, h = img.height || 300;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="%23f3f4f6"/><text x="50%" y="45%" text-anchor="middle" font-size="${Math.min(w, h) * 0.18}" dominant-baseline="central">${icon}</text><text x="50%" y="68%" text-anchor="middle" font-size="${Math.min(w, h) * 0.07}" fill="%239ca3af" font-family="system-ui,sans-serif" dominant-baseline="central">${label}</text></svg>`;
+      img.src = 'data:image/svg+xml,' + svg;
+    }, true);
+  </script>
+</head>
+
+<body class="bg-background text-on-surface font-sans">
+
+  <!-- @nav:start 导航组件 -->
+  <header class="bg-surface sticky top-0 z-40 h-14 flex items-center justify-between px-4 border-b border-outline-variant/30">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
+        <i data-lucide="headset" class="w-4 h-4 text-on-primary"></i>
+      </div>
+      <span class="font-semibold text-base text-on-surface">SmartAssist</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="relative p-2 rounded-md hover:bg-surface-container transition-colors">
+        <i data-lucide="bell" class="w-4 h-4 text-on-surface-variant"></i>
+        <span class="absolute top-1 right-1 w-2 h-2 bg-error rounded-full"></span>
+      </button>
+      <div class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-sm font-medium text-primary">
+        初
+      </div>
+    </div>
+  </header>
+
+  <div class="flex" style="height: calc(100vh - 3.5rem)">
+    <aside class="w-56 shrink-0 bg-surface border-r border-outline-variant/30 flex flex-col">
+      <div class="p-3 space-y-0.5 flex-1">
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md bg-primary/10 text-primary font-medium text-sm" aria-current="page">
+          <i data-lucide="message-square" class="w-4 h-4"></i>智能对话
+        </a>
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="chart-bar" class="w-4 h-4"></i>数据看板
+        </a>
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="clock" class="w-4 h-4"></i>对话历史
+        </a>
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="book-open" class="w-4 h-4"></i>知识库
+        </a>
+        <a href="home.html" class="flex items-center gap-3 px-3 py-2.5 rounded-md text-on-surface-variant hover:bg-surface-container hover:text-on-surface font-medium text-sm transition-colors">
+          <i data-lucide="settings" class="w-4 h-4"></i>系统设置
+        </a>
+      </div>
+      <div class="p-3 border-t border-outline-variant/30">
+        <div class="flex items-center gap-2 px-3 py-2">
+          <div class="w-2 h-2 bg-success rounded-full"></div>
+          <span class="text-xs text-on-surface-variant">AI 服务运行中</span>
+        </div>
+      </div>
+    </aside>
+  <!-- @nav:end 导航组件 -->
+
+  <!-- @main-content:start -->
+  <main id="main-workspace" class="flex-1 min-w-0 flex overflow-hidden bg-background">
+
+    <!-- ===== 左栏：对话列表面板 ===== -->
+    <aside id="conversation-panel" class="w-[280px] shrink-0 bg-surface border-r border-outline-variant/30 flex flex-col">
+      <!-- 搜索 + 新建 -->
+      <div class="p-3 pb-2 space-y-2">
+        <div class="flex gap-2">
+          <div class="flex-1 relative">
+            <i data-lucide="search" class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60"></i>
+            <input id="search-input" type="text" placeholder="搜索对话..." class="w-full bg-surface-container border-none rounded-md pl-8 pr-3 py-1.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"/>
+          </div>
+          <button id="btn-new-conversation" class="bg-primary text-on-primary px-2.5 py-1.5 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all flex items-center gap-1 shrink-0">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>新建
+          </button>
+        </div>
+        <!-- 筛选标签 -->
+        <div id="filter-tabs" class="flex gap-1">
+          <button id="filter-all" class="filter-tab px-3 py-1 rounded-sm text-xs font-medium bg-primary/10 text-primary transition-colors" data-filter="all">全部</button>
+          <button id="filter-active" class="filter-tab px-3 py-1 rounded-sm text-xs font-medium text-on-surface-variant hover:bg-surface-container transition-colors" data-filter="active">进行中</button>
+          <button id="filter-ended" class="filter-tab px-3 py-1 rounded-sm text-xs font-medium text-on-surface-variant hover:bg-surface-container transition-colors" data-filter="ended">已结束</button>
+        </div>
+      </div>
+
+      <!-- 对话列表 -->
+      <div id="conversation-list" class="flex-1 overflow-y-auto">
+        <!-- 列表-张先生(千牛-紧急-有未读-已打开) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer bg-primary/8 border-l-2 border-primary transition-colors" data-id="zhang" data-status="active" data-unread="3">
+          <div class="w-8 h-8 bg-primary/15 rounded-full flex items-center justify-center text-xs font-semibold text-primary shrink-0 mt-0.5">张</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="w-1.5 h-1.5 bg-error rounded-full shrink-0" title="紧急"></span>
+                <span class="text-sm font-medium text-on-surface truncate">张先生</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary shrink-0">千牛</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">3分钟前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant truncate pr-2">你们退换货的具体流程是什么？</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="bg-error text-white text-[10px] font-medium rounded-sm px-1.5 py-0 leading-4">3</span>
+                <i data-lucide="layout-list" class="w-3 h-3 text-primary/60"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-李女士(网页-有未读-已打开) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="li" data-status="active" data-unread="1">
+          <div class="w-8 h-8 bg-success/15 rounded-full flex items-center justify-center text-xs font-semibold text-success shrink-0 mt-0.5">李</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface truncate">李女士</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-success/10 text-success shrink-0">网页</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">8分钟前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant truncate pr-2">发票什么时候能开具？</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="bg-error text-white text-[10px] font-medium rounded-sm px-1.5 py-0 leading-4">1</span>
+                <i data-lucide="layout-list" class="w-3 h-3 text-primary/60"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-王总(千牛-已打开) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="wang" data-status="active" data-unread="0">
+          <div class="w-8 h-8 bg-warning/15 rounded-full flex items-center justify-center text-xs font-semibold text-warning shrink-0 mt-0.5">王</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface truncate">王总</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary shrink-0">千牛</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">15分钟前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant truncate pr-2">好的，那就按这个方案执行</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <i data-lucide="layout-list" class="w-3 h-3 text-primary/60"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-赵经理(网页-有未读) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="zhao" data-status="active" data-unread="5">
+          <div class="w-8 h-8 bg-error/15 rounded-full flex items-center justify-center text-xs font-semibold text-error shrink-0 mt-0.5">赵</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="w-1.5 h-1.5 bg-error rounded-full shrink-0" title="紧急"></span>
+                <span class="text-sm font-medium text-on-surface truncate">赵经理</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-success/10 text-success shrink-0">网页</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">20分钟前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant truncate pr-2">系统突然无法登录了，很急！</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="bg-error text-white text-[10px] font-medium rounded-sm px-1.5 py-0 leading-4">5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-陈先生(千牛-已结束) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="chen" data-status="ended" data-unread="0">
+          <div class="w-8 h-8 bg-surface-container-high rounded-full flex items-center justify-center text-xs font-semibold text-on-surface-variant shrink-0 mt-0.5">陈</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface-variant truncate">陈先生</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary/70 shrink-0">千牛</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">1小时前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant/70 truncate pr-2">问题已解决，谢谢你们</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] bg-surface-container-high text-on-surface-variant">已结束</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-刘女士(网页-已结束) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="liu" data-status="ended" data-unread="0">
+          <div class="w-8 h-8 bg-surface-container-high rounded-full flex items-center justify-center text-xs font-semibold text-on-surface-variant shrink-0 mt-0.5">刘</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface-variant truncate">刘女士</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-success/10 text-success/70 shrink-0">网页</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">2小时前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant/70 truncate pr-2">好的我知道了，谢谢</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] bg-surface-container-high text-on-surface-variant">已结束</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-周总监(千牛-进行中) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="zhou" data-status="active" data-unread="0">
+          <div class="w-8 h-8 bg-primary/15 rounded-full flex items-center justify-center text-xs font-semibold text-primary shrink-0 mt-0.5">周</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface truncate">周总监</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary shrink-0">千牛</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">3小时前</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant truncate pr-2">产品规格参数能发一份吗？</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 列表-吴先生(网页-已结束) -->
+        <div class="conversation-item flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-surface-container/50 transition-colors border-l-2 border-transparent" data-id="wu" data-status="ended" data-unread="0">
+          <div class="w-8 h-8 bg-surface-container-high rounded-full flex items-center justify-center text-xs font-semibold text-on-surface-variant shrink-0 mt-0.5">吴</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-1">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="text-sm font-medium text-on-surface-variant truncate">吴先生</span>
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-success/10 text-success/70 shrink-0">网页</span>
+              </div>
+              <span class="text-[10px] text-on-surface-variant shrink-0">昨天</span>
+            </div>
+            <div class="flex items-center justify-between mt-0.5">
+              <p class="text-xs text-on-surface-variant/70 truncate pr-2">已收到退款，感谢处理</p>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] bg-surface-container-high text-on-surface-variant">已结束</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== 右栏：多标签聊天区域 ===== -->
+    <div id="chat-area" class="flex-1 min-w-0 flex flex-col bg-background">
+      <!-- 标签栏 -->
+      <div id="tab-bar" class="bg-surface border-b border-outline-variant/30 flex items-end overflow-x-auto shrink-0" style="scrollbar-width: thin;">
+        <!-- 标签-张先生(激活) -->
+        <div class="chat-tab flex items-center gap-1.5 px-3 py-2 cursor-pointer border-b-2 border-primary bg-background text-sm font-medium text-primary min-w-0 shrink-0" data-id="zhang" title="张先生">
+          <span class="truncate max-w-[80px]">张先生</span>
+          <span class="bg-error text-white text-[10px] font-medium rounded-full w-4 h-4 flex items-center justify-center shrink-0 leading-none">3</span>
+          <button class="tab-close-btn ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded-sm hover:bg-surface-container transition-colors" title="关闭">
+            <i data-lucide="x" class="w-2.5 h-2.5"></i>
+          </button>
+        </div>
+        <!-- 标签-李女士 -->
+        <div class="chat-tab flex items-center gap-1.5 px-3 py-2 cursor-pointer border-b-2 border-transparent bg-surface text-sm font-medium text-on-surface-variant min-w-0 shrink-0 hover:text-on-surface hover:bg-surface-container/50 transition-colors" data-id="li" title="李女士">
+          <span class="truncate max-w-[80px]">李女士</span>
+          <span class="bg-error text-white text-[10px] font-medium rounded-full w-4 h-4 flex items-center justify-center shrink-0 leading-none">1</span>
+          <button class="tab-close-btn ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded-sm hover:bg-surface-container transition-colors" title="关闭">
+            <i data-lucide="x" class="w-2.5 h-2.5"></i>
+          </button>
+        </div>
+        <!-- 标签-王总 -->
+        <div class="chat-tab flex items-center gap-1.5 px-3 py-2 cursor-pointer border-b-2 border-transparent bg-surface text-sm font-medium text-on-surface-variant min-w-0 shrink-0 hover:text-on-surface hover:bg-surface-container/50 transition-colors" data-id="wang" title="王总">
+          <span class="truncate max-w-[80px]">王总</span>
+          <button class="tab-close-btn ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded-sm hover:bg-surface-container transition-colors" title="关闭">
+            <i data-lucide="x" class="w-2.5 h-2.5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== 张先生聊天窗口(激活) ===== -->
+      <div id="chat-zhang" class="chat-window flex-1 flex flex-col min-h-0">
+        <!-- 聊天头部信息 -->
+        <div class="flex items-center justify-between px-4 py-2 border-b border-outline-variant/20 shrink-0">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 bg-primary/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-primary">张</div>
+            <span class="text-sm font-medium text-on-surface">张先生</span>
+            <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary">千牛</span>
+            <span class="w-1.5 h-1.5 bg-error rounded-full" title="紧急"></span>
+            <span class="text-[10px] text-error font-medium">紧急</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-transfer" class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="转接">
+              <i data-lucide="arrow-right-left" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+            <button id="btn-customer-info" class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="客户信息">
+              <i data-lucide="user" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 消息列表 -->
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <!-- 消息-客户提问1 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-primary/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-primary shrink-0 mt-1">张</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">你好，我想了解一下你们产品的退换货政策，具体流程是怎样的？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">14:32</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复1(带知识库引用) -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">您好！根据我们的退换货政策：</p>
+                <ul class="text-sm leading-relaxed mt-1 space-y-0.5 list-disc list-inside">
+                  <li>收到商品7天内可申请无理由退换</li>
+                  <li>商品需保持原包装未使用状态</li>
+                  <li>质量问题15天内可免费换货</li>
+                </ul>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-[10px] text-primary">
+                  <i data-lucide="book-open" class="w-2.5 h-2.5"></i>知识库
+                </span>
+                <span class="text-[10px] text-on-surface-variant">14:32</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息-客户追问 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-primary/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-primary shrink-0 mt-1">张</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">那退货运费谁承担？如果是质量问题呢？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">14:35</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复2(带知识库引用) -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed"><strong>退货运费规则：</strong></p>
+                <ul class="text-sm leading-relaxed mt-1 space-y-0.5 list-disc list-inside">
+                  <li>无理由退货：运费由买家承担</li>
+                  <li>质量问题退货/换货：运费由我们承担</li>
+                  <li>退货运费险可抵扣首重运费</li>
+                </ul>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-[10px] text-primary">
+                  <i data-lucide="book-open" class="w-2.5 h-2.5"></i>知识库
+                </span>
+                <span class="text-[10px] text-on-surface-variant">14:35</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息-客户确认 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-primary/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-primary shrink-0 mt-1">张</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">好的，还有一个问题，我的订单号是 <strong>GD202401150023</strong>，能帮我查一下物流信息吗？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">14:38</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复3(带订单系统引用) -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">已为您查询到订单 <strong>GD202401150023</strong> 的物流信息：</p>
+                <div class="mt-1.5 space-y-1 text-sm leading-relaxed">
+                  <p>📦 1月15日 16:00 已发货</p>
+                  <p>🚚 1月16日 08:30 运输中 - 杭州转运中心</p>
+                  <p>📍 预计1月17日送达</p>
+                </div>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-[10px] text-success">
+                  <i data-lucide="database" class="w-2.5 h-2.5"></i>订单系统
+                </span>
+                <span class="text-[10px] text-on-surface-variant">14:38</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息-客户最新消息 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-primary/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-primary shrink-0 mt-1">张</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">明白了，谢谢！那如果我要申请退货，是在APP上操作还是联系客服？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">14:40</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复4(带知识库引用) -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">两种方式都可以：</p>
+                <ol class="text-sm leading-relaxed mt-1 space-y-0.5 list-decimal list-inside">
+                  <li>在APP「我的订单」中点击「申请售后」自助操作</li>
+                  <li>联系在线客服，我们帮您创建退货申请</li>
+                </ol>
+                <p class="text-sm leading-relaxed mt-1">推荐使用APP自助操作，审核更快哦！</p>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-[10px] text-primary">
+                  <i data-lucide="book-open" class="w-2.5 h-2.5"></i>知识库
+                </span>
+                <span class="text-[10px] text-on-surface-variant">14:40</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="border-t border-outline-variant/30 px-4 py-3 bg-surface shrink-0">
+          <div class="flex items-end gap-2">
+            <div class="flex-1 relative">
+              <textarea id="input-zhang" rows="2" placeholder="输入回复内容..." class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none"></textarea>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <button id="btn-send-zhang" class="bg-primary text-on-primary p-2 rounded-md hover:opacity-90 active:scale-[0.98] transition-all" title="发送">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+              <button id="btn-quick-reply-zhang" class="bg-surface-container text-on-surface-variant p-2 rounded-md hover:bg-surface-container-high transition-colors" title="快捷回复">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <button id="btn-end-conversation-zhang" class="text-xs text-on-surface-variant hover:text-error px-2 py-1 rounded hover:bg-error/5 transition-colors flex items-center gap-1">
+              <i data-lucide="phone-off" class="w-3 h-3"></i>结束对话
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 李女士聊天窗口(隐藏) ===== -->
+      <div id="chat-li" class="chat-window flex-1 flex flex-col min-h-0 hidden">
+        <!-- 聊天头部 -->
+        <div class="flex items-center justify-between px-4 py-2 border-b border-outline-variant/20 shrink-0">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 bg-success/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-success">李</div>
+            <span class="text-sm font-medium text-on-surface">李女士</span>
+            <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-success/10 text-success">网页</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="转接">
+              <i data-lucide="arrow-right-left" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+            <button class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="客户信息">
+              <i data-lucide="user" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 消息列表 -->
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <!-- 消息-李女士1 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-success/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-success shrink-0 mt-1">李</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">你好，我上个月采购的一批办公用品还没有收到发票，请问什么时候能开具？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">10:15</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复 -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">您好！关于发票开具，我帮您查一下进度。请问您的订单号是多少呢？</p>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="text-[10px] text-on-surface-variant">10:15</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息-李女士2 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-success/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-success shrink-0 mt-1">李</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">订单号是 <strong>PO202312250089</strong>，金额是3,280元</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">10:18</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复(带知识库引用) -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">已查询到您的订单 <strong>PO202312250089</strong>，发票正在处理中：</p>
+                <ul class="text-sm leading-relaxed mt-1 space-y-0.5 list-disc list-inside">
+                  <li>发票类型：增值税专用发票</li>
+                  <li>开票金额：3,280.00元</li>
+                  <li>预计开具时间：1-3个工作日</li>
+                </ul>
+                <p class="text-sm leading-relaxed mt-1">开具后将自动发送至您注册的邮箱，请留意查收。</p>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="inline-flex items-center gap-1 text-[10px] text-primary">
+                  <i data-lucide="book-open" class="w-2.5 h-2.5"></i>知识库
+                </span>
+                <span class="text-[10px] text-on-surface-variant">10:19</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="border-t border-outline-variant/30 px-4 py-3 bg-surface shrink-0">
+          <div class="flex items-end gap-2">
+            <div class="flex-1">
+              <textarea id="input-li" rows="2" placeholder="输入回复内容..." class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none"></textarea>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <button id="btn-send-li" class="bg-primary text-on-primary p-2 rounded-md hover:opacity-90 active:scale-[0.98] transition-all" title="发送">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+              <button id="btn-quick-reply-li" class="bg-surface-container text-on-surface-variant p-2 rounded-md hover:bg-surface-container-high transition-colors" title="快捷回复">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <button id="btn-end-conversation-li" class="text-xs text-on-surface-variant hover:text-error px-2 py-1 rounded hover:bg-error/5 transition-colors flex items-center gap-1">
+              <i data-lucide="phone-off" class="w-3 h-3"></i>结束对话
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 王总聊天窗口(隐藏) ===== -->
+      <div id="chat-wang" class="chat-window flex-1 flex flex-col min-h-0 hidden">
+        <!-- 聊天头部 -->
+        <div class="flex items-center justify-between px-4 py-2 border-b border-outline-variant/20 shrink-0">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 bg-warning/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-warning">王</div>
+            <span class="text-sm font-medium text-on-surface">王总</span>
+            <span class="inline-flex items-center px-1.5 py-0 rounded-sm text-[10px] font-medium bg-primary/10 text-primary">千牛</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="转接">
+              <i data-lucide="arrow-right-left" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+            <button class="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded hover:bg-surface-container transition-colors" title="客户信息">
+              <i data-lucide="user" class="w-3.5 h-3.5 inline-block"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 消息列表 -->
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <!-- 消息-王总1 -->
+          <div class="flex gap-2 max-w-[85%]">
+            <div class="w-6 h-6 bg-warning/15 rounded-full flex items-center justify-center text-[10px] font-semibold text-warning shrink-0 mt-1">王</div>
+            <div>
+              <div class="bg-surface rounded-lg shadow-card px-3 py-2">
+                <p class="text-sm text-on-surface leading-relaxed">小初你好，关于上次谈的合作方案，我们需要调整一下交付时间，从30天改为45天，你们看可以吗？</p>
+              </div>
+              <span class="text-[10px] text-on-surface-variant mt-0.5 block">13:20</span>
+            </div>
+          </div>
+
+          <!-- 消息-AI回复 -->
+          <div class="flex gap-2 max-w-[85%] ml-auto flex-row-reverse">
+            <div class="w-6 h-6 bg-primary rounded-full flex items-center justify-center text-[10px] font-medium text-on-primary shrink-0 mt-1">AI</div>
+            <div class="text-right">
+              <div class="bg-primary text-on-primary rounded-lg px-3 py-2 text-left">
+                <p class="text-sm leading-relaxed">王总您好！交付时间调整到45天的请求我已经记录，会尽快与项目经理确认后给您回复。请问其他条款是否有变动？</p>
+              </div>
+              <div class="flex items-center justify-end gap-1.5 mt-0.5">
+                <span class="text-[10px] text-on-surface-variant">13:22</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="border-t border-outline-variant/30 px-4 py-3 bg-surface shrink-0">
+          <div class="flex items-end gap-2">
+            <div class="flex-1">
+              <textarea id="input-wang" rows="2" placeholder="输入回复内容..." class="w-full bg-surface-container border-none rounded-md px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors resize-none"></textarea>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <button id="btn-send-wang" class="bg-primary text-on-primary p-2 rounded-md hover:opacity-90 active:scale-[0.98] transition-all" title="发送">
+                <i data-lucide="send" class="w-4 h-4"></i>
+              </button>
+              <button id="btn-quick-reply-wang" class="bg-surface-container text-on-surface-variant p-2 rounded-md hover:bg-surface-container-high transition-colors" title="快捷回复">
+                <i data-lucide="zap" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-1.5">
+            <button id="btn-end-conversation-wang" class="text-xs text-on-surface-variant hover:text-error px-2 py-1 rounded hover:bg-error/5 transition-colors flex items-center gap-1">
+              <i data-lucide="phone-off" class="w-3 h-3"></i>结束对话
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 欢迎界面(隐藏，当无标签时显示) ===== -->
+      <div id="welcome-screen" class="flex-1 flex flex-col items-center justify-center px-8 hidden">
+        <div class="text-center max-w-md">
+          <div class="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <i data-lucide="headset" class="w-8 h-8 text-primary"></i>
+          </div>
+          <h1 class="text-2xl font-bold text-on-surface mb-2">SmartAssist 智能客服</h1>
+          <p class="text-sm text-on-surface-variant mb-8">选择左侧对话开始服务，或创建新对话</p>
+          <div class="grid grid-cols-3 gap-3">
+            <button id="welcome-new-chat" class="bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow text-center">
+              <i data-lucide="plus-circle" class="w-6 h-6 text-primary mx-auto mb-2"></i>
+              <span class="text-sm font-medium text-on-surface block">新建对话</span>
+            </button>
+            <button id="welcome-history" class="bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow text-center">
+              <i data-lucide="clock" class="w-6 h-6 text-primary mx-auto mb-2"></i>
+              <span class="text-sm font-medium text-on-surface block">查看历史</span>
+            </button>
+            <button id="welcome-knowledge" class="bg-surface rounded-lg shadow-card p-4 hover:shadow-float transition-shadow text-center">
+              <i data-lucide="book-open" class="w-6 h-6 text-primary mx-auto mb-2"></i>
+              <span class="text-sm font-medium text-on-surface block">知识库搜索</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 快捷回复弹窗(默认隐藏) -->
+      <div id="quick-reply-panel" class="absolute bottom-20 right-8 bg-surface rounded-lg shadow-float border border-outline-variant/20 w-64 max-h-60 overflow-y-auto hidden z-50">
+        <div class="px-3 py-2 border-b border-outline-variant/20">
+          <span class="text-xs font-semibold text-on-surface-variant">快捷回复</span>
+        </div>
+        <div class="p-1.5">
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">您好，请问有什么可以帮您？</button>
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">好的，我马上为您处理。</button>
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">请您稍等，正在为您查询中...</button>
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">感谢您的耐心等待，问题已解决。</button>
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">如有其他问题，随时联系我们。</button>
+          <button class="quick-reply-item w-full text-left px-3 py-2 text-sm text-on-surface hover:bg-surface-container rounded-md transition-colors">抱歉给您带来不便，我们会尽快处理。</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+  <!-- @main-content:end -->
+
+  </div>
+
+  <script>
+    $(function() {
+      lucide.createIcons();
+
+      // ===== 状态管理 =====
+      let activeTabId = 'zhang';
+      let openTabs = ['zhang', 'li', 'wang'];
+      let unreadCounts = { zhang: 3, li: 1, wang: 0, zhao: 5, chen: 0, liu: 0, zhou: 0, wu: 0 };
+
+      // ===== 切换标签 =====
+      function switchTab(tabId) {
+        activeTabId = tabId;
+
+        // 更新标签栏样式
+        $('.chat-tab').each(function() {
+          const id = $(this).data('id');
+          if (id === tabId) {
+            $(this).removeClass('border-transparent bg-surface text-on-surface-variant')
+                   .addClass('border-primary bg-background text-primary');
+          } else {
+            $(this).removeClass('border-primary bg-background text-primary')
+                   .addClass('border-transparent bg-surface text-on-surface-variant');
+          }
+        });
+
+        // 切换聊天窗口
+        $('.chat-window').addClass('hidden');
+        $('#chat-' + tabId).removeClass('hidden');
+
+        // 更新左侧列表选中态
+        $('.conversation-item').each(function() {
+          const id = $(this).data('id');
+          if (id === tabId) {
+            $(this).addClass('bg-primary/8 border-l-primary').removeClass('border-l-transparent');
+          } else {
+            $(this).removeClass('bg-primary/8 border-l-primary').addClass('border-l-transparent');
+          }
+        });
+
+        // 清除该对话的未读
+        if (unreadCounts[tabId] > 0) {
+          unreadCounts[tabId] = 0;
+          // 移除列表项中的未读徽标
+          const $item = $(`.conversation-item[data-id="${tabId}"]`);
+          $item.find('.bg-error.text-white').remove();
+          $item.data('unread', 0);
+
+          // 移除标签中的未读徽标
+          const $tab = $(`.chat-tab[data-id="${tabId}"]`);
+          $tab.find('.bg-error').remove();
+        }
+      }
+
+      // ===== 点击标签切换 =====
+      $('#tab-bar').on('click', '.chat-tab', function(e) {
+        // 排除关闭按钮点击
+        if ($(e.target).closest('.tab-close-btn').length) return;
+        const tabId = $(this).data('id');
+        switchTab(tabId);
+      });
+
+      // ===== 关闭标签 =====
+      $('#tab-bar').on('click', '.tab-close-btn', function(e) {
+        e.stopPropagation();
+        const $tab = $(this).closest('.chat-tab');
+        const tabId = $tab.data('id');
+        const idx = openTabs.indexOf(tabId);
+
+        if (idx === -1) return;
+        openTabs.splice(idx, 1);
+
+        // 移除标签
+        $tab.remove();
+
+        // 隐藏对应聊天窗口
+        $('#chat-' + tabId).addClass('hidden');
+
+        // 移除列表中的标签图标
+        $(`.conversation-item[data-id="${tabId}"]`).find('[data-lucide="layout-list"]').closest('i, svg').remove();
+
+        // 如果关闭的是当前激活标签，切换到相邻标签
+        if (tabId === activeTabId) {
+          if (openTabs.length > 0) {
+            const newIdx = Math.min(idx, openTabs.length - 1);
+            switchTab(openTabs[newIdx]);
+          } else {
+            activeTabId = null;
+            $('#welcome-screen').removeClass('hidden');
+          }
+        }
+      });
+
+      // ===== 点击左侧对话列表项 =====
+      $('#conversation-list').on('click', '.conversation-item', function() {
+        const convId = $(this).data('id');
+
+        // 如果标签已打开，切换到该标签
+        if (openTabs.indexOf(convId) !== -1) {
+          switchTab(convId);
+          return;
+        }
+
+        // 未打开：创建新标签
+        // 实际项目中应从后端加载对话数据，此处为原型演示
+        // 后续应实现：1. 根据convId从后端获取对话数据 2. 动态创建聊天窗口DOM 3. 在标签栏添加新标签
+        console.log('打开新对话标签:', convId, '- 后续应实现动态创建聊天窗口');
+      });
+
+      // ===== 筛选标签 =====
+      $('#filter-tabs').on('click', '.filter-tab', function() {
+        const filter = $(this).data('filter');
+
+        // 更新筛选标签样式
+        $('.filter-tab').removeClass('bg-primary/10 text-primary').addClass('text-on-surface-variant');
+        $(this).removeClass('text-on-surface-variant').addClass('bg-primary/10 text-primary');
+
+        // 筛选列表
+        $('.conversation-item').each(function() {
+          const status = $(this).data('status');
+          if (filter === 'all') {
+            $(this).show();
+          } else if (filter === status) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      });
+
+      // ===== 发送消息 =====
+      // 发送消息 - 后续应实现：
+      // 1. 将输入框内容作为新消息添加到聊天窗口
+      // 2. 清空输入框
+      // 3. 调用AI接口获取回复
+      // 4. 将AI回复渲染到聊天窗口
+      $('[id^="btn-send-"]').on('click', function() {
+        const convId = $(this).attr('id').replace('btn-send-', '');
+        const $input = $('#input-' + convId);
+        const msg = $input.val().trim();
+        if (msg) {
+          console.log('发送消息到对话:', convId, msg, '- 后续应实现消息发送和AI回复渲染');
+          $input.val('');
+        }
+      });
+
+      // ===== 快捷回复弹窗 =====
+      $('[id^="btn-quick-reply-"]').on('click', function(e) {
+        e.stopPropagation();
+        const $panel = $('#quick-reply-panel');
+        if ($panel.hasClass('hidden')) {
+          $panel.removeClass('hidden');
+        } else {
+          $panel.addClass('hidden');
+        }
+      });
+
+      // 快捷回复项点击
+      $('#quick-reply-panel').on('click', '.quick-reply-item', function() {
+        const text = $(this).text();
+        if (activeTabId) {
+          $('#input-' + activeTabId).val(text);
+        }
+        $('#quick-reply-panel').addClass('hidden');
+      });
+
+      // 点击其他区域关闭快捷回复
+      $(document).on('click', function(e) {
+        if (!$(e.target).closest('#quick-reply-panel, [id^="btn-quick-reply-"]').length) {
+          $('#quick-reply-panel').addClass('hidden');
+        }
+      });
+
+      // ===== 结束对话 =====
+      // 结束对话 - 后续应实现：
+      // 1. 调用后端接口标记对话为已结束
+      // 2. 在聊天窗口底部显示"对话已结束"状态条
+      // 3. 禁用输入区域
+      // 4. 在左侧列表中更新对话状态为"已结束"
+      $('[id^="btn-end-conversation-"]').on('click', function() {
+        const convId = $(this).attr('id').replace('btn-end-conversation-', '');
+        console.log('结束对话:', convId, '- 后续应实现：1.标记对话已结束 2.显示结束状态条 3.禁用输入 4.更新列表状态');
+      });
+
+      // ===== 新建对话 =====
+      // 新建对话 - 后续应实现：
+      // 1. 弹出新建对话弹窗，选择客户/渠道
+      // 2. 调用后端创建对话
+      // 3. 在左侧列表添加新对话项
+      // 4. 打开新标签
+      $('#btn-new-conversation, #welcome-new-chat').on('click', function() {
+        console.log('新建对话 - 后续应实现：1.弹出新建对话弹窗 2.调用后端创建 3.更新列表 4.打开新标签');
+      });
+
+      // ===== 搜索 =====
+      // 搜索 - 后续应实现：
+      // 1. 根据关键词过滤左侧对话列表
+      // 2. 匹配客户名称或消息内容
+      $('#search-input').on('input', function() {
+        const keyword = $(this).val().trim().toLowerCase();
+        $('.conversation-item').each(function() {
+          const name = $(this).find('.text-sm.font-medium').first().text().toLowerCase();
+          const preview = $(this).find('p').text().toLowerCase();
+          if (keyword === '' || name.includes(keyword) || preview.includes(keyword)) {
+            $(this).show();
+          } else {
+            $(this).hide();
+          }
+        });
+      });
+
+      // ===== 欢迎界面按钮 =====
+      $('#welcome-history').on('click', function() {
+        console.log('查看历史 - 后续应跳转至对话历史页面');
+      });
+
+      $('#welcome-knowledge').on('click', function() {
+        console.log('知识库搜索 - 后续应跳转至知识库页面');
+      });
+
+      // ===== 转接按钮 =====
+      $('#btn-transfer').on('click', function() {
+        console.log('转接对话 - 后续应实现：1.弹出转接选择弹窗 2.选择目标客服/部门 3.确认转接');
+      });
+
+      // ===== 客户信息按钮 =====
+      $('#btn-customer-info').on('click', function() {
+        console.log('查看客户信息 - 后续应实现：1.弹出客户信息面板 2.展示客户画像和历史记录');
+      });
+    });
+  </script>
+
+  <script>lucide.createIcons();</script>
+</body>
+
+</html>

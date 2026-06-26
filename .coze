@@ -1,0 +1,29 @@
+[project]
+sub_id = "835864e9"
+name = "smartassist"
+requires = [ "nodejs-24" ]
+template = "nextjs"
+version = "0.0.27"
+appliedPatches = [ ]
+project_type = "web"
+
+[preview]
+preview_enable = "enabled"
+
+[dev]
+build = [ "bash", "./scripts/prepare.sh" ]
+run = [ "bash", "./scripts/dev.sh" ]
+validate = [ "bash", "./scripts/validate.sh" ]
+deps = [ "git" ]
+
+[deploy.profile]
+kind = "service"
+flavor = "web"
+
+[deploy]
+build = [ "bash", "./scripts/build.sh" ]
+run = [ "bash", "./scripts/start.sh" ]
+deps = [ "git" ]
+
+[subprojects]
+path = [ "." ]
