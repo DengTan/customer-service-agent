@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import AppLayout from '@/components/app-layout';
-import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw } from 'lucide-react';
+import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -52,6 +52,10 @@ export function QualityPage() {
   // Checks state
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [checkFilter, setCheckFilter] = useState({ result: 'all', type: 'all' });
+
+  // Loading states for delete operations
+  const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
   const fetchTags = useCallback(async () => {
     try {
@@ -106,6 +110,7 @@ export function QualityPage() {
 
   const handleDeleteTag = async (id: string) => {
     if (!confirm('确定删除该标签？')) return;
+    setDeletingTagId(id);
     try {
       const res = await fetch(`/api/conversation-tags?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -114,6 +119,7 @@ export function QualityPage() {
       }
       fetchTags();
     } catch (e) { console.error(e); }
+    finally { setDeletingTagId(null); }
   };
 
   // Rule CRUD
@@ -152,6 +158,7 @@ export function QualityPage() {
 
   const handleDeleteRule = async (id: string) => {
     if (!confirm('确定删除该规则？')) return;
+    setDeletingRuleId(id);
     try {
       const res = await fetch(`/api/quality-checks?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -160,6 +167,7 @@ export function QualityPage() {
       }
       fetchRules();
     } catch (e) { console.error(e); }
+    finally { setDeletingRuleId(null); }
   };
 
   // Filtered data
@@ -283,11 +291,12 @@ export function QualityPage() {
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                           onClick={() => handleDeleteTag(tag.id)}
+                          disabled={deletingTagId === tag.id}
                           title="删除"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingTagId === tag.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </div>
@@ -383,11 +392,12 @@ export function QualityPage() {
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <button
-                            className="inline-flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            className="inline-flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                             onClick={() => handleDeleteRule(rule.id)}
+                            disabled={deletingRuleId === rule.id}
                             title="删除"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {deletingRuleId === rule.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                           </button>
                         </td>
                       </tr>

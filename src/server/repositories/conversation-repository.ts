@@ -102,7 +102,7 @@ export class ConversationRepository {
         }
         return result.slice(0, filters.limit ?? 50);
       } catch (err) {
-        console.error('[ConversationRepository] Demo mode error, falling back to empty array:', err);
+        logger.error('Demo mode error, falling back to empty array', { error: err });
         return [];
       }
     }
@@ -169,7 +169,7 @@ export class ConversationRepository {
 
       return count ?? 0;
     } catch (err) {
-      console.error('[ConversationRepository] Count query failed:', err);
+      logger.error('Count query failed', { error: err });
       return 0;
     }
   }
@@ -191,7 +191,7 @@ export class ConversationRepository {
       if (error) throw new RepositoryError('list last messages', error.message, error.code);
       return (data ?? []) as LastMessageItem[];
     } catch (err) {
-      console.error('[ConversationRepository] Failed to list last messages:', err);
+      logger.error('Failed to list last messages', { error: err });
       return [];
     }
   }
@@ -348,7 +348,7 @@ export class ConversationRepository {
       if (error) throw new RepositoryError('find session info', error.message, error.code);
       return data as { id: string; status: string; message_count: number; updated_at: string } | null;
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in findSessionInfo:', err);
+      logger.error('Database query failed in findSessionInfo', { error: err });
       return null;
     }
   }
@@ -422,7 +422,7 @@ export class ConversationRepository {
       const { error } = await this.client.from('messages').insert(dbMessage);
       if (error) throw new RepositoryError('insert message', error.message, error.code);
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in insertMessage, skipping:', err);
+      logger.error('Database query failed in insertMessage, skipping', { error: err });
     }
   }
 
@@ -473,7 +473,7 @@ export class ConversationRepository {
       const { error } = await this.client.from('conversations').update(updateData).eq('id', id);
       if (error) throw new RepositoryError('update conversation', error.message, error.code);
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in update, skipping:', err);
+      logger.error('Database query failed in update, skipping', { error: err });
     }
   }
 
@@ -532,7 +532,7 @@ export class ConversationRepository {
       if (error) throw new RepositoryError('list participants', error.message, error.code);
       return (data ?? []) as ParticipantUser[];
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in listParticipants, returning empty:', err);
+      logger.error('Database query failed in listParticipants, returning empty', { error: err });
       return [];
     }
   }
@@ -543,7 +543,7 @@ export class ConversationRepository {
       const { error } = await this.client.from('messages').delete().eq('conversation_id', conversationId);
       if (error) throw new RepositoryError('delete conversation messages', error.message, error.code);
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in deleteMessages, skipping:', err);
+      logger.error('Database query failed in deleteMessages, skipping', { error: err });
     }
   }
 
@@ -557,7 +557,7 @@ export class ConversationRepository {
       const { error } = await this.client.from('conversations').delete().eq('id', id);
       if (error) throw new RepositoryError('delete conversation', error.message, error.code);
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in delete, skipping:', err);
+      logger.error('Database query failed in delete, skipping', { error: err });
     }
   }
 
@@ -571,7 +571,7 @@ export class ConversationRepository {
       const { error } = await this.client.rpc('increment_message_count', { conv_id: conversationId });
       return !error;
     } catch (err) {
-      console.error('[ConversationRepository] Database query failed in incrementMessageCount, skipping:', err);
+      logger.error('Database query failed in incrementMessageCount, skipping', { error: err });
       return false;
     }
   }
@@ -609,7 +609,7 @@ export class ConversationRepository {
       .lt('updated_at', cutoff);
 
     if (error) {
-      console.error('[ConversationRepository] findUnhandledConversations error:', error.message);
+      logger.error('findUnhandledConversations error', { error: error.message });
       return [];
     }
 
@@ -625,7 +625,7 @@ export class ConversationRepository {
       .order('created_at', { ascending: false });
 
     if (msgError) {
-      console.error('[ConversationRepository] findUnhandledConversations messages query error:', msgError.message);
+      logger.error('findUnhandledConversations messages query error', { error: msgError.message });
       return [];
     }
 
@@ -662,7 +662,7 @@ export class ConversationRepository {
       .eq('status', 'active');
 
     if (error) {
-      console.error('[ConversationRepository] countActiveConversations error:', error.message);
+      logger.error('countActiveConversations error', { error: error.message });
       return 0;
     }
     return count ?? 0;
@@ -694,7 +694,7 @@ export class ConversationRepository {
       }
       return counts;
     } catch (err) {
-      console.error('[ConversationRepository] getStatusCounts failed:', err);
+      logger.error('getStatusCounts failed', { error: err });
       return {};
     }
   }

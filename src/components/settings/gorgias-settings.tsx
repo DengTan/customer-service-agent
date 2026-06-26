@@ -341,7 +341,7 @@ export default function GorgiasSettings() {
                   type="email"
                   value={settings.email}
                   onChange={(e) => setSettings((prev) => ({ ...prev, email: e.target.value }))}
-                  placeholder="dt3085348249@gmail.com"
+                  placeholder="your-email@domain.com"
                   className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
                 <p className="text-xs text-muted-foreground mt-1">

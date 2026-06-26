@@ -11,6 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts';
+import { ErrorBoundary } from '@/components/common/error-boundary';
 
 import type { PushRecord, PushEventLog } from '@/lib/types';
 
@@ -85,6 +86,14 @@ const TICKET_STATUS_COLORS: Record<string, string> = {
 };
 
 export function DashboardPage() {
+  return (
+    <ErrorBoundary>
+      <DashboardPageInner />
+    </ErrorBoundary>
+  );
+}
+
+function DashboardPageInner() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [trendData, setTrendData] = useState<Array<{ date: string; count: number }>>([]);
   const [msgTrendData, setMsgTrendData] = useState<Array<{ date: string; user: number; assistant: number }>>([]);

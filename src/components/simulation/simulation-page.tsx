@@ -134,6 +134,13 @@ export function SimulationPage() {
     loadInitial();
   }, [loadInitial]);
 
+  // Cleanup AbortControllers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(abortRef.current).forEach((ctrl) => ctrl.abort());
+    };
+  }, []);
+
   // Stable loadMore ref for IntersectionObserver (avoids deps churn)
   loadMoreRef.current = loadMore;
 
@@ -407,13 +414,20 @@ export function SimulationPage() {
         setActiveConvId(null);
         setSelectedScenario(TEST_SCENARIOS[0]);
       }
-      updateTabState(convId, { ...DEFAULT_TAB_STATE });
+      // Clean up tab state to prevent memory leak
+      abortRef.current[convId]?.abort();
+      delete abortRef.current[convId];
+      setTabStates(prev => {
+        const next = { ...prev };
+        delete next[convId];
+        return next;
+      });
       toast.success('已清除模拟记录');
     } catch (err) {
       simulationLogger.error('清除失败', { error: err });
       toast.error('清除失败');
     }
-  }, [activeConvId, updateTabState, updateItems, setTotal, updateItemsLength]);
+  }, [activeConvId, updateItems, setTotal, updateItemsLength]);
 
   // Effect to trigger auto-play after message is sent
   useEffect(() => {

@@ -2,6 +2,15 @@ import { KnowledgeClient, Config } from 'coze-coding-dev-sdk';
 import { toServiceError } from './service-utils';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
+import { logger } from '@/lib/logger';
+
+/**
+ * Escape special characters for PostgreSQL LIKE/ILIKE patterns.
+ * Prevents SQL injection via % (match any chars) and _ (match single char) wildcards.
+ */
+function escapeLikePattern(str: string): string {
+  return str.replace(/[%_\\]/g, '\\\\$&');
+}
 
 export interface KnowledgeImageRef {
   url: string;
@@ -74,7 +83,7 @@ async function getSearchSettings(): Promise<KnowledgeSearchSettings> {
     if (imgLimitStr) imageSearchLimit = clampInt(parseInt(imgLimitStr, 10), 0, 10, DEFAULT_KNOWLEDGE_IMAGE_SEARCH_LIMIT);
   } catch (err) {
     // Settings table read failure should never break search; keep defaults.
-    console.warn('[KnowledgeSearch] Failed to read search settings, using defaults:', err);
+    logger.agent.warn('[KnowledgeSearch] Failed to read search settings, using defaults', { error: err });
   }
 
   searchSettingsCache = { minScore, searchLimit, imageSearchLimit, cachedAt: Date.now() };
@@ -154,7 +163,7 @@ export class KnowledgeSearchService {
       return { context: '', sources: [], confidence: 0, images };
     } catch (error) {
       // Knowledge base search failure should not block the main flow
-      console.error('Knowledge search failed:', error);
+      logger.agent.error('Knowledge search failed', { error });
       return { context: '', sources: [], confidence: 0, images: [] };
     }
   }
@@ -178,8 +187,9 @@ export class KnowledgeSearchService {
       if (keywords.length === 0) return [];
 
       // Build OR conditions for keyword matching on name and content
+      // Use escapeLikePattern to prevent SQL injection via LIKE wildcards
       const orConditions = keywords
-        .flatMap(kw => [`name.ilike.%${kw}%`, `content.ilike.%${kw}%`])
+        .flatMap(kw => [`name.ilike.%${escapeLikePattern(kw)}%`, `content.ilike.%${escapeLikePattern(kw)}%`])
         .join(',');
 
       const { data, error } = await client
@@ -200,7 +210,7 @@ export class KnowledgeSearchService {
           category: item.category || '未分类',
         }));
     } catch (error) {
-      console.error('Knowledge image search failed:', error);
+      logger.agent.warn('Knowledge image search failed', { error });
       return [];
     }
   }
@@ -226,8 +236,9 @@ export class KnowledgeSearchService {
 
       if (keywords.length === 0) return sources;
 
+      // Use escapeLikePattern to prevent SQL injection via LIKE wildcards
       const orConditions = keywords
-        .flatMap(kw => [`name.ilike.%${kw}%`, `content.ilike.%${kw}%`])
+        .flatMap(kw => [`name.ilike.%${escapeLikePattern(kw)}%`, `content.ilike.%${escapeLikePattern(kw)}%`])
         .join(',');
 
       const { data, error } = await client
@@ -321,7 +332,7 @@ export class KnowledgeSearchService {
         )
       );
     } catch (error) {
-      console.error('Failed to update hit counts:', error);
+      logger.agent.warn('Failed to update hit counts', { error });
     }
   }
 

@@ -6,6 +6,7 @@ import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ChatTabBar, type OpenTab } from './chat-tab-bar';
 import { WelcomeScreen } from './welcome-screen';
+import { ErrorBoundary } from '@/components/common/error-boundary';
 
 import { Conversation, Message } from '@/lib/types';
 export type { Conversation, Message };
@@ -29,6 +30,14 @@ interface TabState {
 }
 
 export function ChatPage() {
+  return (
+    <ErrorBoundary>
+      <ChatPageInner />
+    </ErrorBoundary>
+  );
+}
+
+function ChatPageInner() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -58,6 +67,14 @@ export function ChatPage() {
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
+
+  // Cleanup AbortControllers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(abortRefs.current).forEach((ctrl) => ctrl.abort());
+      listAbortRef.current?.abort();
+    };
+  }, []);
 
   // Helper: get tab state with defaults
   const getTabState = useCallback(

@@ -10,11 +10,24 @@ import { verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
 import { generateToken, getTokenCookieOptions } from '@/lib/auth/jwt';
 import { checkRateLimit } from '@/lib/api-utils';
 import { LoginSecurityService } from '@/lib/auth/login-security';
+import { z } from 'zod';
 
 const userRepo = new UserRepository();
 
 // Login rate limit: 5 attempts per 5 minutes per IP
 const LOGIN_RATE_LIMIT = { maxRequests: 5, windowMs: 5 * 60 * 1000 };
+
+// Zod schema for login input validation
+const LoginSchema = z.object({
+  email: z.string()
+    .min(1, '请填写邮箱')
+    .email('邮箱格式不正确'),
+  password: z.string()
+    .min(1, '请填写密码'),
+});
+
+// Email format regex for additional server-side check (defense in depth)
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   // Rate limiting (IP-based)
@@ -34,13 +47,22 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
-  const { email, password } = body;
-
-  // Validate input
-  if (!email || !password) {
-    return apiError('请填写邮箱和密码', {
+  // Validate input with Zod schema
+  const validationResult = LoginSchema.safeParse(body);
+  if (!validationResult.success) {
+    return apiError(validationResult.error.errors[0]?.message || '输入格式不正确', {
       status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_CREDENTIALS',
+      code: 'VALIDATION_ERROR',
+    });
+  }
+
+  const { email, password } = validationResult.data;
+
+  // Additional regex check for defense in depth (Zod already validates email format)
+  if (!EMAIL_REGEX.test(email)) {
+    return apiError('邮箱格式不正确', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'INVALID_EMAIL_FORMAT',
     });
   }
 

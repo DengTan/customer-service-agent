@@ -99,7 +99,9 @@ export class TicketService {
       result.tickets = await this.enrichWithSLA(result.tickets);
 
       // Fire-and-forget: check SLA overdue alerts
-      this.checkSLAOverdue().catch(() => {});
+      this.checkSLAOverdue().catch((err) => {
+        console.error('[TicketService] Failed to check SLA overdue:', err);
+      });
 
       return {
         ...result,
@@ -156,7 +158,9 @@ export class TicketService {
 
       // Auto-assign if enabled and no assignee specified
       if (!t.assignee_id && await this.isAutoAssignEnabled()) {
-        this.autoAssign(t.id).catch(() => {}); // fire-and-forget
+        this.autoAssign(t.id).catch((err) => {
+          console.error('[TicketService] Failed to auto-assign ticket:', err, { ticketId: t.id });
+        }); // fire-and-forget
       }
 
       return ticket;
@@ -225,7 +229,9 @@ export class TicketService {
 
       // Auto-assign if enabled and no assignee specified
       if (!t.assignee_id && await this.isAutoAssignEnabled()) {
-        this.autoAssign(t.id).catch(() => {}); // fire-and-forget
+        this.autoAssign(t.id).catch((err) => {
+          console.error('[TicketService] Failed to auto-assign ticket from conversation:', err, { ticketId: t.id });
+        }); // fire-and-forget
       }
 
       return ticket;
@@ -317,7 +323,9 @@ export class TicketService {
 
         // Parent-child linkage: check if all sub-tickets are now closed
         if (ticket.parent_ticket_id && (updateData.status === 'resolved' || updateData.status === 'closed')) {
-          this.checkParentTicketClosure(ticket.parent_ticket_id, input.operator_id ?? null).catch(() => {});
+          this.checkParentTicketClosure(ticket.parent_ticket_id, input.operator_id ?? null).catch((err) => {
+            console.error('[TicketService] Failed to check parent ticket closure:', err, { parentTicketId: ticket.parent_ticket_id });
+          });
         }
       }
 
@@ -858,14 +866,18 @@ export class TicketService {
       // Log status changes for each ticket if status was changed
       if (updates.status) {
         for (const id of ids) {
-          await this.tickets.logStatusChange(id, null, updates.status, null).catch(() => {});
+          await this.tickets.logStatusChange(id, null, updates.status, null).catch((err) => {
+            console.error('[TicketService] Failed to log status change:', err, { ticketId: id });
+          });
         }
       }
 
       // Notify assignees if batch assigned
       if (updates.assignee_id) {
         for (const id of ids) {
-          this.notifyTicketAssigned(id, '', '', updates.assignee_id, null).catch(() => {});
+          this.notifyTicketAssigned(id, '', '', updates.assignee_id, null).catch((err) => {
+            console.error('[TicketService] Failed to notify assignee:', err, { ticketId: id, assigneeId: updates.assignee_id });
+          });
         }
       }
 

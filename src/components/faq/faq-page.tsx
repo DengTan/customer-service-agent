@@ -14,6 +14,7 @@ import {
   StickyNote, Ruler, Image as ImageLucide,
 } from 'lucide-react';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
+import { ErrorBoundary } from '@/components/common/error-boundary';
 import { ImportProgress } from './import-progress';
 import { ProductFormModal } from './product-form-modal';
 import { SizeChartFormModal } from './size-chart-form-modal';
@@ -66,6 +67,14 @@ function formatFileSize(bytes: number): string {
 }
 
 export function FaqPage() {
+  return (
+    <ErrorBoundary>
+      <FaqPageInner />
+    </ErrorBoundary>
+  );
+}
+
+function FaqPageInner() {
   // Tab switch
   const [activeTab, setActiveTab] = useState<TabType>('knowledge');
 
@@ -1247,6 +1256,7 @@ export function FaqPage() {
   };
 
   return (
+    <ErrorBoundary>
     <div className="h-full flex flex-col page-transition">
       {/* Header */}
       <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
@@ -2874,5 +2884,6 @@ export function FaqPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </ErrorBoundary>
   );
 }

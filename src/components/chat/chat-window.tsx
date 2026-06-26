@@ -74,7 +74,7 @@ function ConversationTicketsBanner({ conversationId }: { conversationId?: string
       .then(data => {
         if (data?.tickets) setTickets(data.tickets);
       })
-      .catch(() => {});
+      .catch((err) => console.error('[ConversationTicketsBanner] Failed to fetch tickets:', err));
   }, [conversationId]);
 
   if (tickets.length === 0) return null;

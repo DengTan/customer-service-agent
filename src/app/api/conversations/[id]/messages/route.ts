@@ -16,6 +16,17 @@ import { AlertRepository } from '@/server/repositories/alert-repository';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { HTTP } from '@/lib/constants';
+import { z } from 'zod';
+
+// Zod schema for message input validation
+const MessageSchema = z.object({
+  content: z.string()
+    .min(1, '消息内容不能为空')
+    .max(HTTP.MAX_MESSAGE_LENGTH, `消息内容超过最大长度限制 ${HTTP.MAX_MESSAGE_LENGTH} 字符`),
+  role: z.string().optional(),
+  image_url: z.string().url('图片URL格式不正确').optional().or(z.literal('')),
+  enable_sub_agent: z.boolean().optional(),
+});
 
 export const POST = withErrorHandler(async (
   request: NextRequest,
@@ -26,17 +37,16 @@ export const POST = withErrorHandler(async (
   if (rateLimitError) return rateLimitError;
 
   const { id: conversationId } = await params;
-  const { data: body, error: parseError } = await parseJsonBody<{ content: string; role?: string; image_url?: string; enable_sub_agent?: boolean }>(request);
+  const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
-  const { content: userMessage, role: messageRole, image_url: imageUrl, enable_sub_agent: enableSubAgent } = body!;
 
-  if (!userMessage || typeof userMessage !== 'string') {
-    return apiError('消息内容不能为空', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  // Validate input with Zod schema
+  const validationResult = MessageSchema.safeParse(body);
+  if (!validationResult.success) {
+    return apiError(validationResult.error.errors[0]?.message || '输入格式不正确', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
   }
 
-  if (userMessage.length > HTTP.MAX_MESSAGE_LENGTH) {
-    return apiError(`消息内容超过最大长度限制 ${HTTP.MAX_MESSAGE_LENGTH} 字符`, { status: HttpStatus.BAD_REQUEST, code: 'MESSAGE_TOO_LONG' });
-  }
+  const { content: userMessage, role: messageRole, image_url: imageUrl, enable_sub_agent: enableSubAgent } = validationResult.data;
 
   // Content security filter check
   const contentFilterService = new ContentFilterService();
@@ -55,7 +65,7 @@ export const POST = withErrorHandler(async (
   }
 
   // If content was filtered (replacements), use the filtered content
-  let processedMessage = filterResult.filteredContent;
+  const processedMessage = filterResult.filteredContent;
   if (processedMessage !== userMessage) {
     logger.api.info('Content filtered', {
       conversationId,

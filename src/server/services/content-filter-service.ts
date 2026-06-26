@@ -3,6 +3,7 @@ import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { logger } from '@/lib/logger';
+import { CONTENT_FILTER } from '@/lib/constants';
 
 // ===== Types =====
 
@@ -33,8 +34,6 @@ export interface UrlMatch {
 // URL regex patterns
 const URL_REGEX = /https?:\/\/([a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+([\/\?&#].*)?/gi;
 const DOMAIN_REGEX = /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+/i;
-const CACHE_TTL_MS = 30_000; // 30 seconds
-const MAX_CACHE_SIZE = 10000; // Max entries in cache
 
 // ===== Service =====
 
@@ -212,7 +211,9 @@ export class ContentFilterService {
 
       // Increment hit count for allowed domains (for statistics)
       if (isAllowed) {
-        this.repository.incrementDomainHitCount(domain).catch(() => {});
+        this.repository.incrementDomainHitCount(domain).catch((err) => {
+          logger.api.warn('Failed to increment domain hit count', { error: err, domain });
+        });
       }
     }
 
@@ -269,7 +270,7 @@ export class ContentFilterService {
     }>
   > {
     // Check cache
-    if (this.sensitiveWordsCache && Date.now() - this.sensitiveWordsCache.timestamp < CACHE_TTL_MS) {
+    if (this.sensitiveWordsCache && Date.now() - this.sensitiveWordsCache.timestamp < CONTENT_FILTER.CACHE_TTL_MS) {
       return this.sensitiveWordsCache.words;
     }
 
@@ -284,7 +285,7 @@ export class ContentFilterService {
     }));
 
     // Enforce cache size limit
-    const limitedWords = words.slice(0, MAX_CACHE_SIZE);
+    const limitedWords = words.slice(0, CONTENT_FILTER.MAX_CACHE_SIZE);
 
     this.sensitiveWordsCache = {
       words: limitedWords,
@@ -296,7 +297,7 @@ export class ContentFilterService {
 
   private async getAllowedDomains(): Promise<Array<{ domain: string; pattern_type: 'exact' | 'wildcard' | 'suffix' }>> {
     // Check cache
-    if (this.domainsCache && Date.now() - this.domainsCache.timestamp < CACHE_TTL_MS) {
+    if (this.domainsCache && Date.now() - this.domainsCache.timestamp < CONTENT_FILTER.CACHE_TTL_MS) {
       return this.domainsCache.domains;
     }
 
@@ -308,7 +309,7 @@ export class ContentFilterService {
     }));
 
     // Enforce cache size limit
-    const limitedDomains = domains.slice(0, MAX_CACHE_SIZE);
+    const limitedDomains = domains.slice(0, CONTENT_FILTER.MAX_CACHE_SIZE);
 
     this.domainsCache = {
       domains: limitedDomains,
@@ -396,7 +397,9 @@ export class ContentFilterService {
   private async incrementHitCounts(result: FilterResult): Promise<void> {
     // Increment sensitive word hit counts
     for (const match of result.sensitiveWordMatches) {
-      await this.repository.incrementHitCount(match.word).catch(() => {});
+      await this.repository.incrementHitCount(match.word).catch((err) => {
+        logger.api.warn('Failed to increment sensitive word hit count', { error: err, word: match.word });
+      });
     }
   }
 

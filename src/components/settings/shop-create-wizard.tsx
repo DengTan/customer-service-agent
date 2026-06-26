@@ -547,7 +547,7 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
           });
           setQuickReplies(merged);
         })
-        .catch(() => {});
+        .catch((err) => console.error('[ShopCreateWizard] Failed to fetch quick replies:', err));
     }
   }, [open, step]);
 

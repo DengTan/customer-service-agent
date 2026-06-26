@@ -149,7 +149,7 @@ export function ConversationDetail({
     fetch('/api/quick-replies')
       .then(res => res.ok ? res.json() : { replies: [] })
       .then(data => setQuickReplies(data.replies || []))
-      .catch(() => {});
+      .catch((err) => console.error('[ConversationDetail] Failed to fetch quick replies:', err));
   }, []);
 
   // Auto scroll

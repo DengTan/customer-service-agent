@@ -616,8 +616,8 @@ export class LLMStreamingService {
 
       // 1.5 Update message count for the assistant message
       // (insertMessage only writes the row; count increment is separate)
-      this.conversationService.incrementMessageCount(conversationId).catch(() => {
-        // Non-critical — count will self-heal on next user message
+      this.conversationService.incrementMessageCount(conversationId).catch((err) => {
+        logger.agent.warn('[LLMStreamingService] Failed to increment message count', { error: err, conversationId });
       });
 
       // 2. Generate incremental summary (fire-and-forget, non-blocking)
@@ -626,8 +626,8 @@ export class LLMStreamingService {
         userMessage,
         fullContent,
         customHeaders,
-      ).catch(() => {
-        // Summary generation failure should not block the response
+      ).catch((err) => {
+        logger.agent.warn('[LLMStreamingService] Failed to generate incremental summary', { error: err, conversationId });
       });
 
       // 3. Check for anomalies and create alerts
@@ -639,8 +639,8 @@ export class LLMStreamingService {
       );
 
       // 4. Run quality checks against AI reply (fire-and-forget, non-blocking)
-      this.qualityService.runQualityCheck(conversationId, fullContent).catch(() => {
-        // Quality check failure should not block the response
+      this.qualityService.runQualityCheck(conversationId, fullContent).catch((err) => {
+        logger.agent.warn('[LLMStreamingService] Failed to run quality check', { error: err, conversationId });
       });
 
       // 5. Detect & record knowledge gaps (fire-and-forget, non-blocking).
@@ -650,8 +650,8 @@ export class LLMStreamingService {
         userMessage,
         sources,
         overallConfidence,
-      ).catch(() => {
-        // Gap detection failure should not block the response
+      ).catch((err) => {
+        logger.agent.warn('[LLMStreamingService] Failed to record knowledge gap', { error: err, conversationId });
       });
     } catch (error) {
       // Log but don't fail - these are secondary operations
@@ -675,7 +675,10 @@ export class LLMStreamingService {
     }
 
     // Look up conversation handoff state in parallel-friendly way
-    const session = await this.conversationService.getSessionInfo(conversationId).catch(() => null);
+    const session = await this.conversationService.getSessionInfo(conversationId).catch((err) => {
+      logger.agent.warn('[LLMStreamingService] Failed to get session info for gap detection', { error: err, conversationId });
+      return null;
+    });
     const triggeredHandoff = session?.status === 'handoff';
 
     await this.knowledgeGapService.analyzeAndRecord({

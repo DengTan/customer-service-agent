@@ -20,7 +20,9 @@ export class KnowledgeFeedbackService {
       const record = await this.feedback.create(input);
       // 原子更新知识条目自身计数（fire-and-forget 不阻塞主流程）
       if (input.knowledge_item_id) {
-        this.feedback.incrementAdoptionCounter(input.knowledge_item_id, input.feedback_type).catch(() => {});
+        this.feedback.incrementAdoptionCounter(input.knowledge_item_id, input.feedback_type).catch((err) => {
+          console.error('[KnowledgeFeedbackService] Failed to increment adoption counter:', err, { knowledgeItemId: input.knowledge_item_id });
+        });
       }
       return { id: record.id };
     } catch (error) {

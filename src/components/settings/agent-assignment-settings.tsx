@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, RefreshCw, Trash2, Plus, Check } from 'lucide-react';
+import { Users, RefreshCw, Trash2, Plus, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { FRONTEND } from '@/lib/constants';
 
 // ============================================
 // Types
@@ -69,6 +70,7 @@ export function AgentAssignmentSettings() {
   // Loading states
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [savingBinding, setSavingBinding] = useState(false);
 
   // Binding modal state
   const [showBindingModal, setShowBindingModal] = useState(false);
@@ -77,7 +79,7 @@ export function AgentAssignmentSettings() {
   const [bindingPriority, setBindingPriority] = useState(0);
 
   // Polling interval for agents status
-  const POLL_INTERVAL = 5000;
+  const POLL_INTERVAL = FRONTEND.AGENT_STATUS_POLL_MS;
 
   // ============================================
   // Data Fetching
@@ -212,6 +214,7 @@ export function AgentAssignmentSettings() {
       return;
     }
 
+    setSavingBinding(true);
     try {
       const res = await fetch('/api/agent-assignment/shop-bindings', {
         method: 'POST',
@@ -234,6 +237,8 @@ export function AgentAssignmentSettings() {
     } catch (error) {
       console.error('Failed to save binding:', error);
       toast.error('保存失败');
+    } finally {
+      setSavingBinding(false);
     }
   };
 
@@ -584,9 +589,11 @@ export function AgentAssignmentSettings() {
               </button>
               <button
                 onClick={handleSaveBinding}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                disabled={savingBinding}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
               >
-                保存
+                {savingBinding ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+                {savingBinding ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

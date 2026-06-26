@@ -1,12 +1,13 @@
 import type { AgentQueueItem } from '@/lib/types';
+import { FRONTEND } from '@/lib/constants';
 
 // Constants
 export const TIME_DIVIDER_MS = 5 * 60 * 1000;
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_UPLOAD_SIZE_LABEL = '10MB';
 export const VALID_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
-export const POLL_INTERVAL_MS = 10000;
-export const NOW_REFRESH_INTERVAL_MS = 10000;
+export const POLL_INTERVAL_MS = FRONTEND.POLL_INTERVAL_MS;
+export const NOW_REFRESH_INTERVAL_MS = FRONTEND.NOW_REFRESH_INTERVAL_MS;
 
 export interface Attachment {
   id: string;

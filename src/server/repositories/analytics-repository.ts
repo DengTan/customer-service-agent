@@ -4,6 +4,7 @@ import { RepositoryError } from './repository-error';
 import type { AlertRow } from './types';
 import { toAlertRow } from './types';
 import { DEMO_ALERTS } from './demo-data/demo-alerts';
+import { logger } from '@/lib/logger';
 import {
   DEMO_METRICS,
   DEMO_SOURCE_DISTRIBUTION,
@@ -131,7 +132,7 @@ export class AnalyticsRepository {
 
       return { totalConversations, totalMessages, activeConversations, todayConversations, ratings, avgRating };
     } catch (error) {
-      console.error('[AnalyticsRepository] getCoreMetrics failed, returning empty metrics:', error);
+      logger.database.error('getCoreMetrics failed, returning empty metrics', { error });
       return {
         totalConversations: 0,
         totalMessages: 0,
@@ -159,7 +160,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent conversations', error.message, error.code);
       return (data ?? []) as RecentConversation[];
     } catch (error) {
-      console.error('[AnalyticsRepository] getRecentConversations failed, returning empty array:', error);
+      logger.database.error('getRecentConversations failed, returning empty array', { error });
       return [];
     }
   }
@@ -184,7 +185,7 @@ export class AnalyticsRepository {
       });
       return distribution;
     } catch (error) {
-      console.error('[AnalyticsRepository] getSourceDistribution failed, returning empty:', error);
+      logger.database.error('getSourceDistribution failed, returning empty', { error });
       return {};
     }
   }
@@ -204,7 +205,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent messages', error.message, error.code);
       return (data ?? []) as RecentMessage[];
     } catch (error) {
-      console.error('[AnalyticsRepository] getRecentMessages failed, returning empty array:', error);
+      logger.database.error('getRecentMessages failed, returning empty array', { error });
       return [];
     }
   }
@@ -232,7 +233,7 @@ export class AnalyticsRepository {
         );
       }).length;
     } catch (error) {
-      console.error('[AnalyticsRepository] getAutoReplyHits failed, returning 0:', error);
+      logger.database.error('getAutoReplyHits failed, returning 0', { error });
       return 0;
     }
   }
@@ -274,7 +275,7 @@ export class AnalyticsRepository {
         info: unresolvedAlerts.filter((a) => a.severity === 'info').length,
       };
     } catch (error) {
-      console.error('[AnalyticsRepository] getAlertStats failed, returning empty stats:', error);
+      logger.database.error('getAlertStats failed, returning empty stats', { error });
       return {
         total: 0,
         unresolved: 0,
@@ -303,7 +304,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent alerts', error.message, error.code);
       return (data ?? []).map(toAlertRow);
     } catch (error) {
-      console.error('[AnalyticsRepository] getRecentAlerts failed, returning empty array:', error);
+      logger.database.error('getRecentAlerts failed, returning empty array', { error });
       return [];
     }
   }
@@ -323,7 +324,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get handoff count', error.message, error.code);
       return data?.length || 0;
     } catch (error) {
-      console.error('[AnalyticsRepository] getHandoffCount failed, returning 0:', error);
+      logger.database.error('getHandoffCount failed, returning 0', { error });
       return 0;
     }
   }
@@ -345,7 +346,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get ratings with date', error.message, error.code);
       return (data ?? []) as RatingWithDate[];
     } catch (error) {
-      console.error('[AnalyticsRepository] getRatingsWithDate failed, returning empty array:', error);
+      logger.database.error('getRatingsWithDate failed, returning empty array', { error });
       return [];
     }
   }
@@ -365,7 +366,7 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get ratings by source', error.message, error.code);
       return (data ?? []) as RatingBySource[];
     } catch (error) {
-      console.error('[AnalyticsRepository] getRatingsBySource failed, returning empty array:', error);
+      logger.database.error('getRatingsBySource failed, returning empty array', { error });
       return [];
     }
   }
@@ -466,7 +467,7 @@ export class AnalyticsRepository {
         overdue_count: overdueCount,
       };
     } catch (error) {
-      console.error('[AnalyticsRepository] getTicketStats failed:', error);
+      logger.database.error('getTicketStats failed', { error });
       return {
         total: 0,
         by_status: {},
@@ -515,7 +516,7 @@ export class AnalyticsRepository {
 
       return trend;
     } catch (error) {
-      console.error('[AnalyticsRepository] getTicketTrend failed:', error);
+      logger.database.error('getTicketTrend failed', { error });
       return [];
     }
   }
@@ -553,7 +554,7 @@ export class AnalyticsRepository {
         avg_resolution_hours: stats.resolved > 0 ? (stats.totalResolutionMs / stats.resolved) / (1000 * 60 * 60) : 0,
       }));
     } catch (error) {
-      console.error('[AnalyticsRepository] getAgentTicketStats failed:', error);
+      logger.database.error('getAgentTicketStats failed', { error });
       return [];
     }
   }

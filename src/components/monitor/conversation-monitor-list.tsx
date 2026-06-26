@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { Search, Globe, ImageIcon, FileText, AlertTriangle, Loader2 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import type { Conversation } from '@/lib/types';
+import { FRONTEND } from '@/lib/constants';
 
 type FilterType = 'all' | 'active_ai' | 'handoff' | 'ended';
 
@@ -50,6 +51,7 @@ export function ConversationMonitorList({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   // Auto-scroll to top when loading completes (initial load or filter reset)
   const wasInitialLoadingRef = useRef(false);
@@ -60,13 +62,16 @@ export function ConversationMonitorList({
     wasInitialLoadingRef.current = isInitialLoading;
   }, [isInitialLoading, conversations.length]);
 
-  // Debounced search → backend
+  // Debounced search → backend (with request cancellation on rapid changes)
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
+    // Cancel any in-flight request before starting a new debounce
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       onSearchChange(value);
-    }, 300);
+    }, FRONTEND.SEARCH_DEBOUNCE_MS);
   }, [onSearchChange]);
 
   // Tab filter change → backend (no setFilter — tabFilter derives from prop)

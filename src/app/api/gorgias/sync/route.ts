@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       sync_enabled: webhookStatus.enabled,
-      last_sync: null // TODO: 记录最后同步时间
+      last_sync: null // Last sync time tracking not implemented yet
     });
 
   } catch (error) {

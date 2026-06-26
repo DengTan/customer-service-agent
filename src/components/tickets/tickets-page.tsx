@@ -55,7 +55,7 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
           setSubProgress(data.sub_ticket_progress || { total: 0, closed: 0, resolved: 0, in_progress: 0 });
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error('[TicketRelationsPanel] Failed to fetch relations:', err));
   }, [ticketId]);
 
   const handleAddRelation = async () => {

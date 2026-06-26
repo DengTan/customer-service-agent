@@ -107,14 +107,32 @@ export function MonitorPage() {
   }, []);
 
   // Initial load + polling (stable useEffect with deps=[])
+  const loadInitialRef = useRef(loadInitial);
+  const loadAlertStatsRef = useRef(loadAlertStats);
+  const startPollingRef = useRef(startPolling);
+  const cleanupRef = useRef(cleanup);
+
   useEffect(() => {
-    loadInitial();
-    loadAlertStats();
-    startPolling(5000);
+    loadInitialRef.current = loadInitial;
+  }, [loadInitial]);
+  useEffect(() => {
+    loadAlertStatsRef.current = loadAlertStats;
+  }, [loadAlertStats]);
+  useEffect(() => {
+    startPollingRef.current = startPolling;
+  }, [startPolling]);
+  useEffect(() => {
+    cleanupRef.current = cleanup;
+  }, [cleanup]);
+
+  useEffect(() => {
+    loadInitialRef.current();
+    loadAlertStatsRef.current();
+    startPollingRef.current(5000);
     return () => {
-      cleanup();
+      cleanupRef.current();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync statusCountsRef → state (triggered whenever fetchFn may have updated the ref)
   useEffect(() => {
@@ -148,13 +166,18 @@ export function MonitorPage() {
     }
   }, []);
 
+  const loadMessagesRef = useRef(loadMessages);
+  useEffect(() => {
+    loadMessagesRef.current = loadMessages;
+  }, [loadMessages]);
+
   useEffect(() => {
     if (selectedId) {
-      loadMessages(selectedId);
+      loadMessagesRef.current(selectedId);
     } else {
       setMessages([]);
     }
-  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   // Clear unread on select
   const handleSelect = useCallback((convId: string) => {

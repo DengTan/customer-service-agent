@@ -37,11 +37,13 @@ export function HistoryPage() {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Debounced search value
+  // Debounced search value - use ref to avoid stale closure
   const debouncedSearch = useRef('');
+  const searchInputRef = useRef(searchInput);
   useEffect(() => {
     const timer = setTimeout(() => {
       debouncedSearch.current = searchInput;
+      searchInputRef.current = searchInput;
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
@@ -64,7 +66,8 @@ export function HistoryPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (debouncedSearch.current) params.set('search', debouncedSearch.current);
+      // Use searchInputRef to avoid stale closure
+      if (searchInputRef.current) params.set('search', searchInputRef.current);
       if (statusFilter === 'rated') params.set('status', 'ended');
       params.set('page', String(currentPage));
       params.set('limit', String(pageSize));
@@ -100,7 +103,7 @@ export function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, sourceFilter, dateRange, currentPage, debouncedSearch]);
+  }, [statusFilter, sourceFilter, dateRange, currentPage]);
 
   // 加载数据：初始 + 页码变化时触发
   useEffect(() => {

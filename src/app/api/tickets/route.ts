@@ -20,7 +20,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const result = await ticketService.listTickets(filters);
 
   // Fire-and-forget: check for unassigned tickets that need alerts
-  ticketService.checkUnassignedTickets().catch(() => {});
+  ticketService.checkUnassignedTickets().catch((err) => {
+    console.error('[Tickets API] Failed to check unassigned tickets:', err);
+  });
 
   return apiSuccess(result);
 });

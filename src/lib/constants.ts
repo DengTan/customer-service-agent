@@ -52,3 +52,22 @@ export const DEMO_ARRAY_MAX_SIZE = 200;
 // ============================================================
 export const KNOWLEDGE_SEARCH_LIMIT = 5;
 export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3;
+
+// ============================================================
+// 内容过滤
+// ============================================================
+export const CONTENT_FILTER = {
+  CACHE_TTL_MS: 30_000, // 30 seconds
+  MAX_CACHE_SIZE: 10_000, // Max entries in cache
+  MAX_REPLACE_ITERATIONS: 10, // Max iterations for word replacement
+} as const;
+
+// ============================================================
+// 前端轮询与搜索
+// ============================================================
+export const FRONTEND = {
+  POLL_INTERVAL_MS: 10_000, // 10 seconds - general polling
+  NOW_REFRESH_INTERVAL_MS: 10_000, // 10 seconds - queue wait time refresh
+  SEARCH_DEBOUNCE_MS: 300, // 300ms - search input debounce
+  AGENT_STATUS_POLL_MS: 5_000, // 5 seconds - agent status polling
+} as const;

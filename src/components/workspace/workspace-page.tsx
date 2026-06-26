@@ -161,12 +161,26 @@ export function WorkspacePage() {
 
   // Initial fetch + auto-select + polling
   const fetchingRef = useRef(false);
+  const loadMessagesRef = useRef(loadMessages);
+  const fetchDataRef = useRef(fetchData);
+  const fetchAgentsRef = useRef(fetchAgents);
+
+  useEffect(() => {
+    loadMessagesRef.current = loadMessages;
+  }, [loadMessages]);
+  useEffect(() => {
+    fetchDataRef.current = fetchData;
+  }, [fetchData]);
+  useEffect(() => {
+    fetchAgentsRef.current = fetchAgents;
+  }, [fetchAgents]);
+
   useEffect(() => {
     const doFetch = async () => {
       if (fetchingRef.current) return;
       fetchingRef.current = true;
       try {
-        const items = await fetchData('refresh');
+        const items = await fetchDataRef.current('refresh');
         // Auto-select first assigned conversation on initial load
         if (items.length > 0 && !selectedConversation) {
           setSelectedConversation(items[0]);
@@ -176,16 +190,16 @@ export function WorkspacePage() {
       }
     };
     doFetch();
-    fetchAgents();
-    const interval = setInterval(() => fetchData('refresh'), POLL_INTERVAL_MS);
+    fetchAgentsRef.current();
+    const interval = setInterval(() => fetchDataRef.current('refresh'), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (selectedConversation) {
-      loadMessages(selectedConversation.conversation_id);
+      loadMessagesRef.current(selectedConversation.conversation_id);
     }
-  }, [selectedConversation?.conversation_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedConversation?.conversation_id]);
 
   // Refresh handler
   const handleRefresh = async () => {
