@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 
 PORT=5000
+HOSTNAME=0.0.0.0
 COZE_WORKSPACE_PATH="${COZE_WORKSPACE_PATH:-$(pwd)}"
 DEPLOY_RUN_PORT="${DEPLOY_RUN_PORT:-${PORT}}"
 
@@ -31,4 +32,4 @@ echo "Clearing port ${DEPLOY_RUN_PORT} before start."
 kill_port_if_listening
 echo "Starting HTTP service on port ${DEPLOY_RUN_PORT} for dev..."
 
-PORT=${DEPLOY_RUN_PORT} pnpm tsx watch src/server.ts
+PORT=${DEPLOY_RUN_PORT} HOSTNAME=${HOSTNAME} pnpm tsx watch src/server.ts

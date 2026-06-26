@@ -1833,3 +1833,78 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 - `src/app/api/knowledge/size-charts/import/route.ts` — 批量导入
 - `src/app/api/knowledge/size-charts/export/route.ts` — CSV 导出
 
+
+---
+
+## 项目初始化与预览链路（2026-07-08）
+
+### 初始化信息
+
+| 项目 | 值 |
+|------|------|
+| 工作区根目录 | `/workspace/projects` |
+| 技术项目根目录 | `/workspace/projects`（与工作区根目录重合） |
+| 项目类型 | web |
+| 运行时 | Node.js 24 |
+| 包管理器 | pnpm |
+| 可预览 | enabled |
+
+### 根 `.coze` 配置
+
+位置：`/workspace/projects/.coze`
+
+```toml
+[project]
+sub_id = "835864e9"
+name = "smartassist"
+requires = ["nodejs-24"]
+project_type = "web"
+
+[preview]
+preview_enable = "enabled"
+
+[dev]
+build = ["bash", "./scripts/prepare.sh"]
+run = ["bash", "./scripts/dev.sh"]
+validate = ["bash", "./scripts/validate.sh"]
+deps = ["git"]
+
+[deploy.profile]
+kind = "service"
+flavor = "web"
+
+[deploy]
+build = ["bash", "./scripts/build.sh"]
+run = ["bash", "./scripts/start.sh"]
+deps = ["git"]
+
+[subprojects]
+path = ["."]
+```
+
+### 预览链路修复记录
+
+**问题**：`server.ts` 依赖 `HOSTNAME` 环境变量确定绑定地址，但 `dev.sh` 和 `start.sh` 未设置此变量，导致服务绑定到 `localhost` 而非 `0.0.0.0`。
+
+**修复**：
+1. `scripts/dev.sh`：添加 `HOSTNAME=0.0.0.0` 环境变量，传递到启动命令
+2. `scripts/start.sh`：添加 `HOSTNAME=0.0.0.0` 环境变量，传递到启动命令
+
+**验证结果**：
+- 端口绑定：`*:5000`（IPv4 全接口）
+- `/login` 返回 200
+- `/` 返回 307（重定向到登录页面）
+
+### 关键脚本
+
+| 脚本 | 职责 |
+|------|------|
+| `scripts/prepare.sh` | 安装依赖（pnpm install） |
+| `scripts/dev.sh` | 启动开发预览服务（端口 5000，绑定 0.0.0.0） |
+| `scripts/validate.sh` | 运行类型检查和 lint |
+| `scripts/build.sh` | 构建生产产物（Next.js + tsup） |
+| `scripts/start.sh` | 启动生产服务（端口 5000，绑定 0.0.0.0） |
+
+### 预览访问
+
+预览服务已在 5000 端口运行，可通过平台分配的访问地址访问。
