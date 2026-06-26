@@ -231,7 +231,11 @@ export function SettingsPage() {
     return `${m}分钟`;
   };
 
+  // Loading state
+  const [isLoading, setIsLoading] = useState(false);
+
   const loadData = useCallback(async () => {
+    setIsLoading(true);
     try {
       const [rulesRes, settingsRes, pushTemplatesRes, pushEventsRes, shopsRes] = await Promise.all([
         fetch('/api/auto-reply'),
@@ -261,6 +265,8 @@ export function SettingsPage() {
     } catch (err) {
       console.error('加载设置失败:', err);
       toast.error('加载设置失败，请刷新重试');
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -325,25 +331,30 @@ export function SettingsPage() {
     const roundsCrit = parseInt(settings.alert_high_rounds_critical_threshold || '15', 10);
 
     if (confCrit >= confWarn) {
-      alert(`低置信度严重告警阈值 (${(confCrit * 100).toFixed(0)}%) 必须小于告警阈值 (${(confWarn * 100).toFixed(0)}%)`);
+      toast.error(`低置信度严重告警阈值 (${(confCrit * 100).toFixed(0)}%) 必须小于告警阈值 (${(confWarn * 100).toFixed(0)}%)`);
       return;
     }
     if (roundsCrit <= roundsWarn) {
-      alert(`高轮次严重告警阈值 (${roundsCrit}) 必须大于告警阈值 (${roundsWarn})`);
+      toast.error(`高轮次严重告警阈值 (${roundsCrit}) 必须大于告警阈值 (${roundsWarn})`);
       return;
     }
 
     setSaving(true);
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings }),
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      if (res.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || '保存设置失败');
+      }
     } catch {
-      // ignore
+      toast.error('保存设置失败，请检查网络连接');
     } finally {
       setSaving(false);
     }
@@ -353,15 +364,20 @@ export function SettingsPage() {
     if (!confirm('确定恢复出厂默认设置？所有自定义配置将被覆盖，此操作不可撤销。')) return;
     setResetting(true);
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: FACTORY_DEFAULTS }),
       });
-      setSettings({ ...FACTORY_DEFAULTS });
-      toast.success('已恢复出厂默认设置');
+      if (res.ok) {
+        setSettings({ ...FACTORY_DEFAULTS });
+        toast.success('已恢复出厂默认设置');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || '恢复默认设置失败');
+      }
     } catch {
-      toast.error('恢复默认设置失败');
+      toast.error('恢复默认设置失败，请检查网络连接');
     } finally {
       setResetting(false);
     }
@@ -369,6 +385,7 @@ export function SettingsPage() {
 
 
   const handleDeleteShop = async (id: string) => {
+    if (!confirm('确定删除此店铺？删除后，与该店铺关联的客服账号也将被删除，此操作不可撤销。')) return;
     try {
       const res = await fetch(`/api/shops/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -383,9 +400,12 @@ export function SettingsPage() {
           }));
         }
         toast.success('店铺已删除');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || '删除店铺失败');
       }
     } catch {
-      toast.error('删除店铺失败');
+      toast.error('删除店铺失败，请检查网络连接');
     }
   };
 
@@ -837,6 +857,14 @@ export function SettingsPage() {
 
         {/* Section content */}
         <div className="flex-1 overflow-y-auto px-6 py-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-3" />
+                <div className="text-sm text-muted-foreground">加载中...</div>
+              </div>
+            </div>
+          ) : (
           <div className="max-w-3xl">
             {/* Auto Reply Rules */}
             {activeSection === 'auto-reply' && (
@@ -2541,6 +2569,7 @@ export function SettingsPage() {
               onCountChange={setDomainCount}
             />
           </div>
+          )}
         </div>
       </div>
     </div>

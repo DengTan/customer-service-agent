@@ -1,0 +1,29 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "pnpm install --include=dev && pnpm run build",
+  "installCommand": "pnpm install --include=dev",
+  "devCommand": "pnpm run dev",
+  "regions": ["iad1"],
+  "build": {
+    "env": {
+      "INCLUDE_DEV": "true"
+    }
+  },
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "memory": 512,
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, must-revalidate"
+        }
+      ]
+    }
+  ]
+}

@@ -260,19 +260,32 @@ export class ContentFilterRepository {
     }
 
     try {
+      // Try direct SQL update first (more reliable than RPC)
       const { error } = await this.client.rpc('increment_hit_count', {
         table_name: 'content_sensitive_words',
         row_word: word,
       });
       if (error) throw error;
     } catch {
-      // Fallback: direct SQL update using a subquery to get current value
-      const { error: updateError } = await this.client
-        .from('content_sensitive_words')
-        .update({ hit_count: this.client.rpc('get_hit_count', { target_table: 'content_sensitive_words', target_word: word }) })
-        .eq('word', word);
-      if (updateError) {
-        logger.api.warn('Failed to increment sensitive word hit count', { word, error: updateError });
+      // Fallback: use Supabase upsert to increment
+      try {
+        const { data: row } = await this.client
+          .from('content_sensitive_words')
+          .select('hit_count')
+          .eq('word', word)
+          .maybeSingle();
+        
+        const currentCount = (row as { hit_count: number } | null)?.hit_count ?? 0;
+        const { error: updateError } = await this.client
+          .from('content_sensitive_words')
+          .update({ hit_count: currentCount + 1 })
+          .eq('word', word);
+        
+        if (updateError) {
+          logger.api.warn('Failed to increment sensitive word hit count', { word, error: updateError });
+        }
+      } catch (fallbackError) {
+        logger.api.warn('Fallback increment sensitive word hit count failed', { word, error: fallbackError });
       }
     }
   }
@@ -373,17 +386,32 @@ export class ContentFilterRepository {
       return;
     }
 
-    const { error } = await this.client.rpc('increment_domain_hit_count', {
-      row_domain: domain,
-    });
-    if (error) {
-      // Fallback: manual increment via query
-      const { error: updateError } = await this.client
-        .from('allowed_domains')
-        .update({ hit_count: this.client.rpc('hit_count', { word: domain }) })
-        .eq('domain', domain);
-      if (updateError)
-        throw new RepositoryError('increment domain hit count', updateError.message, updateError.code);
+    try {
+      const { error } = await this.client.rpc('increment_domain_hit_count', {
+        row_domain: domain,
+      });
+      if (error) throw error;
+    } catch {
+      // Fallback: use Supabase upsert to increment
+      try {
+        const { data: row } = await this.client
+          .from('allowed_domains')
+          .select('hit_count')
+          .eq('domain', domain)
+          .maybeSingle();
+        
+        const currentCount = (row as { hit_count: number } | null)?.hit_count ?? 0;
+        const { error: updateError } = await this.client
+          .from('allowed_domains')
+          .update({ hit_count: currentCount + 1 })
+          .eq('domain', domain);
+        
+        if (updateError) {
+          logger.api.warn('Failed to increment domain hit count', { domain, error: updateError });
+        }
+      } catch (fallbackError) {
+        logger.api.warn('Fallback increment domain hit count failed', { domain, error: fallbackError });
+      }
     }
   }
 

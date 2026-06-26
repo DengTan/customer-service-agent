@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { X, Plus, Trash2, ToggleLeft, ToggleRight, Search, Edit3, Upload, Download, CheckSquare, Square, ShieldAlert, ShieldCheck, AlertTriangle, Filter } from 'lucide-react';
+import { X, Plus, Trash2, ToggleLeft, ToggleRight, Search, Edit3, Upload, Download, CheckSquare, Square, ShieldAlert, ShieldCheck, AlertTriangle, Filter, FileUp, Loader2 } from 'lucide-react';
 import { logger as appLogger } from '@/lib/logger';
 import {
   Select,
@@ -52,6 +52,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
   const [words, setWords] = useState<SensitiveWord[]>([]);
   const [allWords, setAllWords] = useState<SensitiveWord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -64,6 +65,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     replacement: '',
     category: '脏话',
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Stats
   const stats = {
@@ -100,7 +102,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
       setWords(filtered);
       onCountChange(wordsList.length);
     } catch (err) {
-      appLogger.warn('Failed to load sensitive words', { error: err });
+      appLogger.api.warn('Failed to load sensitive words', { error: err });
       toast.error('加载敏感词失败');
     } finally {
       setLoading(false);
@@ -159,7 +161,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
         toast.error(data.error || '操作失败');
       }
     } catch (err) {
-      appLogger.warn('Failed to save sensitive word', { error: err });
+      appLogger.api.warn('Failed to save sensitive word', { error: err });
       toast.error('保存敏感词失败');
     }
   };
@@ -179,7 +181,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
         toast.error('删除失败');
       }
     } catch (err) {
-      appLogger.warn('Failed to delete sensitive word', { error: err });
+      appLogger.api.warn('Failed to delete sensitive word', { error: err });
       toast.error('删除敏感词失败');
     }
   };
@@ -207,7 +209,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
       setSelectedIds(new Set());
       loadWords();
     } catch (err) {
-      appLogger.warn('Failed to batch delete', { error: err });
+      appLogger.api.warn('Failed to batch delete', { error: err });
       toast.error('批量删除失败');
     }
   };
@@ -238,7 +240,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
       setSelectedIds(new Set());
       loadWords();
     } catch (err) {
-      appLogger.warn('Failed to batch toggle', { error: err });
+      appLogger.api.warn('Failed to batch toggle', { error: err });
       toast.error('批量操作失败');
     }
   };
@@ -256,7 +258,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
         toast.error('无权限执行此操作');
       }
     } catch (err) {
-      appLogger.warn('Failed to toggle sensitive word', { error: err });
+      appLogger.api.warn('Failed to toggle sensitive word', { error: err });
     }
   };
 
@@ -290,6 +292,105 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     a.click();
     URL.revokeObjectURL(url);
     toast.success('导出成功');
+  };
+
+  const handleImport = useCallback(async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('文件大小不能超过 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target?.result as string;
+      const lines = content.split('\n').filter(line => line.trim());
+
+      if (lines.length < 2) {
+        toast.error('CSV 文件至少需要包含标题行和 1 条数据');
+        return;
+      }
+
+      // Parse CSV (skip header)
+      const words: Array<{ word: string; match_mode?: string; action?: string; replacement?: string; category?: string }> = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Simple CSV parsing (handle quoted fields)
+        const parts: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (const char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            parts.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        parts.push(current.trim());
+
+        // Map CSV columns: 敏感词, 匹配模式, 处理动作, 替换词, 分类
+        const word = parts[0];
+        if (!word) continue;
+
+        words.push({
+          word,
+          match_mode: parts[1] === '模糊匹配' ? 'fuzzy' : 'exact',
+          action: parts[2] === '替换' ? 'replace' : parts[2] === '警告' ? 'warn' : 'block',
+          replacement: parts[3] || undefined,
+          category: parts[4] || '其他',
+        });
+      }
+
+      if (words.length === 0) {
+        toast.error('未找到有效数据');
+        return;
+      }
+
+      setImporting(true);
+      try {
+        const res = await fetch('/api/content-filter/sensitive-words/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ words }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          toast.success(data.message || `成功导入 ${data.results.success} 条`);
+          loadWords();
+        } else {
+          toast.error(data.error || '导入失败');
+        }
+      } catch (err) {
+        appLogger.api.warn('Import sensitive words failed', { error: err });
+        toast.error('导入失败，请重试');
+      } finally {
+        setImporting(false);
+      }
+    };
+
+    reader.onerror = () => {
+      toast.error('读取文件失败');
+    };
+
+    reader.readAsText(file);
+  }, [loadWords]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImport(file);
+    }
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const resetForm = () => {
@@ -339,7 +440,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-background rounded-xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+      <div className="relative bg-background rounded-xl shadow-xl w-full max-w-4xl max-h-[100vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div>
@@ -433,12 +534,25 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
             <Download className="w-4 h-4" />
           </button>
           <button
-            onClick={() => toast.info('导入功能开发中')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-sm hover:bg-muted/80 transition-colors"
-            title="导入"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-sm hover:bg-muted/80 transition-colors disabled:opacity-50"
+            title="导入 CSV"
           >
-            <Upload className="w-4 h-4" />
+            {importing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            {importing ? '导入中...' : '导入'}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileChange}
+            className="hidden"
+          />
           <button
             onClick={() => setShowAddForm(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"

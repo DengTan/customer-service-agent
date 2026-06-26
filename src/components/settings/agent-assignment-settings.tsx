@@ -2,20 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Users, RefreshCw, Trash2, Plus, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 // ============================================
 // Types
 // ============================================
 
 type AssignmentStrategy = 'round_robin' | 'load_balance' | 'designated_shop';
-
-interface AssignmentConfig {
-  id: string;
-  strategy: AssignmentStrategy;
-  name: string;
-  is_enabled: boolean;
-  condition_config: Record<string, unknown> | null;
-}
 
 interface ShopBinding {
   id: string;
@@ -65,8 +58,8 @@ interface User {
 
 export function AgentAssignmentSettings() {
   // State
-  const [configs, setConfigs] = useState<AssignmentConfig[]>([]);
-  const [activeConfig, setActiveConfig] = useState<AssignmentConfig | null>(null);
+  const [currentStrategy, setCurrentStrategy] = useState<AssignmentStrategy>('round_robin');
+  const [isSaving, setIsSaving] = useState(false);
   const [bindings, setBindings] = useState<ShopBinding[]>([]);
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [summary, setSummary] = useState<AgentSummary>({ total: 0, online: 0, away: 0, offline: 0, disconnected: 0 });
@@ -77,17 +70,8 @@ export function AgentAssignmentSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Modal states
-  const [showConfigModal, setShowConfigModal] = useState(false);
+  // Binding modal state
   const [showBindingModal, setShowBindingModal] = useState(false);
-  const [editingConfig, setEditingConfig] = useState<AssignmentConfig | null>(null);
-
-  // Form states
-  const [formStrategy, setFormStrategy] = useState<AssignmentStrategy>('round_robin');
-  const [formName, setFormName] = useState('');
-  const [formEnabled, setFormEnabled] = useState(true);
-
-  // Binding form
   const [bindingShopId, setBindingShopId] = useState('');
   const [bindingUserId, setBindingUserId] = useState('');
   const [bindingPriority, setBindingPriority] = useState(0);
@@ -99,17 +83,17 @@ export function AgentAssignmentSettings() {
   // Data Fetching
   // ============================================
 
-  const fetchConfigs = useCallback(async () => {
+  const fetchCurrentStrategy = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-assignment/config');
+      const res = await fetch('/api/agent-assignment/current-strategy');
       if (res.ok) {
         const data = await res.json();
-        setConfigs(data.configs || []);
-        const active = (data.configs || []).find((c: AssignmentConfig) => c.is_enabled);
-        setActiveConfig(active || null);
+        if (data.strategy) {
+          setCurrentStrategy(data.strategy);
+        }
       }
     } catch (error) {
-      console.error('Failed to fetch configs:', error);
+      console.error('Failed to fetch current strategy:', error);
     }
   }, []);
 
@@ -164,9 +148,9 @@ export function AgentAssignmentSettings() {
 
   const loadAll = useCallback(async () => {
     setIsLoading(true);
-    await Promise.all([fetchConfigs(), fetchBindings(), fetchAgents(), fetchShops(), fetchUsers()]);
+    await Promise.all([fetchCurrentStrategy(), fetchBindings(), fetchAgents(), fetchShops(), fetchUsers()]);
     setIsLoading(false);
-  }, [fetchConfigs, fetchBindings, fetchAgents, fetchShops, fetchUsers]);
+  }, [fetchCurrentStrategy, fetchBindings, fetchAgents, fetchShops, fetchUsers]);
 
   // Initial load
   useEffect(() => {
@@ -189,92 +173,25 @@ export function AgentAssignmentSettings() {
     setIsRefreshing(false);
   };
 
-  const openConfigModal = (config?: AssignmentConfig) => {
-    if (config) {
-      setEditingConfig(config);
-      setFormStrategy(config.strategy);
-      setFormName(config.name);
-      setFormEnabled(config.is_enabled);
-    } else {
-      setEditingConfig(null);
-      setFormStrategy('round_robin');
-      setFormName('');
-      setFormEnabled(true);
-    }
-    setShowConfigModal(true);
-  };
-
-  const closeConfigModal = () => {
-    setShowConfigModal(false);
-    setEditingConfig(null);
-  };
-
-  const handleSaveConfig = async () => {
-    if (!formName.trim()) {
-      alert('请输入配置名称');
-      return;
-    }
-
+  const handleStrategyChange = async (strategy: AssignmentStrategy) => {
+    setIsSaving(true);
     try {
-      const url = editingConfig
-        ? `/api/agent-assignment/config?id=${editingConfig.id}`
-        : '/api/agent-assignment/config';
-      const method = editingConfig ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategy: formStrategy,
-          name: formName,
-          is_enabled: formEnabled,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || '保存失败');
-        return;
-      }
-
-      await fetchConfigs();
-      closeConfigModal();
-    } catch (error) {
-      console.error('Failed to save config:', error);
-      alert('保存失败');
-    }
-  };
-
-  const handleDeleteConfig = async (id: string) => {
-    if (!confirm('确定要删除这个配置吗？')) return;
-    try {
-      const res = await fetch(`/api/agent-assignment/config?id=${id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || '删除失败');
-        return;
-      }
-      await fetchConfigs();
-    } catch (error) {
-      console.error('Failed to delete config:', error);
-      alert('删除失败');
-    }
-  };
-
-  const handleToggleConfig = async (config: AssignmentConfig) => {
-    try {
-      const res = await fetch(`/api/agent-assignment/config?id=${config.id}`, {
+      const res = await fetch('/api/agent-assignment/current-strategy', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_enabled: !config.is_enabled }),
+        body: JSON.stringify({ strategy }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.error || '更新失败');
-        return;
+
+      if (res.ok) {
+        setCurrentStrategy(strategy);
+      } else {
+        toast.error('保存失败');
       }
-      await fetchConfigs();
     } catch (error) {
-      console.error('Failed to toggle config:', error);
+      console.error('Failed to save strategy:', error);
+      toast.error('保存失败');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -291,7 +208,7 @@ export function AgentAssignmentSettings() {
 
   const handleSaveBinding = async () => {
     if (!bindingShopId || !bindingUserId) {
-      alert('请选择店铺和坐席');
+      toast.error('请选择店铺和坐席');
       return;
     }
 
@@ -308,7 +225,7 @@ export function AgentAssignmentSettings() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || '保存失败');
+        toast.error(data.error || '保存失败');
         return;
       }
 
@@ -316,7 +233,7 @@ export function AgentAssignmentSettings() {
       closeBindingModal();
     } catch (error) {
       console.error('Failed to save binding:', error);
-      alert('保存失败');
+      toast.error('保存失败');
     }
   };
 
@@ -326,13 +243,13 @@ export function AgentAssignmentSettings() {
       const res = await fetch(`/api/agent-assignment/shop-bindings?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || '删除失败');
+        toast.error(data.error || '删除失败');
         return;
       }
       await fetchBindings();
     } catch (error) {
       console.error('Failed to delete binding:', error);
-      alert('删除失败');
+      toast.error('删除失败');
     }
   };
 
@@ -385,6 +302,29 @@ export function AgentAssignmentSettings() {
     }
   };
 
+  const getStrategyIcon = (strategy: AssignmentStrategy) => {
+    switch (strategy) {
+      case 'round_robin':
+        return (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        );
+      case 'load_balance':
+        return (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+          </svg>
+        );
+      case 'designated_shop':
+        return (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        );
+    }
+  };
+
   // ============================================
   // Render
   // ============================================
@@ -397,85 +337,49 @@ export function AgentAssignmentSettings() {
     );
   }
 
+  const strategies: AssignmentStrategy[] = ['round_robin', 'load_balance', 'designated_shop'];
+
   return (
     <div className="space-y-6">
-      {/* Strategy Configuration */}
+      {/* Strategy Configuration - Direct Selection */}
       <section>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium">分配策略</h3>
-          <button
-            onClick={() => openConfigModal()}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-          >
-            <Plus className="w-4 h-4" />
-            添加配置
-          </button>
-        </div>
-
-        {configs.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-border rounded-lg">
-            <Users className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-            <p className="text-muted-foreground">暂无分配策略配置</p>
-            <p className="text-sm text-muted-foreground mt-1">点击上方按钮创建</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {configs.map(config => (
-              <div
-                key={config.id}
-                className={`p-4 border rounded-lg ${config.is_enabled ? 'border-primary bg-primary/5' : 'border-border opacity-60'}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-medium">{config.name}</h4>
-                      {config.is_enabled && (
-                        <span className="px-2 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
-                          启用中
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {getStrategyLabel(config.strategy)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {getStrategyDesc(config.strategy)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleToggleConfig(config)}
-                      className={`p-1.5 rounded-md ${config.is_enabled ? 'text-green-600' : 'text-gray-400'}`}
-                      title={config.is_enabled ? '已启用' : '已禁用'}
-                    >
-                      <Check className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => openConfigModal(config)}
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md"
-                      title="编辑"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteConfig(config.id)}
-                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-md"
-                      title="删除"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
+        <h3 className="text-lg font-medium mb-4">分配策略</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {strategies.map(strategy => (
+            <button
+              key={strategy}
+              onClick={() => handleStrategyChange(strategy)}
+              disabled={isSaving}
+              className={`relative p-4 border-2 rounded-lg text-left transition-all ${
+                currentStrategy === strategy
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              } ${isSaving ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+            >
+              {currentStrategy === strategy && (
+                <div className="absolute top-2 right-2">
+                  <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                    <Check className="w-4 h-4 text-primary-foreground" />
                   </div>
                 </div>
+              )}
+              
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                currentStrategy === strategy ? 'bg-primary text-primary-foreground' : 'bg-muted'
+              }`}>
+                {getStrategyIcon(strategy)}
               </div>
-            ))}
-          </div>
-        )}
+              
+              <div className="font-medium mb-1">{getStrategyLabel(strategy)}</div>
+              <div className="text-sm text-muted-foreground">{getStrategyDesc(strategy)}</div>
+            </button>
+          ))}
+        </div>
       </section>
 
       {/* Shop Bindings (for designated_shop strategy) */}
-      {activeConfig?.strategy === 'designated_shop' && (
+      {currentStrategy === 'designated_shop' && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium">店铺-坐席绑定</h3>
@@ -623,81 +527,6 @@ export function AgentAssignmentSettings() {
           </div>
         )}
       </section>
-
-      {/* Config Modal */}
-      {showConfigModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-background rounded-lg shadow-lg w-full max-w-md p-6">
-            <h3 className="text-lg font-medium mb-4">
-              {editingConfig ? '编辑分配配置' : '新建分配配置'}
-            </h3>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">配置名称</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  placeholder="例如：默认分配策略"
-                  className="w-full px-3 py-2 border rounded-md"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">分配策略</label>
-                <div className="space-y-2">
-                  {(['round_robin', 'load_balance', 'designated_shop'] as AssignmentStrategy[]).map(strategy => (
-                    <label
-                      key={strategy}
-                      className={`flex items-start gap-2 p-3 border rounded-md cursor-pointer ${formStrategy === strategy ? 'border-primary bg-primary/5' : ''}`}
-                    >
-                      <input
-                        type="radio"
-                        name="strategy"
-                        value={strategy}
-                        checked={formStrategy === strategy}
-                        onChange={() => setFormStrategy(strategy)}
-                        className="mt-0.5"
-                      />
-                      <div>
-                        <div className="font-medium">{getStrategyLabel(strategy)}</div>
-                        <div className="text-sm text-muted-foreground">{getStrategyDesc(strategy)}</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="enabled"
-                  checked={formEnabled}
-                  onChange={e => setFormEnabled(e.target.checked)}
-                  className="rounded"
-                />
-                <label htmlFor="enabled" className="text-sm">立即启用</label>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={closeConfigModal}
-                className="px-4 py-2 border rounded-md hover:bg-muted/50"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveConfig}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Binding Modal */}
       {showBindingModal && (

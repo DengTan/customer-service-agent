@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { X, Plus, Trash2, ToggleLeft, ToggleRight, Search, Edit3, Globe, Upload, Download, CheckSquare, Square, ShieldCheck, Link, Clock, Zap, Filter } from 'lucide-react';
+import { X, Plus, Trash2, ToggleLeft, ToggleRight, Search, Edit3, Globe, Upload, Download, CheckSquare, Square, ShieldCheck, Link, Clock, Zap, Filter, Loader2 } from 'lucide-react';
 import { logger as appLogger } from '@/lib/logger';
 import {
   Select,
@@ -58,6 +58,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
   const [domains, setDomains] = useState<AllowedDomain[]>([]);
   const [allDomains, setAllDomains] = useState<AllowedDomain[]>([]);
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingDomain, setEditingDomain] = useState<AllowedDomain | null>(null);
@@ -67,6 +68,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     pattern_type: 'exact' as 'exact' | 'wildcard' | 'suffix',
     description: '',
   });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Stats
   const stats = {
@@ -324,6 +326,103 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     toast.success('导出成功');
   };
 
+  const handleImport = useCallback(async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('文件大小不能超过 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target?.result as string;
+      const lines = content.split('\n').filter(line => line.trim());
+
+      if (lines.length < 2) {
+        toast.error('CSV 文件至少需要包含标题行和 1 条数据');
+        return;
+      }
+
+      // Parse CSV (skip header)
+      const domains: Array<{ domain: string; pattern_type?: string; description?: string }> = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        // Simple CSV parsing (handle quoted fields)
+        const parts: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (const char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            parts.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        parts.push(current.trim());
+
+        // Map CSV columns: 域名, 匹配模式, 描述
+        const domain = parts[0];
+        if (!domain) continue;
+
+        domains.push({
+          domain,
+          pattern_type: parts[1] === '通配符' ? 'wildcard' : parts[1] === '域名后缀' ? 'suffix' : 'exact',
+          description: parts[2] || undefined,
+        });
+      }
+
+      if (domains.length === 0) {
+        toast.error('未找到有效数据');
+        return;
+      }
+
+      setImporting(true);
+      try {
+        const res = await fetch('/api/content-filter/domains/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domains }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          toast.success(data.message || `成功导入 ${data.results.success} 条`);
+          loadDomains();
+        } else {
+          toast.error(data.error || '导入失败');
+        }
+      } catch (err) {
+        appLogger.api.warn('Import domains failed', { error: err });
+        toast.error('导入失败，请重试');
+      } finally {
+        setImporting(false);
+      }
+    };
+
+    reader.onerror = () => {
+      toast.error('读取文件失败');
+    };
+
+    reader.readAsText(file);
+  }, [loadDomains]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImport(file);
+    }
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const resetForm = () => {
     setShowAddForm(false);
     setEditingDomain(null);
@@ -439,12 +538,25 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
             <Download className="w-4 h-4" />
           </button>
           <button
-            onClick={() => toast.info('导入功能开发中')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-sm hover:bg-muted/80 transition-colors"
-            title="导入"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-sm hover:bg-muted/80 transition-colors disabled:opacity-50"
+            title="导入 CSV"
           >
-            <Upload className="w-4 h-4" />
+            {importing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            {importing ? '导入中...' : '导入'}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileChange}
+            className="hidden"
+          />
           <button
             onClick={() => setShowAddForm(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
