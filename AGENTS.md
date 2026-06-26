@@ -922,6 +922,15 @@ POST /api/knowledge/import-jobs
 | 重复 Gorgias 对话数据（同一 ticket_id 创建多个空对话） | 数据库清理：保留消息最多的对话，删除其余重复项 | SQL |
 | `message_count` 不一致的历史数据 | SQL 一次性修正所有 `message_count` 与实际消息数不匹配的记录 | SQL |
 
+### 已修复问题（2026-07-10）- Gorgias Webhook 消息重复接收
+
+| 问题 | 修复方案 | 相关文件 |
+|------|---------|---------|
+| Gorgias 空 body 时 `event.id = Date.now()` 伪值，全局幂等被跳过，导致同一工单被多次处理 | 空 body 时改用 `ticket_{id}_{event_type}` 组合作为幂等键，确保同一工单同一事件类型不会重复处理 | `webhook/route.ts` |
+| `syncMessages` 批量 insert 存在 TOCTOU 竞态：多个并发 Webhook 同时通过 `checkMessagesExist` 后各自插入重复消息 | 改为逐条插入 + 后置去重检查（`dedupGorgiasMessages`）；添加 per-ticket 互斥锁（`processingTickets` Map）防止同一工单并发处理 | `gorgias-sync-service.ts` |
+| 同一工单的 `ticket-created`、`ticket-message-created`、`ticket-updated` 三个事件各自触发 `triggerAIReply`，产生 3 条重复 AI 回复 | 添加 per-conversation AI 回复去重窗口（30秒）；`ticket-created` 事件不再触发 AI 回复（由后续 `ticket-message-created` 触发）；`ticket-updated` 触发的 AI 回复受去重窗口保护 | `gorgias-sync-service.ts` |
+| 数据库缺少 `gorgias_message_id` 唯一索引，无法在数据库层面防止重复 | 新增 migration `20260710_gorgias_message_dedup.sql`：表达式唯一索引 `messages_gorgias_message_id_unique` on `(conversation_id, (metadata->>'gorgias_message_id'))` | `supabase/migrations/20260710_gorgias_message_dedup.sql` |
+
 ### 已修复问题（2026-07-08）- Gorgias Webhook 并发竞态与空对话
 
 | 问题 | 修复方案 | 相关文件 |
@@ -932,7 +941,7 @@ POST /api/knowledge/import-jobs
 | `handleTicketMessageCreated` 在工单无消息且无已有对话时创建空对话 | 改为 `skipped_no_messages`：无消息且无已有对话时跳过 | `gorgias-sync-service.ts` |
 | `handleTicketUpdated` 在工单无消息时也创建空对话 | 同上，无消息时 defer | `gorgias-sync-service.ts` |
 | `handleTicketMessageCreated` 只同步最后一条消息 | 改为 `syncMessages` 同步所有未同步消息 | `gorgias-sync-service.ts` |
-| body 为空时幂等键用 `ticket_{id}_{type}`，导致同一工单不同消息事件被误拦截 | body 为空时不做全局幂等，依赖对话/消息级别幂等（`findByGorgiasTicketId` + `checkMessageExists`） | `webhook/route.ts` |
+| body 为空时幂等键用 `ticket_{id}_{type}`，导致同一工单不同消息事件被误拦截 | ~~已改为"不做全局幂等"~~，但此方案导致消息重复（2026-07-10 已修正：改用 `ticket_{id}_{type}` 组合键 + per-ticket 互斥锁 + 消息级去重） | `webhook/route.ts`, `gorgias-sync-service.ts` |
 | `gorgias_ticket_id` 存储为 number 类型，大数字被 PostgreSQL 转为科学计数法（如 `6.8790392e+07`），导致唯一索引失效、查询不匹配 | `createConversationFromTicket` 中强制 `String(ticket.id)`；`findByGorgiasTicketId` 改用 `->>` + string 比较；`findByGorgiasMessageId` 同样修复；数据库修复现有 number 为 string | `gorgias-sync-service.ts`, `conversation-repository.ts`, SQL |
 | 唯一索引在有重复数据时创建被标记 `indisvalid=false`，不生效 | 清理所有重复数据后重建唯一索引 | SQL |
 | `gorgias_message_id` 同样存储为 number 类型，查询时 `->` vs `->>` 不一致 | 消息插入时强制 `String(msg.id)`；修复现有数据 | `gorgias-sync-service.ts`, SQL |
