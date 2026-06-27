@@ -380,12 +380,15 @@ export class AgentAssignmentService {
     summary: AgentStatusSummary;
   }> {
     try {
+      console.log('[DEBUG] getAllAgentsStatus called');
       const result = await this.statsRepo.getAllAgentsStatus();
+      console.log('[DEBUG] getAllAgentsStatus result:', JSON.stringify(result));
       return {
         agents: result.agents as AgentStatusInfo[],
         summary: result.summary,
       };
     } catch (error) {
+      console.error('[DEBUG] getAllAgentsStatus error:', error);
       throw toServiceError(error, '获取坐席状态失败', 'DB_ERROR');
     }
   }

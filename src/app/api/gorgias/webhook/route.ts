@@ -133,21 +133,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. 原子幂等处理：先尝试插入幂等记录，成功才处理（避免并发竞态）
-    // 仅当有真实 Gorgias event.id 时使用全局幂等键；
-    // body 为空时 event.id 是 Date.now() 伪值，无法做全局去重，
-    // 改为依赖对话/消息级别的幂等检查（findByGorgiasTicketId + checkMessageExists）
+    // 优先使用真实 Gorgias event.id 作为幂等键；
+    // body 为空时 event.id 是 Date.now() 伪值，改用 ticket_id + event_type 组合键
+    // 确保同一工单的同一事件类型不会重复处理
     const hasRealEventId = event.id && typeof event.id === 'number' && event.id < 1000000000000;
-    let idempotencyKey = '';
+    let idempotencyKey: string;
     if (hasRealEventId) {
       idempotencyKey = String(event.id);
+    } else {
+      // 空 body 场景：用 ticket_id + event_type 组合作为幂等键
+      // 不同事件类型（ticket-created / ticket-message-created / ticket-updated）各自独立幂等
+      // 但同一工单同一类型的重复请求会被拦截
+      idempotencyKey = `ticket_${event.object_id}_${event.type}`;
     }
 
-    if (idempotencyKey) {
-      const acquired = await tryAcquireWebhookEvent(idempotencyKey, event.type, String(event.object_id));
-      if (!acquired) {
-        logger.info('Webhook event already processed (idempotent)', { idempotencyKey });
-        return NextResponse.json({ received: true, duplicate: true });
-      }
+    const acquired = await tryAcquireWebhookEvent(idempotencyKey, event.type, String(event.object_id));
+    if (!acquired) {
+      logger.info('Webhook event already processed (idempotent)', { idempotencyKey });
+      return NextResponse.json({ received: true, duplicate: true });
     }
 
     // 5. 处理事件

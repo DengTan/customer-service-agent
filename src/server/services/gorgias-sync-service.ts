@@ -433,20 +433,10 @@ export class GorgiasSyncService {
       const messages = ticket.messages!;
       await this.syncMessages(conversationId, messages, ticket.id);
         
-      // 如果有客户消息，触发 AI 自动回复（fire-and-forget，不阻塞 Webhook 响应）
-      const hasUserMessage = messages.some(msg => {
-        const isFromAgent = typeof msg.from_agent === 'boolean'
-          ? msg.from_agent
-          : msg.author?.type === 'user' || msg.author?.type === 'channel';
-        return !isFromAgent;
-      });
-      if (hasUserMessage) {
-        this.triggerAIReply(conversationId).catch(err => {
-          logger.error('GorgiasSync: triggerAIReply failed in ticket-created', {
-            context: { conversationId, error: err instanceof Error ? err.message : String(err) }
-          });
-        });
-      }
+      // ticket-created 不触发 AI 回复：
+      // Gorgias 通常会紧跟发送 ticket-message-created 事件，由该事件触发 AI 回复。
+      // 如果在此处也触发，会导致同一用户消息产生重复 AI 回复。
+      // 仅当确实没有后续 message-created 事件时（极端情况），用户需手动在监控页操作。
       
       return {
         success: true,
@@ -987,8 +977,20 @@ export class GorgiasSyncService {
     return conversation.id;
   }
   
+  // Per-ticket 处理锁，防止同一工单的并发 Webhook 事件同时处理
+  private static processingTickets = new Map<number, Promise<GorgiasMessage[]>>();
+
+  // Per-conversation AI 回复去重：记录最近一次 AI 回复的时间，防止多事件重复触发
+  private static lastAIReplyTime = new Map<string, number>();
+  private static AI_REPLY_DEDUP_WINDOW_MS = 30_000; // 30秒内不重复触发
+
   /**
-   * 同步多条消息（N+1 查询优化：批量检查消息存在性）
+   * 同步多条消息（逐条插入 + 竞态保护）
+   * 
+   * 防止并发 Webhook 事件的 TOCTOU 竞态：
+   * 1. 批量检查消息是否存在
+   * 2. 逐条插入，插入后立即验证（checkMessageExists）
+   * 3. 如果插入后发现重复（并发导致），删除多余记录
    */
   private async syncMessages(
     conversationId: string,
@@ -1001,65 +1003,115 @@ export class GorgiasSyncService {
 
     const supabase = getSupabaseClient();
 
-    // 批量检查消息是否已存在（P1-5 N+1 优化）
-    const messageIds = messages.map(msg => msg.id);
-    const existingMessageIds = await this.checkMessagesExist(messageIds);
+    // 使用 per-ticket 互斥锁，确保同一工单不会并发处理
+    const lockKey = ticketId;
+    const previousPromise = GorgiasSyncService.processingTickets.get(lockKey);
+    let resolveLock: () => void;
+    const currentPromise = new Promise<GorgiasMessage[]>(resolve => { resolveLock = () => resolve([]); });
+    GorgiasSyncService.processingTickets.set(lockKey, currentPromise);
 
-    // 过滤出还没有同步的消息（保留原始 GorgiasMessage 以便调用者判断来源）
-    const newMessages = messages.filter(msg => !existingMessageIds.has(msg.id));
-    const transformedMessages = newMessages.map(msg => transformMessage(msg));
-
-    if (transformedMessages.length === 0) {
-      return [];
+    // 等待前一个同工单的处理完成
+    if (previousPromise) {
+      await previousPromise;
     }
 
-    // 批量插入消息
-    const { error } = await supabase
-      .from('messages')
-      .insert(transformedMessages.map(msg => ({
-        ...msg,
-        conversation_id: conversationId,
-        created_at: msg.created_at || new Date(),
-      })));
-
-    if (error) {
-      logger.error('GorgiasSync: Failed to sync messages', {
-        context: { conversationId, ticketId, error: error.message }
-      });
-    }
-
-    // Update conversation message_count by the actual number of new messages inserted
-    // (previous code used increment_message_count which only +1 per call, causing undercount)
     try {
-      const newCount = transformedMessages.length;
-      if (newCount > 0) {
-        await supabase.rpc('increment_message_count_by', { conv_id: conversationId, delta: newCount });
+      // 批量检查消息是否已存在
+      const messageIds = messages.map(msg => msg.id);
+      const existingMessageIds = await this.checkMessagesExist(messageIds);
+
+      // 过滤出还没有同步的消息
+      const newMessages = messages.filter(msg => !existingMessageIds.has(msg.id));
+
+      if (newMessages.length === 0) {
+        return [];
       }
-      // Update conversation's updated_at so it appears at the top of the list
-      await supabase
-        .from('conversations')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', conversationId);
-    } catch {
-      // Fallback: try the original +1 RPC if the new one doesn't exist yet
-      try {
-        for (let i = 0; i < transformedMessages.length; i++) {
-          await supabase.rpc('increment_message_count', { conv_id: conversationId });
+
+      // 逐条插入消息，避免批量 insert 导致的 TOCTOU 竞态
+      const actuallySynced: GorgiasMessage[] = [];
+      for (const msg of newMessages) {
+        const transformed = transformMessage(msg);
+        const insertPayload = {
+          ...transformed,
+          conversation_id: conversationId,
+          created_at: transformed.created_at || new Date(),
+        };
+
+        const { error } = await supabase
+          .from('messages')
+          .insert(insertPayload);
+
+        if (error) {
+          // 检查是否是唯一约束冲突（并发插入导致）
+          if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+            logger.info('GorgiasSync: Message already inserted by concurrent request, skipping', {
+              context: { messageId: msg.id, ticketId }
+            });
+            continue;
+          }
+          logger.error('GorgiasSync: Failed to insert message', {
+            context: { messageId: msg.id, ticketId, error: error.message }
+          });
+          continue;
         }
+
+        // 插入后二次验证：检查是否有并发插入导致同一条 gorgias_message_id 出现多次
+        const { data: duplicates } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('metadata->>gorgias_message_id', String(msg.id))
+          .eq('conversation_id', conversationId);
+
+        if (duplicates && duplicates.length > 1) {
+          // 保留第一条（created_at 最早的），删除其余重复
+          const toDelete = duplicates.slice(1).map(d => d.id);
+          logger.warn('GorgiasSync: Found duplicate messages after insert, cleaning up', {
+            context: { messageId: msg.id, duplicateCount: duplicates.length, deletingCount: toDelete.length }
+          });
+          await supabase.from('messages').delete().in('id', toDelete);
+        }
+
+        actuallySynced.push(msg);
+      }
+
+      // Update conversation message_count by the actual number of new messages inserted
+      try {
+        if (actuallySynced.length > 0) {
+          await supabase.rpc('increment_message_count_by', { conv_id: conversationId, delta: actuallySynced.length });
+        }
+        // Update conversation's updated_at so it appears at the top of the list
         await supabase
           .from('conversations')
           .update({ updated_at: new Date().toISOString() })
           .eq('id', conversationId);
       } catch {
-        // Both RPCs may not exist, silently ignore
+        // Fallback: try the original +1 RPC if the new one doesn't exist yet
+        try {
+          for (let i = 0; i < actuallySynced.length; i++) {
+            await supabase.rpc('increment_message_count', { conv_id: conversationId });
+          }
+          await supabase
+            .from('conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversationId);
+        } catch {
+          // Both RPCs may not exist, silently ignore
+        }
+      }
+
+      return actuallySynced;
+    } finally {
+      // 释放锁
+      resolveLock!();
+      // 清理 Map（仅当当前 promise 仍是该 key 对应的值时）
+      if (GorgiasSyncService.processingTickets.get(lockKey) === currentPromise) {
+        GorgiasSyncService.processingTickets.delete(lockKey);
       }
     }
-
-    return newMessages;
   }
   
   /**
-   * 同步单条消息
+   * 同步单条消息（含竞态保护）
    */
   private async syncSingleMessage(
     conversationId: string,
@@ -1088,6 +1140,13 @@ export class GorgiasSyncService {
       .single();
     
     if (error) {
+      // 唯一约束冲突 = 并发插入，视为已存在
+      if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+        logger.info('GorgiasSync: Message already inserted by concurrent request', {
+          context: { messageId: message.id }
+        });
+        return { message_id: String(message.id), role: 'existing', is_new: false };
+      }
       logger.error('GorgiasSync: Failed to sync message', {
         context: { messageId: message.id, error: error.message }
       });
@@ -1266,6 +1325,36 @@ export class GorgiasSyncService {
    * 目前是 fire-and-forget 实现
    */
   private async triggerAIReply(conversationId: string): Promise<void> {
+    // 去重检查：如果同一对话在去重窗口内已经触发过 AI 回复，跳过
+    // 这防止了 ticket-created + ticket-message-created + ticket-updated 三个事件
+    // 几乎同时到达时对同一个用户消息生成 3 条不同的 AI 回复
+    const now = Date.now();
+    const lastReplyTime = GorgiasSyncService.lastAIReplyTime.get(conversationId) || 0;
+    if (now - lastReplyTime < GorgiasSyncService.AI_REPLY_DEDUP_WINDOW_MS) {
+      logger.info('GorgiasSync: Skipping duplicate AI reply trigger (within dedup window)', {
+        context: { conversationId, elapsedMs: now - lastReplyTime }
+      });
+      return;
+    }
+    // 乐观标记触发时间，防止并发请求同时通过
+    GorgiasSyncService.lastAIReplyTime.set(conversationId, now);
+
+    // 二次检查：如果对话中最后一条消息已经是 assistant 消息，不再重复回复
+    // 这处理了去重窗口过期后、但 AI 已经回复过的场景
+    try {
+      const { ConversationRepository } = await import('@/server/repositories/conversation-repository');
+      const convRepo = new ConversationRepository();
+      const messages = await convRepo.listMessages(conversationId, 1);
+      if (messages && messages.length > 0 && messages[0].role === 'assistant') {
+        logger.info('GorgiasSync: Last message is already from assistant, skipping AI reply', {
+          context: { conversationId }
+        });
+        return;
+      }
+    } catch {
+      // 检查失败不阻止流程
+    }
+
     const { ConversationService } = await import('@/server/services/conversation-service');
     const { AutoReplyService } = await import('@/server/services/auto-reply-service');
     const { KnowledgeSearchService } = await import('@/server/services/knowledge-search-service');
@@ -1349,10 +1438,16 @@ export class GorgiasSyncService {
       }
 
       logger.info('GorgiasSync: AI reply completed', { context: { conversationId } });
+
+      // 更新去重标记为完成时间
+      GorgiasSyncService.lastAIReplyTime.set(conversationId, Date.now());
     } catch (error) {
       logger.error('GorgiasSync: triggerAIReply failed', {
         context: { conversationId, error: error instanceof Error ? error.message : String(error) }
       });
+
+      // 失败时清除去重标记，允许后续重试
+      GorgiasSyncService.lastAIReplyTime.delete(conversationId);
     }
   }
 }

@@ -303,14 +303,23 @@ export class ContentFilterRepository {
       return result;
     }
 
-    let query = this.client.from('allowed_domains').select('*');
-    if (filters?.is_enabled !== undefined) {
-      query = query.eq('is_enabled', filters.is_enabled);
+    // Use RPC function to bypass PostgREST schema cache
+    try {
+      const { data, error } = await this.client.rpc('get_allowed_domains', {
+        p_is_enabled: filters?.is_enabled ?? null,
+      });
+      if (error) throw new RepositoryError('list allowed domains', error.message, error.code);
+      return (data ?? []) as AllowedDomainRow[];
+    } catch {
+      // Fallback to direct table query if RPC fails (schema cache might be refreshed)
+      let query = this.client.from('allowed_domains').select('*');
+      if (filters?.is_enabled !== undefined) {
+        query = query.eq('is_enabled', filters.is_enabled);
+      }
+      const { data, error } = await query.order('hit_count', { ascending: false });
+      if (error) throw new RepositoryError('list allowed domains', error.message, error.code);
+      return (data ?? []) as AllowedDomainRow[];
     }
-    const { data, error } = await query.order('hit_count', { ascending: false });
-
-    if (error) throw new RepositoryError('list allowed domains', error.message, error.code);
-    return (data ?? []) as AllowedDomainRow[];
   }
 
   async createAllowedDomain(input: CreateDomainInput): Promise<AllowedDomainRow> {
