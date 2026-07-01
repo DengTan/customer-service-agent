@@ -308,7 +308,7 @@ export class AgentRepository {
   }
 
   async countResolvedToday(agentId?: string): Promise<{ count: number; items: AgentQueueRow[] }> {
-    if (isDemoMode()) return { count: 5, items: [] };
+    if (isDemoMode()) return { count: 0, items: [] };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayISO = today.toISOString();
@@ -327,7 +327,7 @@ export class AgentRepository {
   }
 
   async countByStatus(status: string): Promise<number> {
-    if (isDemoMode()) return status === 'waiting' ? 2 : status === 'assigned' ? 1 : 0;
+    if (isDemoMode()) return 0;
     const { count, error } = await this.client
       .from('agent_queue')
       .select('id', { count: 'exact' })
@@ -337,13 +337,17 @@ export class AgentRepository {
     return count ?? 0;
   }
 
-  async listRatedConversationsUpdatedSince(sinceIso: string): Promise<{ rating: number | null }[]> {
-    if (isDemoMode()) return [{ rating: 4 }, { rating: 5 }, { rating: 3 }, { rating: 5 }, { rating: 4 }];
-    const { data, error } = await this.client
+  async listRatedConversationsUpdatedSince(sinceIso: string, agentId?: string): Promise<{ rating: number | null }[]> {
+    if (isDemoMode()) return [];
+    let query = this.client
       .from('conversations')
       .select('rating')
       .not('rating', 'is', null)
       .gte('updated_at', sinceIso);
+
+    if (agentId) query = query.eq('assigned_agent', agentId);
+
+    const { data, error } = await query;
 
     if (error) throw new RepositoryError('list rated conversations', error.message, error.code);
     return (data ?? []) as { rating: number | null }[];

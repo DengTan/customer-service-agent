@@ -190,6 +190,169 @@ pnpm ts-check         # TypeScript检查
 pnpm lint --quiet     # 代码风格检查
 ```
 
+## 数据库架构与连接配置（2026-07-08）
+
+### 连接配置
+
+#### Supabase REST API（应用层使用）
+
+| 变量 | 值 |
+|------|-----|
+| `COZE_SUPABASE_URL` | `https://br-alive-kea-4152cf8a.supabase2.aidap-global.cn-beijing.volces.com` |
+| `COZE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIs...`（JWT，role=anon） |
+| `COZE_SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs...`（JWT，role=service_role） |
+
+#### Custom API Gateway
+
+```
+https://br-alive-kea-4152cf8a.ap-w5.volcengineapi.com
+```
+
+#### PostgreSQL 直连（用于迁移/运维）
+
+| 参数 | 值 |
+|------|-----|
+| 主机 | `cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com` |
+| 端口 | `5432` |
+| 数据库 | `postgres` |
+| 用户名 | `postgres` |
+| 密码 | `$POSTGRES_PASSWORD`（环境变量，见 `.env.local`） |
+| 连接字符串 | `postgresql://postgres:$POSTGRES_PASSWORD@cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com:5432/postgres?sslmode=require&channel_binding=require` |
+
+#### Connection Pooling（连接池）
+
+| 参数 | 值 |
+|------|-----|
+| Pooled Host | `br-alive-kea-4152cf8a.pooler.aidap-global.cn-beijing.volces.com` |
+| Pooled Port | `5432` |
+| Auto-generated | true |
+
+> 连接池适用于高并发场景，可有效减少数据库连接开销。
+
+### 数据库管理命令
+
+```bash
+# 查看数据库状态
+node scripts/db-admin.js status
+
+# 执行数据库迁移（添加缺失的表）
+node scripts/db-migrate.js
+
+# 初始化默认数据
+node scripts/db-admin.js init
+```
+
+### 数据库表分类总览
+
+数据库包含 60+ 个表，完整定义见 `supabase/migrations/20260627_complete_schema_all.sql`。
+
+#### 核心业务表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `users` | 用户账户 | id, email, name, role(admin/agent/observer), status, password_hash, last_active_at |
+| `conversations` | 对话记录 | id, title, status, rating, handoff_reason, summary, participant_ids, message_count, metadata(jsonb) |
+| `messages` | 消息记录 | id, conversation_id, role, content, source, confidence, tool_calls, mentions |
+| `auto_reply_rules` | 自动回复规则 | id, keywords, reply_content, priority |
+| `settings` | 系统配置 | key, value（键值对存储） |
+| `shops` | 店铺管理 | id, name, platform, knowledge_ids(jsonb), config(jsonb), agent_quota, contact_info, status |
+| `shop_agent_accounts` | 客服托管账号 | id, shop_id, account_name, encrypted_password, platform, status |
+
+#### 知识库表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `knowledge_items` | 知识库条目 | id, title, name, type(text/url/file/image), category, parent_category, content_hash, doc_ids, chunk_count, hit_count, last_hit_at, image_url |
+| `knowledge_chunks` | 文本分片 | id, knowledge_item_id, chunk_index, content, content_hash, doc_id, version_added, version_removed |
+| `knowledge_versions` | 版本历史 | id, knowledge_item_id, version_number, content, chunk_diff(jsonb), chunk_count |
+| `knowledge_import_jobs` | 导入任务 | id, status, progress, chunks_preview, doc_ids |
+| `knowledge_learning_queue` | 知识自学习 | id, question, answer, confidence, source_conversation_id, category, status |
+
+#### 客户与营销表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `customers` | 客户画像 | id, name, phone, email, platform, tags, notes, conversation_count |
+| `customer_tags` | 客户标签 | id, name, color, category(auto/manual), customer_count |
+| `customer_conversations` | 客户-对话关联 | customer_id, conversation_id |
+| `marketing_campaigns` | 营销活动 | id, name, type, target_segment(jsonb), bot_id, status, ab_variant(jsonb), message_template, trigger_type, scheduled_at, trigger_config(jsonb) |
+| `marketing_logs` | 营销日志 | id, campaign_id, customer_id, conversation_id, variant, delivered, replied, converted |
+
+#### 坐席与队列表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `agent_sessions` | 坐席会话 | id, user_id, status, current_conversation_id, last_active_at |
+| `agent_queue` | 人工排队 | id, conversation_id, customer_name, priority, skill_group, assigned_agent_id, status, summary |
+| `skill_groups` | 技能组 | id, name, description, member_ids, is_default |
+| `schedules` | 排班 | id, user_id, skill_group_id, date, shift, status |
+| `quick_replies` | 话术库 | id, title, content, category, variables, scope, usage_count |
+
+#### 质检与标签表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `conversation_tags_def` | 对话标签定义 | id, name, color, category(question_type/sentiment/business_line), conversation_count |
+| `conversation_tag_records` | 对话标签记录 | conversation_id, tag_id, tagged_by |
+| `quality_rules` | 质检规则 | id, name, type, config(jsonb), enabled |
+| `quality_checks` | 质检记录 | id, conversation_id, rule_id, result, details |
+
+#### Bot 与路由表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `bot_configs` | Bot配置 | id, name, description, system_prompt, tools, knowledge_ids, skill_group_id, parent_bot_id, delegate_prompt, collaboration_config(jsonb), is_sub_agent, status |
+| `routing_rules` | 路由规则 | id, condition_type, condition_config, target_bot_id, priority, enabled |
+| `agent_delegations` | 子Agent委派记录 | id, conversation_id, parent_bot_id, sub_bot_id, trigger_intent, input_message, result_content, confidence, status, error_message |
+| `agent_collaborations` | 子Agent协作通信 | id, conversation_id, delegation_id, sender_bot_id, receiver_bot_id, message_type, content, context, status |
+
+#### 工单系统表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `tickets` | 工单 | id, ticket_number, title, description, category, priority, status, assignee_id, creator_id, conversation_id, parent_ticket_id, custom_fields(jsonb) |
+| `ticket_comments` | 工单评论 | id, ticket_id, author_id, content, is_internal |
+| `ticket_status_log` | 状态变更日志 | id, ticket_id, from_status, to_status, operator_id |
+| `ticket_categories` | 工单分类 | id, name, parent_id, config(jsonb) |
+| `ticket_custom_fields` | 自定义字段定义 | id, name, field_type, required, options(jsonb) |
+| `ticket_field_values` | 自定义字段值 | id, ticket_id, field_id, value |
+| `ticket_relations` | 工单关联 | id, ticket_id, related_ticket_id, relation_type(blocks/related/duplicates) |
+| `ticket_audit_log` | 操作审计日志 | id, ticket_id, operation, operator_id, details(jsonb) |
+
+#### 推送与告警表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `alerts` | 异常告警 | id, type, severity, message, is_resolved, conversation_id |
+| `push_templates` | 推送模板 | id, name, trigger_event, content_template, channel, enabled |
+| `push_records` | 推送记录 | id, template_id, recipient, content, trigger_event, channel, status |
+| `push_event_log` | 推送事件日志 | id, event_type, event_data(jsonb), processed_at |
+
+#### 商品与尺码表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `product_details` | 商品详情 | id, name, sku, category, brand, price, specifications(jsonb), features, description, image_urls, status, doc_ids, content_hash, hit_count, platform_connection_id |
+| `size_charts` | 尺码配置 | id, name, category, chart_type, product_id, size_columns(jsonb), size_rows(jsonb), recommend_params(jsonb), image_url, doc_ids, status, hit_count |
+| `size_chart_versions` | 尺码表版本 | id, size_chart_id, version_number, content_snapshot(jsonb), description |
+
+#### Gorgias 集成表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `webhook_event_processed` | Webhook幂等记录 | id, event_id, event_type, processed_at（防止重复处理） |
+
+### 迁移脚本位置
+
+| 脚本 | 说明 |
+|------|------|
+| `supabase/migrations/20260627_complete_schema_all.sql` | 完整数据库结构（54 表） |
+| `supabase/migrations/20260627_migrate_coze_supabase.sql` | 补充表迁移（6 表） |
+| `supabase/migrations/20260710_gorgias_message_dedup.sql` | Gorgias 消息去重索引 |
+| `supabase/migrations/20260624_gorgias_metadata.sql` | Gorgias 元数据字段 |
+
+---
+
 ## 数据库表
 
 | 表名 | 用途 |
@@ -1146,6 +1309,23 @@ src/server/services/tool-providers/
 
 **已知待接入：** `processScheduledCampaigns()` 的调用入口（启动时？定时任务？API 触发？）
 
+✅ 已接入：可通过 `/api/admin/scheduler/run?tasks=scheduled_campaigns` 外部 Cron 触发。
+
+---
+
+### 后台调度服务（2026-06-30）
+
+| 能力 | 说明 | 文件 |
+|------|------|------|
+| BackgroundSchedulerService | 封装 4 类后台任务的统一调度服务 | `src/server/services/background-scheduler-service.ts` |
+| 定时 SLA 检查 | 每 5 分钟扫描超时应答/处理的工单并告警 | `/api/admin/scheduler/run?tasks=sla_check` |
+| 未指派工单告警 | 扫描创建超过阈值未指派的工单 | `/api/admin/scheduler/run?tasks=unassigned_check` |
+| 超时会话提醒 | 扫描最后一条消息来自用户且超时的活跃会话（1小时去重） | `/api/admin/scheduler/run?tasks=unhandled_check` |
+| 定时营销投放 | 执行已到期的定时营销活动 | `/api/admin/scheduler/run?tasks=scheduled_campaigns` |
+| 外部 Cron 触发 | 外部定时器（如 crontab / Coze 平台定时）调用 API 触发调度 | — |
+
+---
+
 ---
 
 ## 未完成功能与待接入逻辑
@@ -1211,6 +1391,43 @@ function isDemoMode(): boolean {
 
 当前 Coze 平台已自动注入 `COZE_SUPABASE_URL`、`COZE_SUPABASE_ANON_KEY`、`COZE_SUPABASE_SERVICE_ROLE_KEY`，项目运行在真实模式下。
 
+### Coze 平台 Supabase 配置详解
+
+#### 连接方式
+
+**Supabase REST API（应用层使用）**
+
+| 变量 | 值 |
+|------|-----|
+| `COZE_SUPABASE_URL` | `https://br-alive-kea-4152cf8a.supabase2.aidap-global.cn-beijing.volces.com` |
+| `COZE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIs...` |
+| `COZE_SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs...` |
+
+**PostgreSQL 直连（迁移/运维）**
+
+| 参数 | 值 |
+|------|-----|
+| 主机 | `cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com` |
+| 端口 | `5432` |
+| 数据库 | `postgres` |
+| 用户名 | `postgres` |
+| 密码 | `tLk6MwE1qBEt55E57n` |
+
+#### 数据库管理命令
+
+```bash
+# 查看数据库状态
+node scripts/db-admin.js status
+
+# 执行数据库迁移
+node scripts/db-admin.js migrate
+
+# 初始化默认数据
+node scripts/db-admin.js init
+```
+
+详细配置说明见 `COZE_PLATFORM_CONFIG.md`。
+
 ### 数据持久化验证（2026-06-10）
 
 | 模块 | CREATE | READ | UPDATE | DELETE | 备注 |
@@ -1256,7 +1473,7 @@ function isDemoMode(): boolean {
 | 系统设置 `max_turns` | `/settings` | ~~保存到数据库，但无轮次限制逻辑~~ | ✅ 已修复：`messages/route.ts` 发送消息前检查 `message_count`，达上限自动结束会话 |
 | 系统设置 `rating_enabled` | `/settings` | ~~保存到数据库，但评价入口始终显示~~ | ✅ 已修复：`rating/route.ts` 读取设置，`rating_enabled=false` 时返回 403 |
 | 系统设置 `new_conversation_notify` | `/settings` | ~~保存到数据库，但无通知逻辑~~ | ✅ 已修复：`conversations/route.ts` 创建会话后向 `alerts` 表插入通知型告警 |
-| 系统设置 `unhandled_remind` | `/settings` | ~~保存到数据库，但无定时提醒~~ | ✅ 已修复：`messages/route.ts` 每次消息时检查超时未回复会话，产生告警 |
+| 系统设置 `unhandled_remind` | `/settings` | ~~保存到数据库，但无定时提醒~~ | ✅ 已修复：`messages/route.ts` 每次消息时检查超时会话（1小时去重）；`BackgroundSchedulerService.runUnhandledReminder()` 支持外部 Cron 触发 |
 | 排班管理 | `/workspace` | ~~CRUD 写入 `schedules` 表，但坐席分配时不参考排班~~ | ✅ 已修复：转人工时 `AgentService.autoAssign` 按排班+技能组优先匹配坐席 |
 | 营销活动触达 | `/marketing` | ~~活动 CRUD + 统计可用，但不会主动触达客户~~ | ✅ 已修复 Phase 1-6：executeCampaign 匹配客群投放、新增客群维度（活跃天数/新客天数/对话次数范围/排除匿名）、消息模板变量插值、定时投放（scheduled_at/processScheduledCampaigns）、A/B 变体 + 获胜判定 + 推广、效果分析（趋势/类型/变体对比）、客群预览 API |
 | 子Agent 自动委派 | `/settings` | ~~子Agent CRUD + 委派 API 可用，但 LLM 流程中未自动委派~~ | ✅ 已修复：`messages/route.ts` 中主动意图识别（`detectIntentAndRoute`，confidence≥0.5）自动委派；`generateSubAgentResponse` 改为真正调用 LLM |

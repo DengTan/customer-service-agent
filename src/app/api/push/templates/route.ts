@@ -1,15 +1,21 @@
 import { NextRequest } from 'next/server';
 import { PushService } from '@/server/services/push-service';
-import { parseJsonBody, apiSuccess, apiError, withErrorHandlerSimple, HttpStatus } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess, apiError, withErrorHandlerSimple, HttpStatus, requirePermission } from '@/lib/api-utils';
 
 const pushService = new PushService();
 
-export const GET = withErrorHandlerSimple(async () => {
+export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'push', 'read');
+  if (denied) return denied;
+
   const result = await pushService.listTemplates();
   return apiSuccess({ templates: result.templates });
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'push', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody<{
     name: string;
     trigger_event: string;
@@ -24,6 +30,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'push', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody<{
     id: string;
     name?: string;
@@ -39,6 +48,9 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'push', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

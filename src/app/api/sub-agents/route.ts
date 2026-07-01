@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
 
 const service = new SubAgentService();
 
@@ -31,6 +31,9 @@ interface UpdateSubAgentBody {
 // GET /api/sub-agents?bot_tree=xxx - Get bot tree (parent + sub-agents)
 // GET /api/sub-agents?main_bots=true - List all main bots with sub-agent counts
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'sub_agents', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const parentBotId = searchParams.get('parent_bot_id');
   const botTree = searchParams.get('bot_tree');
@@ -59,6 +62,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // POST /api/sub-agents - Create a new sub-agent
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'sub_agents', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody<CreateSubAgentBody>(request);
   if (parseError) return parseError;
 
@@ -85,6 +91,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // PUT /api/sub-agents - Update a sub-agent
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'sub_agents', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody<UpdateSubAgentBody>(request);
   if (parseError) return parseError;
 
@@ -112,6 +121,9 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // DELETE /api/sub-agents?id=xxx - Delete a sub-agent
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'sub_agents', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

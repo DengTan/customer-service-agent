@@ -7,6 +7,7 @@ import {
   type ProductDetailFilters,
   type UpdateProductInput,
 } from '@/server/repositories/product-detail-repository';
+import { SizeChartRepository } from '@/server/repositories/size-chart-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { logger } from '@/lib/logger';
@@ -71,7 +72,10 @@ function buildProductTextContent(product: {
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class ProductDetailService {
-  constructor(private readonly repository = new ProductDetailRepository()) {}
+  constructor(
+    private readonly repository = new ProductDetailRepository(),
+    private readonly sizeChartRepository = new SizeChartRepository(),
+  ) {}
 
   /**
    * List products with filters, stats, and pagination.
@@ -381,6 +385,13 @@ export class ProductDetailService {
       throw toServiceError(error, '获取商品失败', 'DB_QUERY_ERROR');
     }
 
+    // Clear product references in size_charts (foreign key cleanup)
+    try {
+      await this.clearProductReferences(id);
+    } catch (err) {
+      logger.api.warn('product-delete-clear-size-chart-refs-failed', { id });
+    }
+
     // Delete vector documents
     if (existing.doc_ids.length > 0) {
       try {
@@ -395,6 +406,21 @@ export class ProductDetailService {
       await this.repository.delete(id);
     } catch (error) {
       throw toServiceError(error, '删除商品失败', 'DB_ERROR');
+    }
+  }
+
+  /**
+   * Clear product_id references in size_charts table when a product is deleted.
+   * This maintains referential integrity by removing associations before product deletion.
+   */
+  private async clearProductReferences(productId: string): Promise<void> {
+    const charts = await this.sizeChartRepository.findByProductId(productId);
+    for (const chart of charts) {
+      await this.sizeChartRepository.update({
+        id: chart.id,
+        product_id: null,
+        sku: null,
+      });
     }
   }
 

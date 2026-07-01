@@ -1,11 +1,14 @@
 import { NextRequest } from 'next/server';
 import { QualityService } from '@/server/services/quality-service';
-import { apiError, apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple } from '@/lib/api-utils';
+import { apiError, apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, requirePermission } from '@/lib/api-utils';
 
 const service = new QualityService();
 
 // GET /api/quality-checks - 获取质检规则和记录
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
 
@@ -32,6 +35,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // POST /api/quality-checks - 创建质检规则
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -47,6 +53,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // PUT /api/quality-checks - 更新质检规则
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -62,6 +71,9 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // DELETE /api/quality-checks?id=xxx - 删除质检规则
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

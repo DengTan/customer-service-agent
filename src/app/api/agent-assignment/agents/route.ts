@@ -10,9 +10,12 @@ export async function GET() {
 
     return NextResponse.json(result);
   } catch (error) {
-    logger.agent.error('GET agents failed', { error });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode = (error as { code?: string }).code;
+    logger.agent.error('GET agents failed', { error: errorMessage, code: errorCode });
+
     return NextResponse.json(
-      { error: 'Failed to get agents status' },
+      { error: 'Failed to get agents status', details: errorMessage },
       { status: 500 }
     );
   }

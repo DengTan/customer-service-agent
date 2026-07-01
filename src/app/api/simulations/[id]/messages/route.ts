@@ -4,6 +4,7 @@ import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
 import type { SimulationMessage } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 // Scenario-specific system prompts for simulation
 const SCENARIO_PROMPTS: Record<string, string> = {
@@ -43,6 +44,51 @@ const SCENARIO_PROMPTS: Record<string, string> = {
 2. 提供专业、耐心的回答
 3. 主动提供帮助和建议
 4. 如无法解决，及时转接人工`,
+  logistics_query: `你是物流查询专员，负责帮助用户查询物流轨迹、快递公司和签收状态。请：
+1. 快速准确地提供物流信息
+2. 解释各快递公司的特点
+3. 提醒签收注意事项
+4. 对异常物流主动预警`,
+  address_modify: `你是地址修改专员，负责协助用户修改收货地址和联系人信息。请：
+1. 确认用户身份后进行操作
+2. 告知地址修改的条件和限制
+3. 提醒修改后的配送影响
+4. 确认并复述新的地址信息`,
+  invoice_request: `你是发票专员，负责处理电子发票和纸质发票申请。请：
+1. 确认发票类型和开票信息
+2. 说明发票申请流程和时间
+3. 提醒发票抬头和税号的准确性
+4. 告知发票送达方式和时间`,
+  partial_refund: `你是退款计算专员，负责处理部分退款金额计算。请：
+1. 明确说明退款金额的计算方式
+2. 列出可能影响金额的因素
+3. 预估退款到账时间
+4. 提供退款进度查询方式`,
+  exchange_goods: `你是换货专员，负责处理换货申请和流程指导。请：
+1. 了解用户换货原因
+2. 说明换货流程和所需材料
+3. 告知换货时限和运费规则
+4. 提供换货进度查询方式`,
+  size_recommend: `你是尺码顾问，负责根据用户的身高体重推荐合适尺码。请：
+1. 询问用户的身高体重信息
+2. 根据商品尺码表进行推荐
+3. 考虑版型特点给出建议
+4. 提醒尺码可能存在偏差`,
+  product_compare: `你是商品对比顾问，负责帮助用户对比多个商品的规格。请：
+1. 客观列出各商品的参数
+2. 突出各产品的优缺点
+3. 根据用户需求给出建议
+4. 不偏袒任何特定商品`,
+  escalation: `你是投诉升级处理专员，负责跟进投诉升级事项。请：
+1. 认真听取用户的诉求
+2. 确认投诉升级的原因
+3. 说明当前处理进度
+4. 提供预计解决时间`,
+  combined: `你是综合服务专员，负责引导用户完成咨询到下单的完整流程。请：
+1. 专业解答用户的各种咨询
+2. 根据需求推荐合适的商品
+3. 协助用户完成下单流程
+4. 处理下单过程中的各种问题`,
 };
 
 // GET /api/simulations/[id]/messages - Get messages
@@ -120,7 +166,7 @@ export const POST = withErrorHandler(async (
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: char })}\n`));
             await new Promise(resolve => setTimeout(resolve, 15));
           }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources: assistantMsg.sources ?? null })}\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources: assistantMsg.sources ?? null, confidence: 1.0 })}\n`));
           controller.close();
           return;
         }
@@ -173,8 +219,8 @@ export const POST = withErrorHandler(async (
                     fullContent += parsed.content;
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: parsed.content })}\n`));
                   }
-                  if (parsed.done && parsed.sources) {
-                    sources = parsed.sources;
+                  if (parsed.done) {
+                    if (parsed.sources) sources = parsed.sources;
                   }
                 } catch {
                   // skip malformed chunks
@@ -196,10 +242,10 @@ export const POST = withErrorHandler(async (
           confidence: 0.85,
         });
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources })}\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources, confidence: assistantMsg.confidence ?? null })}\n`));
         controller.close();
       } catch (error) {
-        console.error('[Simulation Messages] Stream error:', error);
+        logger.api.error('[Simulation Messages] Stream error', { error, simulationId: conversationId });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '处理消息时发生错误' })}\n`));
         controller.close();
       }

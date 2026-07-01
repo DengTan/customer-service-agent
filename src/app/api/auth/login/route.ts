@@ -50,7 +50,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   // Validate input with Zod schema
   const validationResult = LoginSchema.safeParse(body);
   if (!validationResult.success) {
-    return apiError(validationResult.error.errors[0]?.message || '输入格式不正确', {
+    return apiError(validationResult.error.issues[0]?.message || '输入格式不正确', {
       status: HttpStatus.BAD_REQUEST,
       code: 'VALIDATION_ERROR',
     });
@@ -92,9 +92,14 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const user = await userRepo.findByEmailWithPassword(email);
 
   if (!user) {
-    // Record failure for this non-existent email (prevents enumeration)
+    // Simulate consistent timing for user enumeration prevention
+    // Always perform the same operations regardless of whether user exists
+    await verifyPassword(password, '$2b$12$abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmn');
+    
+    // Record failure for rate limiting (but use a generic reason)
     LoginSecurityService.recordFailure(email, 'INVALID_CREDENTIALS', request);
     
+    // Return generic error message - same for all failures
     return apiError('邮箱或密码错误', {
       status: HttpStatus.UNAUTHORIZED,
       code: 'INVALID_CREDENTIALS',

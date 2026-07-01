@@ -3,6 +3,7 @@ import {
   type ConversationTagFilters,
   type CreateTagInput,
   type TagConversationInput,
+  type UpdateTagInput,
 } from '@/server/repositories/conversation-tag-repository';
 import { toServiceError } from './service-utils';
 
@@ -64,6 +65,30 @@ export class ConversationTagService {
         );
       }
       throw toServiceError(error, '打标签失败', 'DB_ERROR');
+    }
+  }
+
+  async updateDefinition(id: string, input: Partial<Omit<UpdateTagInput, 'id'>>) {
+    if (!id) {
+      throw toServiceError(
+        new Error('validation'),
+        '缺少标签ID',
+        'VALIDATION_ERROR'
+      );
+    }
+
+    try {
+      return await this.repo.updateDefinition({ id, ...input });
+    } catch (error) {
+      const errorObj = error as { code?: string };
+      if (errorObj.code === '23505') {
+        throw toServiceError(
+          new Error('duplicate'),
+          '标签名已存在',
+          'CONFLICT'
+        );
+      }
+      throw toServiceError(error, '更新标签失败', 'DB_ERROR');
     }
   }
 

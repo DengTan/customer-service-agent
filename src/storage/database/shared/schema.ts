@@ -556,7 +556,7 @@ export const customers = pgTable(
     avatar: text("avatar"),
     source_platform: varchar("source_platform", { length: 20 }).notNull().default("web"), // web, qianniu, doudian
     external_id: varchar("external_id", { length: 255 }), // 平台侧用户ID
-    tags: jsonb("tags").notNull().default(sql`'[]'`), // 标签ID列表
+    tags: jsonb("tags").notNull().default(sql`'[]'`), // tag 名称列表
     metadata: jsonb("metadata"), // 扩展信息（地址、备注等）
     notes: text("notes"), // 客户备注
     conversation_count: integer("conversation_count").notNull().default(0),
@@ -1055,5 +1055,88 @@ export const contentFilterLogs = pgTable(
     index("cfl_conversation_id_idx").on(table.conversation_id),
     index("cfl_filter_type_idx").on(table.filter_type),
     index("cfl_created_at_idx").on(table.created_at),
+  ]
+);
+
+// ============================================
+// 大模型提供商配置表
+// ============================================
+// 支持扩展额外的 LLM API 提供商（OpenAI、DeepSeek、Claude 等）
+export const llmProviders = pgTable(
+  "llm_providers",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 提供商标识
+    name: varchar("name", { length: 100 }).notNull().unique(), // 唯一标识，如 openai/deepseek/claude
+    display_name: varchar("display_name", { length: 100 }).notNull(), // 显示名称
+    description: text("description"), // 描述
+    // API 配置
+    api_type: varchar("api_type", { length: 50 }).notNull().default("openai_compatible"), // openai_compatible / coze / anthropic / custom
+    base_url: varchar("base_url", { length: 500 }).notNull(), // API 基础 URL
+    api_key: varchar("api_key", { length: 500 }), // API Key（加密存储）
+    // 模型配置
+    models: jsonb("models").notNull().default(sql`'[]'`), // 可用模型列表
+    default_model: varchar("default_model", { length: 100 }), // 默认模型
+    // 功能支持
+    supports_vision: boolean("supports_vision").notNull().default(false), // 是否支持视觉（多模态）
+    supports_streaming: boolean("supports_streaming").notNull().default(true), // 是否支持流式输出
+    max_context_tokens: integer("max_context_tokens"), // 最大上下文 Token 数
+    // 认证配置（可选的额外配置）
+    auth_config: jsonb("auth_config"), // 额外认证参数（如 organization, project 等）
+    // 请求配置
+    request_config: jsonb("request_config").notNull().default(sql`'{}'`), // 请求配置（超时、重试等）
+    // 状态
+    is_enabled: boolean("is_enabled").notNull().default(true), // 是否启用
+    is_default: boolean("is_default").notNull().default(false), // 是否为默认提供商
+    priority: integer("priority").notNull().default(0), // 优先级（数字越大优先级越高）
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("llm_providers_name_idx").on(table.name),
+    index("llm_providers_enabled_idx").on(table.is_enabled),
+    index("llm_providers_priority_idx").on(table.priority),
+  ]
+);
+
+// ============================================
+// LLM 模型表（关联到提供商）
+// ============================================
+export const llmModels = pgTable(
+  "llm_models",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联到提供商
+    provider_id: varchar("provider_id", { length: 36 }).notNull().references(() => llmProviders.id, { onDelete: "cascade" }),
+    // 模型标识
+    model_id: varchar("model_id", { length: 100 }).notNull(), // API 中的模型 ID
+    display_name: varchar("display_name", { length: 100 }).notNull(), // 显示名称
+    description: text("description"), // 模型描述
+    // 模型能力
+    type: varchar("type", { length: 50 }).notNull().default("chat"), // chat / embedding / vision / audio
+    max_tokens: integer("max_tokens"), // 最大输出 Token
+    // 功能支持
+    supports_vision: boolean("supports_vision").notNull().default(false),
+    supports_streaming: boolean("supports_streaming").notNull().default(true),
+    supports_function_calling: boolean("supports_function_calling").notNull().default(false),
+    // 性能参数
+    default_temperature: doublePrecision("default_temperature").notNull().default(0.7),
+    default_max_tokens: integer("default_max_tokens"), // 默认最大输出
+    // 用途标记
+    use_case: varchar("use_case", { length: 50 }).notNull().default("general"), // general / fast / quality / reasoning
+    // 成本信息（可选）
+    cost_per_1k_input: doublePrecision("cost_per_1k_input"), // 每 1000 输入 Token 成本
+    cost_per_1k_output: doublePrecision("cost_per_1k_output"), // 每 1000 输出 Token 成本
+    // 状态
+    is_enabled: boolean("is_enabled").notNull().default(true),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("llm_models_provider_idx").on(table.provider_id),
+    index("llm_models_type_idx").on(table.type),
+    index("llm_models_enabled_idx").on(table.is_enabled),
   ]
 );

@@ -22,6 +22,13 @@ export interface CreateTagInput {
   category?: string;
 }
 
+export interface UpdateTagInput {
+  id: string;
+  name?: string;
+  color?: string;
+  category?: string;
+}
+
 export interface TagConversationInput {
   conversation_id: string;
   tag_id: string;
@@ -154,6 +161,33 @@ export class ConversationTagRepository {
 
       if (error) throw new RepositoryError('increment conversation count', error.message, error.code);
     }
+  }
+
+  async updateDefinition(input: UpdateTagInput): Promise<unknown> {
+    if (isDemoMode()) {
+      const tag = DEMO_TAGS.find(t => t.id === input.id);
+      if (tag) {
+        if (input.name !== undefined) tag.name = input.name;
+        if (input.color !== undefined) tag.color = input.color;
+        if (input.category !== undefined) tag.category = input.category;
+      }
+      return tag;
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (input.name !== undefined) updates.name = input.name;
+    if (input.color !== undefined) updates.color = input.color;
+    if (input.category !== undefined) updates.category = input.category;
+
+    const { data, error } = await this.client
+      .from('conversation_tags_def')
+      .update(updates)
+      .eq('id', input.id)
+      .select()
+      .single();
+
+    if (error) throw new RepositoryError('update conversation tag', error.message, error.code);
+    return data;
   }
 
   async deleteDefinition(id: string): Promise<void> {

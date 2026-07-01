@@ -81,6 +81,26 @@ export class AlertRepository {
     return data as { id: string } | null;
   }
 
+  /**
+   * Batch query recent unresolved alerts by types within a time window.
+   * Used by SLA checker to avoid N+1 queries.
+   */
+  async findRecentUnresolvedBatch(
+    types: string[],
+    sinceIso: string,
+  ): Promise<Array<{ conversation_id: string; type: string }>> {
+    if (isDemoMode()) return [];
+    const { data, error } = await this.client
+      .from('alerts')
+      .select('conversation_id, type')
+      .in('type', types)
+      .eq('is_resolved', false)
+      .gte('created_at', sinceIso);
+
+    if (error) throw new RepositoryError('find recent alerts batch', error.message, error.code);
+    return (data ?? []) as Array<{ conversation_id: string; type: string }>;
+  }
+
   async create(input: CreateAlertInput): Promise<Alert> {
     if (isDemoMode()) return { id: 'demo-alert-new', conversation_id: input.conversation_id, type: input.type, severity: input.severity ?? 'warning', message: input.message, is_resolved: false, metadata: input.metadata ?? null, created_at: new Date().toISOString() } as Alert;
     const { data, error } = await this.client

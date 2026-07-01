@@ -460,6 +460,51 @@ export interface KnowledgeLearningRow {
   updated_at?: string | null;
 }
 
+// ===== LLM Provider Row =====
+
+export interface LlmProviderRow {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string | null;
+  api_type: string;
+  base_url: string;
+  api_key?: string | null;
+  models: unknown[];
+  default_model?: string | null;
+  supports_vision: boolean;
+  supports_streaming: boolean;
+  max_context_tokens?: number | null;
+  auth_config?: unknown | null;
+  request_config?: unknown | null;
+  is_enabled: boolean;
+  is_default: boolean;
+  priority: number;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface LlmModelRow {
+  id: string;
+  provider_id: string;
+  model_id: string;
+  display_name: string;
+  description?: string | null;
+  type: string;
+  max_tokens?: number | null;
+  supports_vision: boolean;
+  supports_streaming: boolean;
+  supports_function_calling: boolean;
+  default_temperature: number;
+  default_max_tokens?: number | null;
+  use_case: string;
+  cost_per_1k_input?: number | null;
+  cost_per_1k_output?: number | null;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at?: string | null;
+}
+
 // ===== Helper Functions =====
 
 export function toMessageRow(raw: unknown): MessageRow {

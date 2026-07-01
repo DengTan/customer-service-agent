@@ -17,6 +17,7 @@ export interface BotConfigRow {
   collaboration_config: Record<string, unknown> | null;
   is_sub_agent: boolean;
   status: string;
+  platform_connection_id: string | null;  // 关联的店铺ID，每个店铺只能绑定一个Bot
   created_at: string;
   updated_at?: string;
 }
@@ -33,6 +34,7 @@ export interface CreateBotConfigInput {
   delegation_prompt?: string | null;
   collaboration_config?: Record<string, unknown> | null;
   is_sub_agent?: boolean;
+  platform_connection_id?: string | null;  // 关联的店铺ID
 }
 
 export interface UpdateBotConfigInput {
@@ -49,6 +51,7 @@ export interface UpdateBotConfigInput {
   collaboration_config?: Record<string, unknown> | null;
   is_sub_agent?: boolean;
   status?: string;
+  platform_connection_id?: string | null;  // 关联的店铺ID
 }
 
 export class BotConfigRepository {
@@ -71,7 +74,10 @@ export class BotConfigRepository {
     const { data, error } = await query;
 
     if (error) throw new RepositoryError('list bot configs', error.message, error.code);
-    return (data ?? []) as BotConfigRow[];
+    return (data ?? []).map(row => ({
+      ...row,
+      platform_connection_id: (row as Record<string, unknown>).platform_connection_id as string | null,
+    })) as BotConfigRow[];
   }
 
   async findById(id: string): Promise<BotConfigRow | null> {
@@ -86,6 +92,24 @@ export class BotConfigRepository {
       .maybeSingle();
 
     if (error) throw new RepositoryError('find bot config', error.message, error.code);
+    return data as BotConfigRow | null;
+  }
+
+  /**
+   * 根据店铺ID查找绑定的Bot
+   */
+  async findByShopId(shopId: string): Promise<BotConfigRow | null> {
+    if (isDemoMode()) {
+      const bots = await this.list();
+      return bots.find(b => b.platform_connection_id === shopId) ?? null;
+    }
+    const { data, error } = await this.client
+      .from('bot_configs')
+      .select('*')
+      .eq('platform_connection_id', shopId)
+      .maybeSingle();
+
+    if (error) throw new RepositoryError('find bot by shop', error.message, error.code);
     return data as BotConfigRow | null;
   }
 
@@ -135,11 +159,17 @@ export class BotConfigRepository {
         collaboration_config: input.collaboration_config ?? null,
         is_sub_agent: input.is_sub_agent ?? false,
         status: 'active',
+        platform_connection_id: input.platform_connection_id ?? null,
         created_at: new Date().toISOString(),
       };
     }
     if (input.is_default && !input.is_sub_agent) {
       await this.clearDefault();
+    }
+    // 如果指定了店铺，先清除该店铺的现有Bot绑定
+    const shopId = input.platform_connection_id;
+    if (shopId && shopId !== '') {
+      await this.clearShopBot(shopId);
     }
 
     const { data, error } = await this.client
@@ -157,6 +187,8 @@ export class BotConfigRepository {
         collaboration_config: input.collaboration_config ?? null,
         is_sub_agent: input.is_sub_agent ?? false,
         status: 'active',
+        // 统一处理空字符串为 null
+        platform_connection_id: shopId === '' ? null : (shopId || null),
       })
       .select()
       .single();
@@ -182,11 +214,23 @@ export class BotConfigRepository {
         collaboration_config: input.collaboration_config ?? existing?.collaboration_config ?? null,
         is_sub_agent: input.is_sub_agent ?? existing?.is_sub_agent ?? false,
         status: input.status ?? existing?.status ?? 'active',
+        platform_connection_id: input.platform_connection_id ?? existing?.platform_connection_id ?? null,
         created_at: existing?.created_at ?? '2026-01-01T00:00:00Z',
       };
     }
     if (input.is_default) {
       await this.clearDefault();
+    }
+    // 如果指定了店铺，先清除该店铺的现有Bot绑定
+    // 注意：只有当 platform_connection_id 有实际变化且不为空时才清除
+    const shopId = input.platform_connection_id;
+    if (shopId && shopId !== '') {
+      // 检查新旧值是否相同，避免不必要的清除
+      const existing = await this.findById(input.id);
+      const oldShopId = existing?.platform_connection_id ?? '';
+      if (oldShopId !== shopId) {
+        await this.clearShopBot(shopId);
+      }
     }
 
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -202,6 +246,10 @@ export class BotConfigRepository {
     if (input.collaboration_config !== undefined) updateData.collaboration_config = input.collaboration_config;
     if (input.is_sub_agent !== undefined) updateData.is_sub_agent = input.is_sub_agent;
     if (input.status !== undefined) updateData.status = input.status;
+    // 统一处理空字符串为 null
+    if (input.platform_connection_id !== undefined) {
+      updateData.platform_connection_id = input.platform_connection_id === '' ? null : input.platform_connection_id;
+    }
 
     const { data, error } = await this.client
       .from('bot_configs')
@@ -225,5 +273,13 @@ export class BotConfigRepository {
       .from('bot_configs')
       .update({ is_default: false })
       .eq('is_default', true);
+  }
+
+  private async clearShopBot(shopId: string): Promise<void> {
+    // 将该店铺的现有Bot绑定解除（设为NULL）
+    await this.client
+      .from('bot_configs')
+      .update({ platform_connection_id: null })
+      .eq('platform_connection_id', shopId);
   }
 }

@@ -3,6 +3,7 @@ import { toServiceError } from './service-utils';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { logger } from '@/lib/logger';
+import { getHybridSearchService } from './hybrid-search-service';
 
 /**
  * Escape special characters for PostgreSQL LIKE/ILIKE patterns.
@@ -34,12 +35,23 @@ export interface KnowledgeSearchResult {
   images: KnowledgeImageRef[];
 }
 
+// Extended result with hybrid search metadata
+export interface KnowledgeSearchResultExt extends KnowledgeSearchResult {
+  hybridMetadata?: {
+    vectorResults: number;
+    bm25Results: number;
+    rerankApplied: boolean;
+    executionTimeMs: number;
+  };
+}
+
 // Knowledge relevance threshold defaults (overridable via settings table)
 // Keys: knowledge_min_score, knowledge_search_limit, knowledge_image_search_limit
 const DEFAULT_KNOWLEDGE_MIN_SCORE = 0.75;
 const DEFAULT_KNOWLEDGE_SEARCH_LIMIT = 5;
 const DEFAULT_KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3;
 const SEARCH_SETTINGS_TTL_MS = 30_000;
+const SEARCH_SETTINGS_MAX_CACHE_SIZE = 1; // singleton: always 0 or 1 entry, bounded by TTL
 
 interface KnowledgeSearchSettings {
   minScore: number;
@@ -122,9 +134,6 @@ export class KnowledgeSearchService {
 
       const searchResult = await knowledgeClient.search(cleanQuery, undefined, effectiveLimit, effectiveMinScore);
 
-      // Also look for associated images from knowledge items in parallel
-      const imagePromise = this.searchRelatedImages(query);
-
       if (searchResult.code === 0 && searchResult.chunks && searchResult.chunks.length > 0) {
         // Filter by min_score threshold - only include high-relevance results
         const relevantChunks = searchResult.chunks.filter(chunk => chunk.score >= effectiveMinScore);
@@ -140,31 +149,101 @@ export class KnowledgeSearchService {
             score: chunk.score,
           }));
 
-          // Enrich sources with knowledge item name/category from database
-          try {
-            const enrichedSources = await this.enrichSourcesWithMetadata(sources, query);
-            sources.splice(0, sources.length, ...enrichedSources);
-          } catch {
-            // Metadata enrichment failure is non-critical; proceed with basic sources
-          }
-
           // Average score of relevant results as confidence indicator
           const confidence = relevantChunks.reduce((sum, c) => sum + c.score, 0) / relevantChunks.length;
 
-          // Get images related to the query
-          const images = await imagePromise;
+          // Fire-and-forget: enrich metadata and search images asynchronously
+          // These are non-critical operations that should not block the search response
+          this.enrichSourcesWithMetadata(sources, query).catch((err) => {
+            logger.agent.debug('[KnowledgeSearch] Metadata enrichment failed', { error: err });
+          });
+          this.searchRelatedImages(query).catch((err) => {
+            logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
+          });
 
-          return { context, sources, confidence, images };
+          return { context, sources, confidence, images: [] };
         }
       }
 
-      // No text results above threshold, but still check for images
-      const images = await imagePromise;
-      return { context: '', sources: [], confidence: 0, images };
+      return { context: '', sources: [], confidence: 0, images: [] };
     } catch (error) {
       // Knowledge base search failure should not block the main flow
       logger.agent.error('Knowledge search failed', { error });
       return { context: '', sources: [], confidence: 0, images: [] };
+    }
+  }
+
+  /**
+   * Hybrid search combining vector + BM25 + RRF + Rerank.
+   * This provides better recall and precision than pure vector search.
+   *
+   * @param query - User query
+   * @param minScore - Minimum relevance score (overrides settings)
+   * @param limit - Maximum number of results (overrides settings)
+   * @returns KnowledgeSearchResult with hybrid search metadata
+   */
+  async searchHybrid(
+    query: string,
+    minScore?: number,
+    limit?: number,
+  ): Promise<KnowledgeSearchResultExt> {
+    try {
+      // Get settings for defaults
+      const settings = await getSearchSettings();
+      const effectiveMinScore = minScore ?? settings.minScore;
+      const effectiveLimit = limit ?? settings.searchLimit;
+
+      // Perform hybrid search
+      const hybridService = getHybridSearchService();
+      const hybridResult = await hybridService.search(query, {
+        limit: effectiveLimit,
+        minScore: effectiveMinScore,
+      });
+
+      if (hybridResult.results.length > 0) {
+        const context = hybridResult.results
+          .map((r, i) => `[资料${i + 1}] ${r.content}`)
+          .join('\n\n');
+
+        const sources: KnowledgeSourceItem[] = hybridResult.results.map(r => ({
+          type: 'knowledge',
+          content: r.content,
+          score: r.score,
+          name: r.name,
+          category: r.category,
+        }));
+
+        const confidence = hybridResult.results.reduce((sum, r) => sum + r.score, 0) / hybridResult.results.length;
+
+        // Fire-and-forget: enrich metadata and search images asynchronously
+        // These are non-critical operations that should not block the search response
+        this.enrichSourcesWithMetadata(sources, query).catch((err) => {
+          logger.agent.debug('[KnowledgeSearch] Metadata enrichment failed', { error: err });
+        });
+        this.searchRelatedImages(query).catch((err) => {
+          logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
+        });
+
+        return {
+          context,
+          sources,
+          confidence,
+          images: [],
+          hybridMetadata: {
+            vectorResults: hybridResult.vectorResults,
+            bm25Results: hybridResult.bm25Results,
+            rerankApplied: hybridResult.rerankApplied,
+            executionTimeMs: hybridResult.executionTimeMs,
+          },
+        };
+      }
+
+      return { context: '', sources: [], confidence: 0, images: [] };
+    } catch (error) {
+      logger.agent.error('Hybrid search failed, falling back to vector search', { error });
+      // Fallback to regular search
+      const result = await this.search(query, minScore, limit);
+      return { ...result, hybridMetadata: undefined };
     }
   }
 
@@ -367,4 +446,14 @@ export class KnowledgeSearchService {
     const s = await getSearchSettings();
     return s.imageSearchLimit;
   }
+}
+
+// Singleton instance
+let knowledgeSearchServiceInstance: KnowledgeSearchService | null = null;
+
+export function getKnowledgeSearchService(): KnowledgeSearchService {
+  if (!knowledgeSearchServiceInstance) {
+    knowledgeSearchServiceInstance = new KnowledgeSearchService();
+  }
+  return knowledgeSearchServiceInstance;
 }

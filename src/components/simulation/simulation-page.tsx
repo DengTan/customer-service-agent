@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { 
-  Play, 
-  Plus, 
-  Trash2, 
+import {
+  Play,
+  Plus,
+  Trash2,
   MessageSquare,
   Bot,
   User,
@@ -14,12 +14,30 @@ import {
   XCircle,
   Send,
   FileText,
-  Loader2
+  Loader2,
+  GitCompare,
+  Layers,
+  Copy,
+  BarChart3,
+  ChevronDown
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 import { SimulationConversation, SimulationMessage } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { useLazyList } from '@/hooks/use-lazy-list';
+import { SourcePanel } from '@/components/chat/source-panel';
+import { SimulationEvaluationPanel } from './simulation-evaluation-panel';
+import { parseSSEStream, SourceItem } from '@/lib/sse-parser';
+import { BotSelector } from './bot-selector';
+import { ABComparisonView, ABResult } from './ab-comparison-view';
+import { BatchTestPanel, BatchResult } from './batch-test-panel';
 const simulationLogger = logger.default;
 
 export type { SimulationConversation, SimulationMessage };
@@ -39,6 +57,15 @@ const TEST_SCENARIOS: TestScenario[] = [
   { id: 'product_question', name: '产品咨询', description: '测试用户咨询产品规格、使用方法、注意事项', icon: '❓', preloaded: false },
   { id: 'complaint', name: '投诉处理', description: '测试用户投诉场景，包括情绪安抚和解决', icon: '😤', preloaded: false },
   { id: 'multi_turn', name: '多轮对话', description: '测试复杂多轮对话场景，包括上下文理解', icon: '🔄', preloaded: false },
+  { id: 'logistics_query', name: '物流查询', description: '测试物流轨迹、快递公司、签收状态等查询', icon: '🚚', preloaded: false },
+  { id: 'address_modify', name: '修改地址', description: '测试修改收货地址、联系人信息等', icon: '📍', preloaded: false },
+  { id: 'invoice_request', name: '发票申请', description: '测试电子发票、纸质发票申请流程', icon: '🧾', preloaded: false },
+  { id: 'partial_refund', name: '部分退款', description: '测试部分退款金额计算和申请', icon: '💵', preloaded: false },
+  { id: 'exchange_goods', name: '换货处理', description: '测试换货申请与处理流程', icon: '🔄', preloaded: false },
+  { id: 'size_recommend', name: '尺码推荐', description: '根据身高体重推荐尺码', icon: '📏', preloaded: false },
+  { id: 'product_compare', name: '商品对比', description: '多个商品规格对比分析', icon: '⚖️', preloaded: false },
+  { id: 'escalation', name: '投诉升级', description: '投诉升级与处理进度查询', icon: '📢', preloaded: false },
+  { id: 'combined', name: '综合场景', description: '先咨询后下单的多步骤复杂场景', icon: '🎯', preloaded: false },
   { id: 'custom', name: '自定义', description: '创建自定义测试脚本', icon: '✏️', preloaded: false },
 ];
 
@@ -99,6 +126,20 @@ export function SimulationPage() {
   const [selectedScenario, setSelectedScenario] = useState<TestScenario | null>(TEST_SCENARIOS[0] || null);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
+  const [showSourcePanel, setShowSourcePanel] = useState(false);
+  const [currentSources, setCurrentSources] = useState<SourceItem[]>([]);
+  const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
+  
+  // Phase 5: Multi-bot comparison & batch test state
+  const [showBotSelector, setShowBotSelector] = useState(false);
+  const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
+  const [showABComparison, setShowABComparison] = useState(false);
+  const [showBatchTest, setShowBatchTest] = useState(false);
+  const [batchTestScripts, setBatchTestScripts] = useState<string[]>([]);
+  
+  // Phase 3: Evaluation panel
+  const [showEvaluationPanel, setShowEvaluationPanel] = useState(false);
+  
   const abortRef = useRef<Record<string, AbortController>>({});
   const autoPlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const loadMoreRef = useRef<() => Promise<void>>(() => Promise.resolve());
@@ -281,43 +322,53 @@ export function SimulationPage() {
       const reader = res.body?.getReader();
       if (!reader) throw new Error('无法读取流');
 
-      const decoder = new TextDecoder();
       let fullContent = '';
       let lastConfidence: number | null = null;
       let lastConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null = null;
+      let lastSources: SourceItem[] = [];
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value, { stream: true });
-        const lines = text.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              if (parsed.content) {
-                fullContent += parsed.content;
-                updateTabState(actualConvId, { streamingContent: fullContent });
-              }
-              if (parsed.done) {
-                if (parsed.confidence !== undefined) lastConfidence = parsed.confidence;
-                if (parsed.confidence_breakdown) lastConfidenceBreakdown = parsed.confidence_breakdown;
-              }
-            } catch {
-              // skip malformed chunks
-            }
+      await parseSSEStream(reader, (chunk) => {
+        if (chunk.content) {
+          fullContent += chunk.content;
+          updateTabState(actualConvId, { streamingContent: fullContent });
+        }
+        if (chunk.done) {
+          if (chunk.confidence !== undefined) lastConfidence = chunk.confidence;
+          if (chunk.confidence_breakdown) {
+            // Map generic Record to ConfidenceBreakdown type
+            const bd = chunk.confidence_breakdown as Record<string, number | boolean>;
+            lastConfidenceBreakdown = {
+              knowledge_score: (bd.knowledge_score as number) ?? 0,
+              tool_score: (bd.tool_score as number) ?? 0,
+              llm_self_score: (bd.llm_self_score as number) ?? 0,
+              sub_agent_score: (bd.sub_agent_score as number) ?? 0,
+              handoff_intent: (bd.handoff_intent as boolean) ?? false,
+              no_support: (bd.no_support as boolean) ?? false,
+              final: (bd.final as number) ?? 0,
+            };
+          }
+          if (chunk.sources) {
+            // Map SSE SourceItem to SimulationMessage SourceItem (type is required)
+            lastSources = chunk.sources.map(s => ({
+              type: s.type || 'knowledge',
+              content: s.content,
+              score: s.score,
+              keyword: s.keyword,
+              name: s.name,
+              category: s.category,
+              knowledge_item_id: s.knowledge_item_id,
+              item_id: s.item_id,
+            }));
           }
         }
-      }
+      });
 
       const assistantMsg: SimulationMessage = {
         id: `msg-${Date.now()}`,
         conversation_id: actualConvId,
         role: 'assistant',
         content: fullContent,
-        sources: null,
+        sources: lastSources.length > 0 ? lastSources as SimulationMessage['sources'] : null,
         confidence: lastConfidence,
         confidence_breakdown: lastConfidenceBreakdown,
         created_at: new Date().toISOString(),
@@ -429,6 +480,30 @@ export function SimulationPage() {
     }
   }, [activeConvId, updateItems, setTotal, updateItemsLength]);
 
+  // Duplicate conversation
+  const handleDuplicateConversation = useCallback(async (convId: string) => {
+    try {
+      const res = await fetch(`/api/simulations/${convId}/duplicate`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '复制失败');
+      }
+      const data = await res.json();
+      if (data.conversation) {
+        updateItems(prev => [data.conversation, ...prev]);
+        setTotal(n => n + 1);
+        updateItemsLength(1);
+        toast.success(`已复制为「${data.conversation.title}」`);
+        // Auto-select the new duplicate
+        setActiveConvId(data.conversation.id);
+        updateTabState(data.conversation.id, { ...DEFAULT_TAB_STATE });
+      }
+    } catch (err) {
+      simulationLogger.error('复制会话失败', { error: err });
+      toast.error(String(err) || '复制失败');
+    }
+  }, [updateItems, setTotal, updateItemsLength, updateTabState]);
+
   // Effect to trigger auto-play after message is sent
   useEffect(() => {
     if (!activeConvId) return;
@@ -458,22 +533,33 @@ export function SimulationPage() {
         <h1 className="text-base font-semibold text-foreground">模拟测试</h1>
         <div className="flex items-center gap-2">
           {/* Scenario selector in header */}
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-            {scenarios.map((scenario) => (
-              <button
-                key={scenario.id}
-                onClick={() => handleSelectScenario(scenario)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 active:scale-[0.95] ${
-                  selectedScenario?.id === scenario.id
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <span>{scenario.icon}</span>
-                <span>{scenario.name}</span>
-              </button>
-            ))}
-          </div>
+          <Select
+            value={selectedScenario?.id || ''}
+            onValueChange={(value) => {
+              const scenario = scenarios.find(s => s.id === value);
+              if (scenario) handleSelectScenario(scenario);
+            }}
+          >
+            <SelectTrigger className="w-[160px] h-8 text-xs bg-muted border-0">
+              <SelectValue placeholder="选择场景" />
+            </SelectTrigger>
+            <SelectContent>
+              <div className="grid grid-cols-2 gap-1 p-1">
+                {scenarios.map((scenario) => (
+                  <SelectItem 
+                    key={scenario.id} 
+                    value={scenario.id} 
+                    className="text-xs py-2 px-2 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>{scenario.icon}</span>
+                      <span>{scenario.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </div>
+            </SelectContent>
+          </Select>
           <button
             onClick={async () => {
               try {
@@ -498,6 +584,35 @@ export function SimulationPage() {
           >
             <Plus className="w-3.5 h-3.5" />
             新建会话
+          </button>
+          
+          {/* Phase 5: Multi-bot comparison button */}
+          <button
+            onClick={() => setShowBotSelector(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all duration-200"
+          >
+            <GitCompare className="w-3.5 h-3.5" />
+            多Bot对比
+          </button>
+          
+          {/* Phase 5: Batch test button */}
+          <button
+            onClick={() => {
+              // Get current scripts based on selected scenario
+              const scripts = selectedScenario && PRELOADED_SCRIPTS[selectedScenario.id]
+                ? PRELOADED_SCRIPTS[selectedScenario.id]
+                : activeTabState?.customScript || [];
+              if (scripts.length === 0) {
+                toast.error('当前场景没有测试脚本，请先选择有脚本的场景');
+                return;
+              }
+              setBatchTestScripts(scripts);
+              setShowBatchTest(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all duration-200"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            批量测试
           </button>
         </div>
       </div>
@@ -554,15 +669,27 @@ export function SimulationPage() {
                       {conv.message_count} 轮对话
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleClearConversation(conv.id);
-                    }}
-                    className="p-1 rounded hover:bg-error/10 text-muted-foreground hover:text-error transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicateConversation(conv.id);
+                      }}
+                      className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      title="复制会话"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClearConversation(conv.id);
+                      }}
+                      className="p-1 rounded hover:bg-error/10 text-muted-foreground hover:text-error transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
                 {/* Load more trigger */}
@@ -633,6 +760,14 @@ export function SimulationPage() {
                       </span>
                     </>
                   ) : null}
+                  {/* Evaluation button */}
+                  <button
+                    onClick={() => setShowEvaluationPanel(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground transition-colors"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    评估
+                  </button>
                 </div>
               </div>
 
@@ -710,11 +845,20 @@ export function SimulationPage() {
                       )}
                     </div>
                     <div className={`max-w-[70%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <div className={`rounded-2xl px-3.5 py-2.5 ${
-                        msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground rounded-tr-md'
-                          : 'bg-muted text-foreground rounded-tl-md'
-                      }`}>
+                      <div 
+                        className={`rounded-2xl px-3.5 py-2.5 cursor-pointer hover:opacity-90 ${
+                          msg.role === 'user'
+                            ? 'bg-primary text-primary-foreground rounded-tr-md'
+                            : 'bg-muted text-foreground rounded-tl-md'
+                        }`}
+                        onClick={() => {
+                          if (msg.role === 'assistant' && (msg.sources as SourceItem[])?.length) {
+                            setCurrentSources((msg.sources as SourceItem[]) || []);
+                            setCurrentConfidence(msg.confidence ?? null);
+                            setShowSourcePanel(true);
+                          }
+                        }}
+                      >
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1 px-1">
@@ -756,6 +900,36 @@ export function SimulationPage() {
                   </div>
                 )}
               </div>
+
+              {/* Source Panel */}
+              {showSourcePanel && (
+                <SourcePanel
+                  sources={currentSources}
+                  confidence={currentConfidence}
+                  onClose={() => setShowSourcePanel(false)}
+                />
+              )}
+
+              {/* Evaluation Panel */}
+              {showEvaluationPanel && (
+                <div className="w-[380px] border-l border-border bg-card flex flex-col shrink-0">
+                  <SimulationEvaluationPanel
+                    simulationId={activeConvId!}
+                    onSubmit={async (data) => {
+                      const res = await fetch(`/api/simulations/${activeConvId}/evaluation`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
+                      });
+                      if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error || '提交失败');
+                      }
+                    }}
+                    onClose={() => setShowEvaluationPanel(false)}
+                  />
+                </div>
+              )}
 
               {/* Input */}
               <div className="p-4 border-t border-border bg-card/50 shrink-0">
@@ -808,6 +982,102 @@ export function SimulationPage() {
           )}
         </div>
       </div>
+      
+      {/* Phase 5: Bot Selector Modal */}
+      {showBotSelector && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-xl shadow-xl w-[500px] max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">选择Bot进行对比</h2>
+              <button
+                onClick={() => {
+                  setShowBotSelector(false);
+                  setSelectedBotIds([]);
+                }}
+                className="p-1 rounded hover:bg-muted transition-colors"
+              >
+                <XCircle className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <BotSelector
+                selectedBotIds={selectedBotIds}
+                onChange={setSelectedBotIds}
+                maxSelection={2}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border bg-card">
+              <button
+                onClick={() => {
+                  setShowBotSelector(false);
+                  setSelectedBotIds([]);
+                }}
+                className="px-4 py-2 rounded-lg text-sm bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedBotIds.length < 2) {
+                    toast.error('请选择至少2个Bot进行对比');
+                    return;
+                  }
+                  // Get current scripts
+                  const scripts = selectedScenario && PRELOADED_SCRIPTS[selectedScenario.id]
+                    ? PRELOADED_SCRIPTS[selectedScenario.id]
+                    : activeTabState?.customScript || [];
+                  if (scripts.length === 0) {
+                    toast.error('当前场景没有测试脚本，请先选择有脚本的场景');
+                    return;
+                  }
+                  setShowBotSelector(false);
+                  setShowABComparison(true);
+                }}
+                disabled={selectedBotIds.length < 2}
+                className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                开始对比
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Phase 5: A/B Comparison View */}
+      {showABComparison && selectedBotIds.length >= 2 && (
+        <ABComparisonView
+          botIds={selectedBotIds}
+          scripts={
+            selectedScenario && PRELOADED_SCRIPTS[selectedScenario.id]
+              ? PRELOADED_SCRIPTS[selectedScenario.id]
+              : activeTabState?.customScript || []
+          }
+          onComplete={(results) => {
+            console.log('A/B Test completed:', results);
+            toast.success('A/B测试完成');
+          }}
+          onClose={() => {
+            setShowABComparison(false);
+          }}
+        />
+      )}
+      
+      {/* Phase 5: Batch Test Panel */}
+      {showBatchTest && (
+        <BatchTestPanel
+          scripts={batchTestScripts}
+          onProgress={(progress) => {
+            console.log('Batch test progress:', progress);
+          }}
+          onComplete={(results) => {
+            console.log('Batch test completed:', results);
+            toast.success(`批量测试完成: ${results.filter(r => r.success).length}/${results.length} 成功`);
+          }}
+          onClose={() => {
+            setShowBatchTest(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { executeTool, ToolProviderFactory, ToolProviderType } from './tool-providers';
+import { logger } from '@/lib/logger';
 
 export interface ToolExecutionResult {
   result: string;
@@ -122,7 +123,7 @@ export class ToolExecutionService {
         isMockData: providerResult.isMockData,
       };
     } catch (error) {
-      console.error(`[ToolExecutionService] Error executing tool ${name}:`, error);
+      logger.error('[ToolExecutionService] Error executing tool', { tool: name, error: error instanceof Error ? error.message : String(error) });
       return {
         result: `工具执行失败: ${error instanceof Error ? error.message : '未知错误'}`,
         confidence: 0.3,
@@ -137,7 +138,8 @@ export class ToolExecutionService {
    */
   parseToolCalls(content: string): ParsedToolCall[] {
     const toolCalls: ParsedToolCall[] = [];
-    const toolCallRegex = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
+    // Two-step parsing: extract tool name and args string, then JSON.parse the args
+    const toolCallRegex = /\[TOOL_CALL\](\w+)\|(.+?)\[\/TOOL_CALL\]/g;
     let match: RegExpExecArray | null;
 
     while ((match = toolCallRegex.exec(content)) !== null) {
@@ -146,8 +148,8 @@ export class ToolExecutionService {
       try {
         const args = JSON.parse(argsStr);
         toolCalls.push({ name: toolName, args });
-      } catch {
-        // Tool call parsing failed, skip
+      } catch (err) {
+        logger.warn('JSON parse failed for tool call', { raw: argsStr.substring(0, 100) });
       }
     }
 

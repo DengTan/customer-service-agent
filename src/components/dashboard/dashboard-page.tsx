@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   MessageSquare, Users, Star, TrendingUp, Zap, Clock,
@@ -94,6 +95,7 @@ export function DashboardPage() {
 }
 
 function DashboardPageInner() {
+  const router = useRouter();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [trendData, setTrendData] = useState<Array<{ date: string; count: number }>>([]);
   const [msgTrendData, setMsgTrendData] = useState<Array<{ date: string; user: number; assistant: number }>>([]);
@@ -188,10 +190,13 @@ function DashboardPageInner() {
     loadData();
   }, [loadData]);
 
-  const sourceChartData = Object.entries(sourceDist).map(([key, value]) => ({
-    name: SOURCE_LABELS[key] || key,
-    value,
-  }));
+  const sourceChartData = useMemo(() =>
+    Object.entries(sourceDist).map(([key, value]) => ({
+      name: SOURCE_LABELS[key] || key,
+      value,
+    })),
+    [sourceDist]
+  );
 
   if (loading) {
     return (
@@ -371,13 +376,37 @@ function DashboardPageInner() {
                       outerRadius={85}
                       paddingAngle={3}
                       dataKey="value"
+                      onClick={() => {}}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{ pointerEvents: 'none' }}
                     >
                       {sourceChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={SOURCE_COLORS[index % SOURCE_COLORS.length]}
+                          onClick={() => {}}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          style={{ cursor: 'default', pointerEvents: 'none' }}
+                        />
                       ))}
                     </Pie>
+                    {/* 中心显示总数 */}
+                    <text x="50%" y="42%" textAnchor="middle" dominantBaseline="middle" className="fill-foreground" style={{ fontSize: 22, fontWeight: 600 }}>
+                      {sourceChartData.reduce((sum, item) => sum + item.value, 0)}
+                    </text>
+                    <text x="50%" y="52%" textAnchor="middle" dominantBaseline="middle" className="fill-muted-foreground" style={{ fontSize: 11 }}>
+                      总对话
+                    </text>
                     <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: 12 }} />
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+                    <Legend
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: 12 }}
+                      formatter={(value, entry: { payload?: { value?: number } }) => {
+                        const item = sourceChartData.find(d => d.name === value);
+                        return `${value} (${item?.value || 0})`;
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
@@ -491,11 +520,20 @@ function DashboardPageInner() {
               暂无异常告警
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
               {alerts.map((alert) => (
                 <div
                   key={alert.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border border-border transition-colors ${
+                  onClick={() => {
+                    if (!alert.conversation_id) return;
+                    const convId = alert.conversation_id;
+                    if (alert.type === 'ticket_created' || alert.type === 'ticket_status_changed' || alert.type === 'ticket_assigned' || alert.type === 'ticket_unassigned' || alert.type === 'ticket_mention' || alert.type === 'ticket_handled') {
+                      router.push(`/tickets`);
+                    } else {
+                      router.push(`/?conversation=${convId}`);
+                    }
+                  }}
+                  className={`flex items-start gap-3 p-3 rounded-lg border border-border transition-colors cursor-pointer hover:border-primary/30 ${
                     alert.is_resolved
                       ? 'border-border/50 bg-muted/20 opacity-60'
                       : alert.severity === 'critical'
@@ -521,7 +559,8 @@ function DashboardPageInner() {
                   </div>
                   {!alert.is_resolved && (
                     <button
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         try {
                           const res = await fetch(`/api/alerts?id=${alert.id}`, { method: 'PATCH' });
                           if (!res.ok) {

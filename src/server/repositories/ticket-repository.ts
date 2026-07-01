@@ -3,6 +3,8 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import type { TicketRow } from './types';
 import { toTicketRow } from './types';
+import { escapeLikePattern } from '@/lib/api-utils';
+import { TICKET } from '@/lib/constants';
 
 export interface TicketFilters {
   status?: string;
@@ -24,6 +26,7 @@ export interface CreateTicketInput {
   conversation_id?: string | null;
   creator_id?: string | null;
   assignee_id?: string | null;
+  parent_ticket_id?: string | null;
 }
 
 export interface CreateTicketFromConversationInput extends CreateTicketInput {
@@ -35,6 +38,7 @@ export interface UpdateTicketInput {
   status?: string;
   assignee_id?: string | null;
   operator_id?: string | null;
+  parent_ticket_id?: string | null;
 }
 
 export interface StatusCounts {
@@ -85,7 +89,7 @@ export class TicketRepository {
     const sortColumn = filters.sort_by || 'created_at';
     const sortAscending = filters.sort_order === 'asc';
     const page = filters.page || 1;
-    const pageSize = filters.page_size || 50;
+    const pageSize = filters.page_size || TICKET.PAGE_SIZE;
 
     let query = this.client
       .from('tickets')
@@ -98,7 +102,9 @@ export class TicketRepository {
     if (filters.category) query = query.eq('category', filters.category);
     if (filters.assignee_id) query = query.eq('assignee_id', filters.assignee_id);
     if (filters.search) {
-      query = query.or(`ticket_number.ilike.%${filters.search}%,title.ilike.%${filters.search}%`);
+      // Escape special characters to prevent SQL injection in LIKE patterns
+      const escaped = escapeLikePattern(filters.search);
+      query = query.or(`ticket_number.ilike.%${escaped}%,title.ilike.%${escaped}%`);
     }
 
     const { data: tickets, error, count } = await query;
@@ -158,7 +164,11 @@ export class TicketRepository {
     if (error) {
       throw new RepositoryError('generate ticket number', error.message, error.code);
     }
-    const seqNum = data || Date.now();
+    const seqNum = data as number | null;
+    if (!seqNum) {
+      // Fallback: use timestamp prefixed ticket number
+      return `TK-FALLBACK-${Date.now()}`;
+    }
     return `TK-${seqNum}`;
   }
 
@@ -178,6 +188,7 @@ export class TicketRepository {
         conversation_id: input.conversation_id ?? null,
         creator_id: input.creator_id ?? null,
         assignee_id: input.assignee_id ?? null,
+        parent_ticket_id: input.parent_ticket_id ?? null,
       })
       .select()
       .single();
@@ -204,7 +215,7 @@ export class TicketRepository {
   }
 
   async findById(id: string): Promise<unknown | null> {
-    if (isDemoMode()) return { id, ticket_number: 'TK-DEMO', title: '演示工单', status: 'open', priority: 'normal' };
+    if (isDemoMode()) return { id, ticket_number: 'TK-DEMO', title: '演示工单', status: 'open', priority: 'high' };
     const { data, error } = await this.client
       .from('tickets')
       .select('*, assignee:users!tickets_assignee_id_fkey(id, name), creator:users!tickets_creator_id_fkey(id, name)')
@@ -267,6 +278,10 @@ export class TicketRepository {
       updateData.assignee_id = input.assignee_id;
     }
 
+    if (input.parent_ticket_id !== undefined) {
+      updateData.parent_ticket_id = input.parent_ticket_id;
+    }
+
     const { data, error } = await this.client
       .from('tickets')
       .update(updateData)
@@ -293,7 +308,7 @@ export class TicketRepository {
   async getDetail(id: string): Promise<TicketDetail> {
     if (isDemoMode()) {
       return {
-        ticket: { id, ticket_number: 'TK-DEMO-001', title: '商品质量问题需退货', description: '收到的商品有破损', category: '售后', priority: 'high', status: 'open', assignee_name: '李小红', creator_name: '张经理' },
+        ticket: { id, ticket_number: 'TK-DEMO-001', title: '商品质量问题需退货', description: '收到的商品有破损', category: 'refund', priority: 'high', status: 'open', assignee_name: '李小红', creator_name: '张经理' },
         comments: [{ id: 'demo-cmt-1', content: '已联系客户确认问题', author_name: '李小红', is_internal: true, created_at: '2026-06-10T09:00:00Z' }],
         status_log: [
           { id: 'demo-log-1', from_status: null, to_status: 'open', operator_name: '张经理', created_at: '2026-06-10T08:00:00Z' },
@@ -301,27 +316,33 @@ export class TicketRepository {
         ],
       };
     }
-    const { data: ticket, error } = await this.client
-      .from('tickets')
-      .select('*, assignee:users!tickets_assignee_id_fkey(id, name), creator:users!tickets_creator_id_fkey(id, name)')
-      .eq('id', id)
-      .single();
+    // Fetch all three in parallel instead of sequentially
+    const [ticketResult, commentsResult, statusLogResult] = await Promise.all([
+      this.client
+        .from('tickets')
+        .select('*, assignee:users!tickets_assignee_id_fkey(id, name), creator:users!tickets_creator_id_fkey(id, name)')
+        .eq('id', id)
+        .single(),
+      this.client
+        .from('ticket_comments')
+        .select('*, author:users(id, name, avatar)')
+        .eq('ticket_id', id)
+        .order('created_at', { ascending: true }),
+      this.client
+        .from('ticket_status_log')
+        .select('*, operator:users(id, name)')
+        .eq('ticket_id', id)
+        .order('created_at', { ascending: true }),
+    ]);
+
+    const { data: ticket, error } = ticketResult;
 
     if (error || !ticket) {
       throw new RepositoryError('get ticket detail', error?.message ?? 'ticket not found', error?.code);
     }
 
-    const { data: comments } = await this.client
-      .from('ticket_comments')
-      .select('*, author:users(id, name, avatar)')
-      .eq('ticket_id', id)
-      .order('created_at', { ascending: true });
-
-    const { data: statusLog } = await this.client
-      .from('ticket_status_log')
-      .select('*, operator:users(id, name)')
-      .eq('ticket_id', id)
-      .order('created_at', { ascending: true });
+    const { data: comments } = commentsResult;
+    const { data: statusLog } = statusLogResult;
 
     const enrichedComments = (comments || []).map((c: Record<string, unknown>) => ({
       ...c,

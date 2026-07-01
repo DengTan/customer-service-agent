@@ -21,6 +21,10 @@ export interface ConversationFilters {
   search?: string | null;
   limit?: number;
   offset?: number;
+  has_rating?: boolean | null;
+  source?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
 }
 
 export interface CreateConversationInput {
@@ -100,7 +104,26 @@ export class ConversationRepository {
           const search = filters.search.toLowerCase();
           result = result.filter(c => c.title.toLowerCase().includes(search));
         }
-        return result.slice(0, filters.limit ?? 50);
+        if (filters.has_rating === true) {
+          result = result.filter(c => c.rating !== null && c.rating !== undefined);
+        } else if (filters.has_rating === false) {
+          result = result.filter(c => c.rating === null || c.rating === undefined);
+        }
+        if (filters.source) {
+          result = result.filter(c => c.source === filters.source);
+        }
+        if (filters.start_date) {
+          result = result.filter(c => c.created_at >= filters.start_date!);
+        }
+        if (filters.end_date) {
+          const endDate = new Date(filters.end_date);
+          endDate.setDate(endDate.getDate() + 1);
+          result = result.filter(c => c.created_at < endDate.toISOString().split('T')[0]);
+        }
+        // Apply pagination
+        const offset = filters.offset ?? 0;
+        const limit = filters.limit ?? 50;
+        return result.slice(offset, offset + limit);
       } catch (err) {
         logger.error('Demo mode error, falling back to empty array', { error: err });
         return [];
@@ -121,6 +144,27 @@ export class ConversationRepository {
       if (filters.search) {
         const escaped = escapeLikePattern(filters.search);
         query = query.ilike('title', `%${escaped}%`);
+      }
+
+      if (filters.has_rating === true) {
+        query = query.not('rating', 'is', null);
+      } else if (filters.has_rating === false) {
+        query = query.is('rating', null);
+      }
+
+      if (filters.source) {
+        query = query.eq('source', filters.source);
+      }
+
+      if (filters.start_date) {
+        query = query.gte('created_at', filters.start_date);
+      }
+
+      if (filters.end_date) {
+        // Add one day to include the entire end date
+        const endDate = new Date(filters.end_date);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt('created_at', endDate.toISOString().split('T')[0]);
       }
 
       const { data, error } = await query;
@@ -144,6 +188,22 @@ export class ConversationRepository {
           const search = filters.search.toLowerCase();
           result = result.filter(c => c.title.toLowerCase().includes(search));
         }
+        if (filters.has_rating === true) {
+          result = result.filter(c => c.rating !== null && c.rating !== undefined);
+        } else if (filters.has_rating === false) {
+          result = result.filter(c => c.rating === null || c.rating === undefined);
+        }
+        if (filters.source) {
+          result = result.filter(c => c.source === filters.source);
+        }
+        if (filters.start_date) {
+          result = result.filter(c => c.created_at >= filters.start_date!);
+        }
+        if (filters.end_date) {
+          const endDate = new Date(filters.end_date);
+          endDate.setDate(endDate.getDate() + 1);
+          result = result.filter(c => c.created_at < endDate.toISOString().split('T')[0]);
+        }
         return result.length;
       } catch {
         return 0;
@@ -162,6 +222,26 @@ export class ConversationRepository {
       if (filters.search) {
         const escaped = escapeLikePattern(filters.search);
         query = query.ilike('title', `%${escaped}%`);
+      }
+
+      if (filters.has_rating === true) {
+        query = query.not('rating', 'is', null);
+      } else if (filters.has_rating === false) {
+        query = query.is('rating', null);
+      }
+
+      if (filters.source) {
+        query = query.eq('source', filters.source);
+      }
+
+      if (filters.start_date) {
+        query = query.gte('created_at', filters.start_date);
+      }
+
+      if (filters.end_date) {
+        const endDate = new Date(filters.end_date);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt('created_at', endDate.toISOString().split('T')[0]);
       }
 
       const { count, error } = await query;
@@ -374,7 +454,7 @@ export class ConversationRepository {
     }
   }
 
-  async listMessages(conversationId: string, limit: number, offset: number = 0): Promise<Message[]> {
+  async listMessages(conversationId: string, limit: number, offset: number = 0, order: 'asc' | 'desc' = 'asc'): Promise<Message[]> {
     if (isDemoMode()) {
       return DEMO_MESSAGES.filter(m => m.conversation_id === conversationId).slice(offset, offset + limit);
     }
@@ -384,7 +464,7 @@ export class ConversationRepository {
         .from('messages')
         .select(MESSAGE_DETAIL_SELECT)
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: order === 'asc' })
         .range(offset, offset + limit - 1);
 
       if (error) throw new RepositoryError('list conversation messages', error.message, error.code);

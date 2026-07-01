@@ -88,12 +88,19 @@ export class CustomerTagRepository {
     if (isDemoMode()) return { isSystem: false };
     const { data: tag, error: fetchError } = await this.client
       .from('customer_tags')
-      .select('is_system')
+      .select('name, is_system')
       .eq('id', id)
       .single();
 
     if (fetchError) {
       throw new RepositoryError('find customer tag by id', fetchError.message, fetchError.code);
+    }
+
+    // 删除标签前，先从所有客户的 tags 数组中移除该标签
+    if (tag?.name) {
+      await this.client.rpc('remove_tag_from_customers', {
+        tag_name: tag.name,
+      });
     }
 
     const { error } = await this.client.from('customer_tags').delete().eq('id', id);
@@ -106,25 +113,40 @@ export class CustomerTagRepository {
   }
 
   async findById(id: string): Promise<unknown | null> {
+    if (isDemoMode()) {
+      const demoTags = [
+        { id: 'demo-ctag-1', name: 'VIP', color: '#FF6B35', category: 'auto', is_system: true, customer_count: 156, created_at: '2026-01-01T00:00:00Z' },
+        { id: 'demo-ctag-2', name: '高频', color: '#2F6BFF', category: 'auto', is_system: false, customer_count: 89, created_at: '2026-01-01T00:00:00Z' },
+      ];
+      return demoTags.find(t => t.id === id) || null;
+    }
     const { data, error } = await this.client
       .from('customer_tags')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new RepositoryError('find customer tag by id', error.message, error.code);
     }
 
-    return data;
+    return data ?? null;
   }
 
   async isSystemTag(id: string): Promise<boolean> {
+    if (isDemoMode()) {
+      const demoTags = [
+        { id: 'demo-ctag-1', name: 'VIP', color: '#FF6B35', category: 'auto', is_system: true, customer_count: 156, created_at: '2026-01-01T00:00:00Z' },
+        { id: 'demo-ctag-2', name: '高频', color: '#2F6BFF', category: 'auto', is_system: false, customer_count: 89, created_at: '2026-01-01T00:00:00Z' },
+      ];
+      const tag = demoTags.find(t => t.id === id);
+      return tag?.is_system ?? false;
+    }
     const { data, error } = await this.client
       .from('customer_tags')
       .select('is_system')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new RepositoryError('check system tag', error.message, error.code);

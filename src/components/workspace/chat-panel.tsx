@@ -57,6 +57,8 @@ interface ChatPanelProps {
   agents: Array<{ id: string; name: string }>;
   onTransfer: () => void;
   onResolve: (queueId: string) => void;
+  transferDialogOpen?: boolean;
+  onTransferDialogOpenChange?: (open: boolean) => void;
 }
 
 export function ChatPanel({
@@ -66,6 +68,8 @@ export function ChatPanel({
   agents,
   onTransfer,
   onResolve,
+  transferDialogOpen,
+  onTransferDialogOpenChange,
 }: ChatPanelProps) {
   const { user } = useAuth();
   const [inputText, setInputText] = useState('');
@@ -77,11 +81,22 @@ export function ChatPanel({
   const [uploading, setUploading] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
   const [quickReplies, setQuickReplies] = useState<Array<{ title: string; content: string; category: string }>>([]);
-  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [selectedTransferAgent, setSelectedTransferAgent] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Use external transfer dialog state if provided, otherwise manage internally
+  const [internalTransferOpen, setInternalTransferOpen] = useState(false);
+  const isTransferDialogControlled = transferDialogOpen !== undefined;
+  const isTransferOpen = isTransferDialogControlled ? transferDialogOpen! : internalTransferOpen;
+  const handleTransferDialogChange = (open: boolean) => {
+    if (isTransferDialogControlled && onTransferDialogOpenChange) {
+      onTransferDialogOpenChange(open);
+    } else {
+      setInternalTransferOpen(open);
+    }
+  };
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -194,7 +209,8 @@ export function ChatPanel({
         });
         if (!res.ok) {
           setMessages(prev => prev.filter(m => m.id !== tempId));
-          toast.error('备注发送失败，请重试');
+          const data = await res.json().catch(() => ({}));
+          toast.error(data.message || '备注发送失败，请重试');
         }
       } catch {
         setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -224,7 +240,8 @@ export function ChatPanel({
       });
       if (!res.ok) {
         setMessages(prev => prev.filter(m => m.id !== tempId));
-        toast.error('消息发送失败，请重试');
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || '消息发送失败，请重试');
       }
     } catch {
       setMessages(prev => prev.filter(m => m.id !== tempId));
@@ -234,6 +251,7 @@ export function ChatPanel({
 
   const handleTransfer = async () => {
     if (!selectedConversation || !selectedTransferAgent) return;
+    const selectedAgent = agents.find(a => a.id === selectedTransferAgent);
     try {
       const res = await fetch('/api/agent/queue', {
         method: 'PATCH',
@@ -245,13 +263,15 @@ export function ChatPanel({
         }),
       });
       if (res.ok) {
-        setTransferDialogOpen(false);
+        handleTransferDialogChange(false);
+        toast.success(`已转接给 ${selectedAgent?.name || '目标坐席'}`);
         onTransfer();
       } else {
-        toast.error('转接失败');
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.message || '转接失败');
       }
     } catch {
-      toast.error('转接失败');
+      toast.error('转接失败，请重试');
     }
   };
 
@@ -323,7 +343,7 @@ export function ChatPanel({
         {/* Actions */}
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setTransferDialogOpen(true)}
+            onClick={() => handleTransferDialogChange(true)}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <ArrowRightLeft className="w-3.5 h-3.5" />
@@ -655,7 +675,7 @@ export function ChatPanel({
       </div>
 
       {/* Transfer Dialog */}
-      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+      <Dialog open={isTransferOpen} onOpenChange={handleTransferDialogChange}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>转接其他坐席</DialogTitle>
@@ -677,7 +697,7 @@ export function ChatPanel({
               </Select>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>
+              <Button variant="outline" onClick={() => handleTransferDialogChange(false)}>
                 取消
               </Button>
               <Button onClick={handleTransfer} disabled={!selectedTransferAgent}>

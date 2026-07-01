@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
+import { hashPassword } from '@/lib/auth/password';
+import crypto from 'crypto';
 import type { UserRow, UserWithPassword } from './types';
 import { toUserRow } from './types';
 
@@ -15,6 +17,12 @@ export interface CreateUserInput {
   name: string;
   role?: string;
   avatar?: string | null;
+  password?: string; // Optional, will auto-generate if not provided
+}
+
+export interface CreateUserResult {
+  user: UserRow;
+  tempPassword: string | null; // Plain text password for new user, null in demo mode
 }
 
 export interface UpdateUserInput {
@@ -30,6 +38,26 @@ export interface PaginationOptions {
   pageSize: number;
 }
 
+/**
+ * Generate a secure random password that meets strength requirements
+ * Requires: uppercase, lowercase, and digit
+ */
+function generateTempPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // Avoid confusing chars
+  const lower = 'abcdefghjkmnpqrstuvwxyz';  // Avoid ambiguous chars
+  const digits = '23456789';               // Avoid 0/O, 1/I confusion
+
+  const randomUpper = upper[crypto.randomInt(upper.length)];
+  const randomLower = lower[crypto.randomInt(lower.length)];
+  const randomDigit = digits[crypto.randomInt(digits.length)];
+  const randomRest = crypto.randomBytes(11).toString('base64url').slice(0, 11);
+
+  // Shuffle characters
+  const chars = [randomUpper, randomLower, randomDigit, ...randomRest];
+  const shuffled = chars.sort(() => crypto.randomInt(2) - 0.5);
+  return shuffled.join('');
+}
+
 export class UserRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
@@ -39,7 +67,7 @@ export class UserRepository {
         { id: 'demo-user-1', email: 'admin@smartassist.com', name: '张经理', role: 'admin', status: 'active', avatar: null, last_active_at: '2026-06-10T08:00:00Z', created_at: '2026-01-01T00:00:00Z' } as UserRow,
         { id: 'demo-user-2', email: 'agent1@smartassist.com', name: '李小红', role: 'agent', status: 'active', avatar: null, last_active_at: '2026-06-10T09:30:00Z', created_at: '2026-02-15T00:00:00Z' } as UserRow,
         { id: 'demo-user-3', email: 'agent2@smartassist.com', name: '王大明', role: 'agent', status: 'active', avatar: null, last_active_at: '2026-06-09T17:00:00Z', created_at: '2026-03-01T00:00:00Z' } as UserRow,
-        { id: 'demo-user-4', email: 'observer@smartassist.com', name: '赵观察', role: 'observer', status: 'inactive', avatar: null, last_active_at: '2026-05-20T10:00:00Z', created_at: '2026-04-10T00:00:00Z' } as UserRow,
+        { id: 'demo-user-4', email: 'observer@smartassist.com', name: '赵观察', role: 'observer', status: 'disabled', avatar: null, last_active_at: '2026-05-20T10:00:00Z', created_at: '2026-04-10T00:00:00Z' } as UserRow,
       ];
       let filtered = demoUsers;
       if (filters.role) filtered = filtered.filter(u => u.role === filters.role);
@@ -87,8 +115,16 @@ export class UserRepository {
     return { users: data ?? [], total: count ?? 0 };
   }
 
-  async create(input: CreateUserInput): Promise<UserRow> {
-    if (isDemoMode()) return { id: 'demo-user-new', email: input.email, name: input.name, role: input.role ?? 'agent', status: 'active', avatar: input.avatar ?? null, last_active_at: new Date().toISOString(), created_at: new Date().toISOString() } as UserRow;
+  async create(input: CreateUserInput): Promise<CreateUserResult> {
+    if (isDemoMode()) {
+      const demoUser = { id: 'demo-user-new', email: input.email, name: input.name, role: input.role ?? 'agent', status: 'active', avatar: input.avatar ?? null, last_active_at: new Date().toISOString(), created_at: new Date().toISOString() } as UserRow;
+      return { user: demoUser, tempPassword: null };
+    }
+
+    // Generate temporary password if not provided
+    const tempPassword = input.password ?? generateTempPassword();
+    const passwordHash = await hashPassword(tempPassword);
+
     const { data, error } = await this.client
       .from('users')
       .insert({
@@ -97,6 +133,7 @@ export class UserRepository {
         role: input.role ?? 'agent',
         avatar: input.avatar ?? null,
         status: 'active',
+        password_hash: passwordHash,
         last_active_at: new Date().toISOString(),
       })
       .select()
@@ -106,7 +143,7 @@ export class UserRepository {
       throw new RepositoryError('create user', error.message, error.code);
     }
 
-    return toUserRow(data);
+    return { user: toUserRow(data), tempPassword };
   }
 
   async update(input: UpdateUserInput): Promise<UserRow> {

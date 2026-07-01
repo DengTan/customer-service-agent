@@ -3,15 +3,7 @@ import { AgentRepository, type AgentQueueFilters, type AgentQueueItem, type Agen
 import { AgentAssignmentService } from './agent-assignment-service';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
-
-export interface AgentPerformance {
-  total_resolved: number;
-  avg_response_time_seconds: number;
-  avg_duration_seconds: number;
-  satisfaction_avg: number;
-  active_conversations: number;
-  queued_count: number;
-}
+import type { AgentPerformance } from '@/lib/types';
 
 const VALID_STATUSES = ['online', 'away', 'offline'] as const;
 type AgentStatus = (typeof VALID_STATUSES)[number];
@@ -123,7 +115,7 @@ export class AgentService {
 
       const avgResponseSeconds = this.calcAvgResponseTime(resolvedItems);
       const avgDurationSeconds = this.calcAvgDuration(resolvedItems);
-      const satisfactionAvg = await this.calcSatisfactionAvg(todayISO);
+      const satisfactionAvg = await this.calcSatisfactionAvg(todayISO, agentId);
 
       const performance: AgentPerformance = {
         total_resolved: resolvedCount,
@@ -168,8 +160,8 @@ export class AgentService {
     return Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
   }
 
-  private async calcSatisfactionAvg(sinceIso: string): Promise<number> {
-    const ratedConversations = await this.repo.listRatedConversationsUpdatedSince(sinceIso);
+  private async calcSatisfactionAvg(sinceIso: string, agentId?: string): Promise<number> {
+    const ratedConversations = await this.repo.listRatedConversationsUpdatedSince(sinceIso, agentId);
     if (!ratedConversations || ratedConversations.length === 0) return 0;
     const sum = ratedConversations.reduce((acc, c) => acc + (c.rating ?? 0), 0);
     return sum / ratedConversations.length;

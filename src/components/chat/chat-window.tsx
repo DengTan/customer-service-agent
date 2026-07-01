@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Bot, Star, Send, Sparkles, Copy, Check, PhoneOff, Download, RotateCcw, Zap, ArrowRightLeft, User, BookOpen, Headphones, X, ChevronRight, Clock, Tag, MessageSquare, Globe, AlertTriangle, FileText, Paperclip, ImageIcon, Loader2, Ticket, Cpu, Network, Users } from 'lucide-react';
 import type { Conversation, Message } from './chat-page';
@@ -69,12 +69,25 @@ function ConversationTicketsBanner({ conversationId }: { conversationId?: string
 
   useEffect(() => {
     if (!conversationId) return;
-    fetch(`/api/tickets/customer?conversation_id=${conversationId}`)
+
+    const controller = new AbortController();
+
+    fetch(`/api/tickets/customer?conversation_id=${conversationId}`, {
+      signal: controller.signal,
+    })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.tickets) setTickets(data.tickets);
+        if (data?.tickets?.length > 0) {
+          setTickets(data.tickets);
+        }
       })
-      .catch((err) => console.error('[ConversationTicketsBanner] Failed to fetch tickets:', err));
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('[ConversationTicketsBanner] Failed to fetch tickets:', err);
+        }
+      });
+
+    return () => controller.abort();
   }, [conversationId]);
 
   if (tickets.length === 0) return null;
@@ -271,7 +284,7 @@ export function ChatWindow({
     } finally {
       setIsProcessingAction(false);
     }
-  }, [isProcessingAction, conversation?.id, onSend, onHandoff]);
+  }, [isProcessingAction, conversation?.id, conversation?.status, conversation?.title, onSend, onHandoff]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -279,6 +292,25 @@ export function ChatWindow({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const quickReplyRef = useRef<HTMLDivElement>(null);
   const transferRef = useRef<HTMLDivElement>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup blob URLs on unmount or pendingImage change
+  useEffect(() => {
+    return () => {
+      if (pendingImage?.url) {
+        URL.revokeObjectURL(pendingImage.url);
+      }
+    };
+  }, [pendingImage]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   // Auto-scroll (only scroll the messages container, not the page)
   useEffect(() => {
@@ -312,7 +344,7 @@ export function ChatWindow({
       }
     }
     prevStreamingSourcesLenRef.current = currentLen;
-  }, [streamingSources, isSending, messages]);
+  }, [streamingSources, isSending, messages, prevStreamingSourcesLenRef]);
 
   // Close quick replies on outside click
   useEffect(() => {
@@ -384,7 +416,13 @@ export function ChatWindow({
     try {
       await navigator.clipboard.writeText(content);
       setCopiedId(msgId);
-      setTimeout(() => setCopiedId(null), 2000);
+
+      // Clear previous timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = setTimeout(() => setCopiedId(null), 2000);
     } catch {
       // ignore
     }

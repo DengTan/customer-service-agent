@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
 import { ServiceError } from '@/server/services/service-error';
+import { query, queryOne } from '@/lib/pg-direct';
 
 // ============================================
 // Types
@@ -64,45 +65,54 @@ export class AgentAssignmentRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
   // ==========================================
-  // Assignment Config CRUD
+  // Assignment Config CRUD (using pg-direct for PostgREST schema cache issue)
   // ==========================================
 
   async listConfigs(): Promise<AgentAssignmentConfigRow[]> {
     if (isDemoMode()) return [];
 
-    const { data, error } = await this.client
-      .from('agent_assignment_config')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw new RepositoryError('list assignment configs', error.message, error.code);
-    return (data ?? []) as AgentAssignmentConfigRow[];
+    try {
+      const rows = await query<AgentAssignmentConfigRow>(
+        `SELECT id, strategy, name, is_enabled, condition_config, created_at, updated_at 
+         FROM agent_assignment_config 
+         ORDER BY created_at DESC`
+      );
+      return rows;
+    } catch (error) {
+      throw new RepositoryError('list assignment configs', String(error), undefined);
+    }
   }
 
   async getActiveConfig(): Promise<AgentAssignmentConfigRow | null> {
     if (isDemoMode()) return null;
 
-    const { data, error } = await this.client
-      .from('agent_assignment_config')
-      .select('*')
-      .eq('is_enabled', true)
-      .maybeSingle();
-
-    if (error) throw new RepositoryError('get active config', error.message, error.code);
-    return data as AgentAssignmentConfigRow | null;
+    try {
+      const row = await queryOne<AgentAssignmentConfigRow>(
+        `SELECT id, strategy, name, is_enabled, condition_config, created_at, updated_at 
+         FROM agent_assignment_config 
+         WHERE is_enabled = true
+         LIMIT 1`
+      );
+      return row;
+    } catch (error) {
+      throw new RepositoryError('get active config', String(error), undefined);
+    }
   }
 
   async getConfigById(id: string): Promise<AgentAssignmentConfigRow | null> {
     if (isDemoMode()) return null;
 
-    const { data, error } = await this.client
-      .from('agent_assignment_config')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error) throw new RepositoryError('get config by id', error.message, error.code);
-    return data as AgentAssignmentConfigRow | null;
+    try {
+      const row = await queryOne<AgentAssignmentConfigRow>(
+        `SELECT id, strategy, name, is_enabled, condition_config, created_at, updated_at 
+         FROM agent_assignment_config 
+         WHERE id = $1`,
+        [id]
+      );
+      return row;
+    } catch (error) {
+      throw new RepositoryError('get config by id', String(error), undefined);
+    }
   }
 
   async createConfig(input: CreateAssignmentConfigInput): Promise<AgentAssignmentConfigRow> {
@@ -118,19 +128,23 @@ export class AgentAssignmentRepository {
       };
     }
 
-    const { data, error } = await this.client
-      .from('agent_assignment_config')
-      .insert({
-        strategy: input.strategy,
-        name: input.name,
-        is_enabled: input.is_enabled ?? true,
-        condition_config: input.condition_config ?? null,
-      })
-      .select()
-      .single();
-
-    if (error) throw new RepositoryError('create assignment config', error.message, error.code);
-    return data as AgentAssignmentConfigRow;
+    try {
+      const row = await queryOne<AgentAssignmentConfigRow>(
+        `INSERT INTO agent_assignment_config (strategy, name, is_enabled, condition_config)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, strategy, name, is_enabled, condition_config, created_at, updated_at`,
+        [
+          input.strategy,
+          input.name,
+          input.is_enabled ?? true,
+          input.condition_config ?? null,
+        ]
+      );
+      if (!row) throw new Error('Failed to insert config');
+      return row;
+    } catch (error) {
+      throw new RepositoryError('create assignment config', String(error), undefined);
+    }
   }
 
   async updateConfig(input: UpdateAssignmentConfigInput): Promise<AgentAssignmentConfigRow> {
@@ -146,70 +160,89 @@ export class AgentAssignmentRepository {
       };
     }
 
-    const updates: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-    if (input.strategy !== undefined) updates.strategy = input.strategy;
-    if (input.name !== undefined) updates.name = input.name;
-    if (input.is_enabled !== undefined) updates.is_enabled = input.is_enabled;
-    if (input.condition_config !== undefined) updates.condition_config = input.condition_config;
+    const updates: string[] = ['updated_at = NOW()'];
+    const values: unknown[] = [];
+    let paramIndex = 1;
 
-    const { data, error } = await this.client
-      .from('agent_assignment_config')
-      .update(updates)
-      .eq('id', input.id)
-      .select()
-      .single();
+    if (input.strategy !== undefined) {
+      updates.push(`strategy = $${paramIndex++}`);
+      values.push(input.strategy);
+    }
+    if (input.name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      values.push(input.name);
+    }
+    if (input.is_enabled !== undefined) {
+      updates.push(`is_enabled = $${paramIndex++}`);
+      values.push(input.is_enabled);
+    }
+    if (input.condition_config !== undefined) {
+      updates.push(`condition_config = $${paramIndex++}`);
+      values.push(input.condition_config);
+    }
 
-    if (error) throw new RepositoryError('update assignment config', error.message, error.code);
-    return data as AgentAssignmentConfigRow;
+    values.push(input.id);
+
+    try {
+      const row = await queryOne<AgentAssignmentConfigRow>(
+        `UPDATE agent_assignment_config 
+         SET ${updates.join(', ')}
+         WHERE id = $${paramIndex}
+         RETURNING id, strategy, name, is_enabled, condition_config, created_at, updated_at`,
+        values
+      );
+      if (!row) throw new Error('Config not found');
+      return row;
+    } catch (error) {
+      throw new RepositoryError('update assignment config', String(error), undefined);
+    }
   }
 
   async deleteConfig(id: string): Promise<void> {
     if (isDemoMode()) return;
 
-    const { error } = await this.client
-      .from('agent_assignment_config')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw new RepositoryError('delete assignment config', error.message, error.code);
+    try {
+      await query(`DELETE FROM agent_assignment_config WHERE id = $1`, [id]);
+    } catch (error) {
+      throw new RepositoryError('delete assignment config', String(error), undefined);
+    }
   }
 
   // ==========================================
-  // Shop Bindings CRUD
+  // Shop Bindings CRUD (using pg-direct for PostgREST schema cache issue)
   // ==========================================
 
   async listShopBindings(filters?: { shop_id?: string; user_id?: string }): Promise<ShopAgentBindingWithDetails[]> {
     if (isDemoMode()) return [];
 
-    let query = this.client
-      .from('shop_agent_bindings')
-      .select(`
-        *,
-        shops:shop_id (name),
-        users:user_id (name, email)
-      `);
+    let sql = `
+      SELECT 
+        sb.id, sb.shop_id, sb.user_id, sb.priority, sb.is_enabled, sb.created_at,
+        s.name as shop_name,
+        u.name as user_name, u.email as user_email
+      FROM shop_agent_bindings sb
+      LEFT JOIN shops s ON s.id = sb.shop_id
+      LEFT JOIN users u ON u.id = sb.user_id
+      WHERE 1=1
+    `;
+    const params: unknown[] = [];
 
-    if (filters?.shop_id) query = query.eq('shop_id', filters.shop_id);
-    if (filters?.user_id) query = query.eq('user_id', filters.user_id);
+    if (filters?.shop_id) {
+      params.push(filters.shop_id);
+      sql += ` AND sb.shop_id = $${params.length}`;
+    }
+    if (filters?.user_id) {
+      params.push(filters.user_id);
+      sql += ` AND sb.user_id = $${params.length}`;
+    }
 
-    query = query.order('priority', { ascending: true });
+    sql += ' ORDER BY sb.priority ASC';
 
-    const { data, error } = await query;
-
-    if (error) throw new RepositoryError('list shop bindings', error.message, error.code);
-
-    return (data ?? []).map((row: Record<string, unknown>) => {
-      const shops = row.shops as Record<string, unknown> | null;
-      const users = row.users as Record<string, unknown> | null;
-      return {
-        ...row,
-        shop_name: shops?.name as string | undefined,
-        user_name: users?.name as string | undefined,
-        user_email: users?.email as string | undefined,
-      } as ShopAgentBindingWithDetails;
-    });
+    try {
+      return await query<ShopAgentBindingWithDetails>(sql, params);
+    } catch (error) {
+      throw new RepositoryError('list shop bindings', String(error), undefined);
+    }
   }
 
   async createShopBinding(input: CreateShopBindingInput): Promise<ShopAgentBindingRow> {
@@ -224,48 +257,50 @@ export class AgentAssignmentRepository {
       };
     }
 
-    const { data, error } = await this.client
-      .from('shop_agent_bindings')
-      .insert({
-        shop_id: input.shop_id,
-        user_id: input.user_id,
-        priority: input.priority ?? 0,
-        is_enabled: input.is_enabled ?? true,
-      })
-      .select()
-      .single();
-
-    if (error) {
+    try {
+      const row = await queryOne<ShopAgentBindingRow>(
+        `INSERT INTO shop_agent_bindings (shop_id, user_id, priority, is_enabled)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, shop_id, user_id, priority, is_enabled, created_at`,
+        [
+          input.shop_id,
+          input.user_id,
+          input.priority ?? 0,
+          input.is_enabled ?? true,
+        ]
+      );
+      if (!row) throw new Error('Failed to insert shop binding');
+      return row;
+    } catch (error: unknown) {
       // Handle unique constraint violation (duplicate binding)
-      if (error.code === '23505') {
+      if (String(error).includes('23505')) {
         throw new ServiceError('该店铺和坐席的绑定已存在', { status: 409, code: 'DUPLICATE_BINDING' });
       }
-      throw new RepositoryError('create shop binding', error.message, error.code);
+      throw new RepositoryError('create shop binding', String(error), undefined);
     }
-    return data as ShopAgentBindingRow;
   }
 
   async deleteShopBinding(id: string): Promise<void> {
     if (isDemoMode()) return;
 
-    const { error } = await this.client
-      .from('shop_agent_bindings')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw new RepositoryError('delete shop binding', error.message, error.code);
+    try {
+      await query(`DELETE FROM shop_agent_bindings WHERE id = $1`, [id]);
+    } catch (error) {
+      throw new RepositoryError('delete shop binding', String(error), undefined);
+    }
   }
 
   async deleteShopBindingsByShopAndUser(shopId: string, userId: string): Promise<void> {
     if (isDemoMode()) return;
 
-    const { error } = await this.client
-      .from('shop_agent_bindings')
-      .delete()
-      .eq('shop_id', shopId)
-      .eq('user_id', userId);
-
-    if (error) throw new RepositoryError('delete shop bindings', error.message, error.code);
+    try {
+      await query(
+        `DELETE FROM shop_agent_bindings WHERE shop_id = $1 AND user_id = $2`,
+        [shopId, userId]
+      );
+    } catch (error) {
+      throw new RepositoryError('delete shop bindings', String(error), undefined);
+    }
   }
 
   // ==========================================
@@ -279,39 +314,43 @@ export class AgentAssignmentRepository {
   async findBestAgentForShop(shopId: string): Promise<string | null> {
     if (isDemoMode()) return null;
 
-    // Get enabled bindings for the shop, ordered by priority
-    const { data: bindings, error: bindingsError } = await this.client
-      .from('shop_agent_bindings')
-      .select('user_id')
-      .eq('shop_id', shopId)
-      .eq('is_enabled', true)
-      .order('priority', { ascending: true });
+    try {
+      // Get enabled bindings for the shop, ordered by priority
+      const bindings = await query<{ user_id: string }>(
+        `SELECT user_id FROM shop_agent_bindings 
+         WHERE shop_id = $1 AND is_enabled = true 
+         ORDER BY priority ASC`,
+        [shopId]
+      );
 
-    if (bindingsError) throw new RepositoryError('find agents for shop', bindingsError.message, bindingsError.code);
-    if (!bindings || bindings.length === 0) return null;
+      if (bindings.length === 0) return null;
 
-    const userIds = (bindings as Array<{ user_id: string }>).map(b => b.user_id);
+      const userIds = bindings.map(b => b.user_id);
+      const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
 
-    // Get online agents from the bindings
-    const { data: onlineAgents, error: sessionError } = await this.client
-      .from('agent_sessions')
-      .select('user_id')
-      .in('user_id', userIds)
-      .eq('status', 'online')
-      .is('current_conversation_id', null);
+      // Get online agents from the bindings
+      const onlineAgents = await query<{ user_id: string }>(
+        `SELECT user_id FROM agent_sessions 
+         WHERE user_id IN (${placeholders}) 
+           AND status = 'online' 
+           AND current_conversation_id IS NULL`,
+        userIds
+      );
 
-    if (sessionError) throw new RepositoryError('find online agents', sessionError.message, sessionError.code);
-    if (!onlineAgents || onlineAgents.length === 0) return null;
+      if (onlineAgents.length === 0) return null;
 
-    // Return the first online agent (highest priority binding)
-    const onlineUserIds = new Set((onlineAgents as Array<{ user_id: string }>).map(a => a.user_id));
-    for (const binding of (bindings as Array<{ user_id: string }>)) {
-      if (onlineUserIds.has(binding.user_id)) {
-        return binding.user_id;
+      // Return the first online agent (highest priority binding)
+      const onlineUserIds = new Set(onlineAgents.map(a => a.user_id));
+      for (const binding of bindings) {
+        if (onlineUserIds.has(binding.user_id)) {
+          return binding.user_id;
+        }
       }
-    }
 
-    return null;
+      return null;
+    } catch (error) {
+      throw new RepositoryError('find agents for shop', String(error), undefined);
+    }
   }
 
   /**
@@ -320,40 +359,39 @@ export class AgentAssignmentRepository {
   async findAvailableAgentsForSkillGroup(skillGroupId: string | null): Promise<string[]> {
     if (isDemoMode()) return [];
 
-    // Get skill group member IDs
-    if (!skillGroupId) {
-      // If no skill group, return all online agents
-      const { data: allOnline, error } = await this.client
-        .from('agent_sessions')
-        .select('user_id')
-        .eq('status', 'online')
-        .is('current_conversation_id', null);
+    try {
+      if (!skillGroupId) {
+        // If no skill group, return all online agents
+        const rows = await query<{ user_id: string }>(
+          `SELECT user_id FROM agent_sessions 
+           WHERE status = 'online' AND current_conversation_id IS NULL`
+        );
+        return rows.map(r => r.user_id);
+      }
 
-      if (error) throw new RepositoryError('find all online agents', error.message, error.code);
-      return (allOnline ?? []).map(a => (a as { user_id: string }).user_id);
+      // Get skill group member IDs
+      const group = await queryOne<{ member_ids: string[] }>(
+        `SELECT member_ids FROM skill_groups WHERE id = $1`,
+        [skillGroupId]
+      );
+
+      if (!group || !group.member_ids || group.member_ids.length === 0) return [];
+
+      const memberIds = group.member_ids;
+      const placeholders = memberIds.map((_, i) => `$${i + 1}`).join(',');
+
+      // Get online agents from skill group members
+      const rows = await query<{ user_id: string }>(
+        `SELECT user_id FROM agent_sessions 
+         WHERE user_id IN (${placeholders}) 
+           AND status = 'online' 
+           AND current_conversation_id IS NULL`,
+        memberIds
+      );
+
+      return rows.map(r => r.user_id);
+    } catch (error) {
+      throw new RepositoryError('find skill group online agents', String(error), undefined);
     }
-
-    const { data: group, error: groupError } = await this.client
-      .from('skill_groups')
-      .select('member_ids')
-      .eq('id', skillGroupId)
-      .maybeSingle();
-
-    if (groupError) throw new RepositoryError('find skill group', groupError.message, groupError.code);
-    if (!group) return [];
-
-    const memberIds = (group as Record<string, unknown>).member_ids as string[] | undefined;
-    if (!memberIds || memberIds.length === 0) return [];
-
-    // Get online agents from skill group members
-    const { data: onlineAgents, error: sessionError } = await this.client
-      .from('agent_sessions')
-      .select('user_id')
-      .in('user_id', memberIds)
-      .eq('status', 'online')
-      .is('current_conversation_id', null);
-
-    if (sessionError) throw new RepositoryError('find skill group online agents', sessionError.message, sessionError.code);
-    return (onlineAgents ?? []).map(a => (a as { user_id: string }).user_id);
   }
 }

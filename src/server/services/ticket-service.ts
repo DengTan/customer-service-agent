@@ -34,7 +34,9 @@ import { SkillGroupRepository } from '@/server/repositories/skill-group-reposito
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import type { TicketStatus } from '@/lib/types';
+import { TICKET } from '@/lib/constants';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
+import { logger } from '@/lib/logger';
 
 type TicketStatusType = 'open' | 'in_progress' | 'pending_customer' | 'resolved' | 'closed';
 
@@ -45,6 +47,9 @@ const VALID_TRANSITIONS: Record<TicketStatusType, TicketStatusType[]> = {
   resolved: ['closed', 'in_progress'],
   closed: [],
 };
+
+const VALID_CATEGORIES = ['refund', 'logistics', 'product', 'account', 'other'] as const;
+const VALID_PRIORITIES = ['urgent', 'high', 'medium', 'low'] as const;
 
 export interface CreateTicketFromConversationInput extends CreateTicketInput {
   conversation_id: string;
@@ -100,7 +105,7 @@ export class TicketService {
 
       // Fire-and-forget: check SLA overdue alerts
       this.checkSLAOverdue().catch((err) => {
-        console.error('[TicketService] Failed to check SLA overdue:', err);
+        logger.error('[TicketService] Failed to check SLA overdue', { error: err?.message ?? String(err) });
       });
 
       return {
@@ -116,6 +121,28 @@ export class TicketService {
   async createTicket(input: CreateTicketInput & { custom_field_values?: { field_id: string; field_value: string }[] }): Promise<unknown> {
     if (!input.title) {
       throw new ServiceError('标题不能为空', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const MAX_DESCRIPTION_LENGTH = TICKET.MAX_DESCRIPTION_LENGTH;
+    if (input.description && input.description.length > MAX_DESCRIPTION_LENGTH) {
+      throw new ServiceError(`描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (input.category && !VALID_CATEGORIES.includes(input.category as typeof VALID_CATEGORIES[number])) {
+      throw new ServiceError('无效的分类', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (input.priority && !VALID_PRIORITIES.includes(input.priority as typeof VALID_PRIORITIES[number])) {
+      throw new ServiceError('无效的优先级', {
         status: 400,
         code: 'VALIDATION_ERROR',
       });
@@ -159,7 +186,7 @@ export class TicketService {
       // Auto-assign if enabled and no assignee specified
       if (!t.assignee_id && await this.isAutoAssignEnabled()) {
         this.autoAssign(t.id).catch((err) => {
-          console.error('[TicketService] Failed to auto-assign ticket:', err, { ticketId: t.id });
+          logger.error('[TicketService] Failed to auto-assign ticket', { error: err?.message ?? String(err), ticketId: t.id });
         }); // fire-and-forget
       }
 
@@ -198,6 +225,28 @@ export class TicketService {
       const ticketTitle = input.title || conv.title || '来自对话的工单';
       const ticketDescription = input.description || conv.summary || '';
 
+      const MAX_DESCRIPTION_LENGTH = TICKET.MAX_DESCRIPTION_LENGTH;
+      if (ticketDescription.length > MAX_DESCRIPTION_LENGTH) {
+        throw new ServiceError(`描述不能超过${MAX_DESCRIPTION_LENGTH}个字符`, {
+          status: 400,
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      if (input.category && !VALID_CATEGORIES.includes(input.category as typeof VALID_CATEGORIES[number])) {
+        throw new ServiceError('无效的分类', {
+          status: 400,
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
+      if (input.priority && !VALID_PRIORITIES.includes(input.priority as typeof VALID_PRIORITIES[number])) {
+        throw new ServiceError('无效的优先级', {
+          status: 400,
+          code: 'VALIDATION_ERROR',
+        });
+      }
+
       const ticket = await this.tickets.create({
         ...input,
         title: ticketTitle,
@@ -230,7 +279,7 @@ export class TicketService {
       // Auto-assign if enabled and no assignee specified
       if (!t.assignee_id && await this.isAutoAssignEnabled()) {
         this.autoAssign(t.id).catch((err) => {
-          console.error('[TicketService] Failed to auto-assign ticket from conversation:', err, { ticketId: t.id });
+          logger.error('[TicketService] Failed to auto-assign ticket from conversation', { error: err?.message ?? String(err), ticketId: t.id });
         }); // fire-and-forget
       }
 
@@ -324,7 +373,7 @@ export class TicketService {
         // Parent-child linkage: check if all sub-tickets are now closed
         if (ticket.parent_ticket_id && (updateData.status === 'resolved' || updateData.status === 'closed')) {
           this.checkParentTicketClosure(ticket.parent_ticket_id, input.operator_id ?? null).catch((err) => {
-            console.error('[TicketService] Failed to check parent ticket closure:', err, { parentTicketId: ticket.parent_ticket_id });
+            logger.error('[TicketService] Failed to check parent ticket closure', { error: err?.message ?? String(err), parentTicketId: ticket.parent_ticket_id });
           });
         }
       }
@@ -378,9 +427,10 @@ export class TicketService {
       // Get ticket data for audit log
       const ticket = await this.tickets.findById(id) as TicketRow | null;
       // Audit log before delete - consistent format: { before: {...}, after: null }
-      this.writeAuditLog(id, 'delete', operatorId ?? null, operatorName ?? null, { 
-        before: { ticket_data: ticket }, 
-        after: null 
+      this.writeAuditLog(id, 'delete', operatorId ?? null, operatorName ?? null, {
+        before: { ticket_data: ticket },
+        after: null,
+        reason: reason ?? null,
       });
       await this.tickets.delete(id);
     } catch (error) {
@@ -430,6 +480,9 @@ export class TicketService {
       };
 
       // Can only auto-assign unassigned open/in_progress tickets
+      if (!['open', 'in_progress'].includes(ticket.status)) {
+        throw new ServiceError('该状态下无法自动指派', { status: 400, code: 'VALIDATION_ERROR' });
+      }
       if (ticket.assignee_id) {
         throw new ServiceError('工单已指派，无法自动分配', { status: 400, code: 'VALIDATION_ERROR' });
       }
@@ -745,6 +798,15 @@ export class TicketService {
 
     if (!activeTickets || activeTickets.length === 0) return;
 
+    // Batch query recent alerts to avoid N+1 queries
+    const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const [responseAlerts, resolveAlerts] = await Promise.all([
+      this.alertRepo.findRecentUnresolvedBatch(['ticket_sla_response_overdue'], windowStart),
+      this.alertRepo.findRecentUnresolvedBatch(['ticket_sla_resolve_overdue'], windowStart),
+    ]);
+    const responseAlertSet = new Set(responseAlerts.map(a => `${a.conversation_id}-${a.type}`));
+    const resolveAlertSet = new Set(resolveAlerts.map(a => `${a.conversation_id}-${a.type}`));
+
     for (const ticket of activeTickets) {
       const sla = this.calculateSLA(ticket as {
         status: string;
@@ -754,16 +816,14 @@ export class TicketService {
         assignee_id: string | null;
       }, config);
 
+      const convId = ticket.conversation_id ?? ticket.id;
+
       // Response overdue → warning
       if (sla.response_overdue) {
-        const existing = await this.alertRepo.findRecentUnresolved(
-          ticket.conversation_id ?? ticket.id,
-          'ticket_sla_response_overdue',
-          new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-        );
-        if (!existing) {
+        const alertKey = `${convId}-ticket_sla_response_overdue`;
+        if (!responseAlertSet.has(alertKey)) {
           await this.alertRepo.create({
-            conversation_id: ticket.conversation_id ?? ticket.id,
+            conversation_id: convId,
             type: 'ticket_sla_response_overdue',
             severity: 'warning',
             message: `工单 ${ticket.ticket_number}「${ticket.title}」响应超时`,
@@ -774,14 +834,10 @@ export class TicketService {
 
       // Resolve overdue → critical
       if (sla.resolve_overdue) {
-        const existing = await this.alertRepo.findRecentUnresolved(
-          ticket.conversation_id ?? ticket.id,
-          'ticket_sla_resolve_overdue',
-          new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-        );
-        if (!existing) {
+        const alertKey = `${convId}-ticket_sla_resolve_overdue`;
+        if (!resolveAlertSet.has(alertKey)) {
           await this.alertRepo.create({
-            conversation_id: ticket.conversation_id ?? ticket.id,
+            conversation_id: convId,
             type: 'ticket_sla_resolve_overdue',
             severity: 'critical',
             message: `工单 ${ticket.ticket_number}「${ticket.title}」处理超时`,
@@ -836,8 +892,8 @@ export class TicketService {
       throw new ServiceError('请选择至少一个工单', { status: 400, code: 'VALIDATION_ERROR' });
     }
 
-    if (ids.length > 100) {
-      throw new ServiceError('单次批量操作不超过100个工单', { status: 400, code: 'VALIDATION_ERROR' });
+    if (ids.length > TICKET.BATCH_MAX_SIZE) {
+      throw new ServiceError(`单次批量操作不超过${TICKET.BATCH_MAX_SIZE}个工单`, { status: 400, code: 'VALIDATION_ERROR' });
     }
 
     try {
@@ -849,10 +905,10 @@ export class TicketService {
           .select('id, status, ticket_number')
           .in('id', ids);
 
+        // Only tickets already in 'closed' status cannot transition to 'closed' again.
+        // According to VALID_TRANSITIONS: open/in_progress/pending_customer/resolved → closed are all allowed.
         const nonClosable = (tickets as Array<{ id: string; status: string; ticket_number: string }> ?? [])
-          .filter(t => t.status !== 'resolved' && t.status !== 'open');
-
-        // Allow closing open and resolved tickets
+          .filter(t => t.status === 'closed');
         if (nonClosable.length > 0) {
           throw new ServiceError(
             `以下工单状态不允许关闭: ${nonClosable.map(t => t.ticket_number).join(', ')}`,
@@ -865,9 +921,23 @@ export class TicketService {
 
       // Log status changes for each ticket if status was changed
       if (updates.status) {
+        // Query current status for each ticket before batch update
+        const currentTickets = await Promise.all(
+          ids.map(id => this.tickets.findById(id))
+        );
+        const statusMap = new Map(
+          currentTickets
+            .filter(t => t !== null)
+            .map(t => [(t as { id: string }).id, (t as { status: string }).status])
+        );
         for (const id of ids) {
-          await this.tickets.logStatusChange(id, null, updates.status, null).catch((err) => {
-            console.error('[TicketService] Failed to log status change:', err, { ticketId: id });
+          await this.tickets.logStatusChange(
+            id,
+            statusMap.get(id) ?? null,
+            updates.status,
+            null
+          ).catch((err) => {
+            logger.error('[TicketService] Failed to log status change', { error: err?.message ?? String(err), ticketId: id });
           });
         }
       }
@@ -876,7 +946,7 @@ export class TicketService {
       if (updates.assignee_id) {
         for (const id of ids) {
           this.notifyTicketAssigned(id, '', '', updates.assignee_id, null).catch((err) => {
-            console.error('[TicketService] Failed to notify assignee:', err, { ticketId: id, assigneeId: updates.assignee_id });
+            logger.error('[TicketService] Failed to notify assignee', { error: err?.message ?? String(err), ticketId: id, assigneeId: updates.assignee_id });
           });
         }
       }
@@ -904,8 +974,16 @@ export class TicketService {
   }
 
   async addComment(input: CreateCommentInput): Promise<CommentWithAuthor> {
+    const MAX_COMMENT_LENGTH = TICKET.MAX_COMMENT_LENGTH;
     if (!input.content || !input.content.trim()) {
       throw new ServiceError('评论内容不能为空', {
+        status: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (input.content.length > MAX_COMMENT_LENGTH) {
+      throw new ServiceError(`评论不能超过${MAX_COMMENT_LENGTH}个字符`, {
         status: 400,
         code: 'VALIDATION_ERROR',
       });
@@ -1036,8 +1114,8 @@ export class TicketService {
     try {
       if (!(await this.isNotifyEnabled())) return;
 
-      // Parse @mentions: matches @name patterns (Chinese/English names)
-      const mentionRegex = /@([\u4e00-\u9fa5a-zA-Z0-9_]{1,20})/g;
+      // Parse @mentions: matches @name patterns (Chinese/English names, supports · separator)
+      const mentionRegex = /@([\u4e00-\u9fa5a-zA-Z][\u4e00-\u9fa5a-zA-Z0-9_·]{0,19})/g;
       const mentions: string[] = [];
       let match: RegExpExecArray | null;
       while ((match = mentionRegex.exec(content)) !== null) {
@@ -1174,7 +1252,12 @@ export class TicketService {
         changes: changes ? JSON.stringify(changes) : null,
       });
     } catch (error) {
-      console.error('[TicketService] writeAuditLog failed:', error);
+      // For delete operations, audit log failure should be surfaced
+      if (action === 'delete') {
+        logger.error('[TicketService] writeAuditLog failed for delete', { ticketId, error: error instanceof Error ? error.message : String(error) });
+      } else {
+        logger.error('[TicketService] writeAuditLog failed', { ticketId, error: error instanceof Error ? error.message : String(error) });
+      }
     }
   }
 
@@ -1200,7 +1283,7 @@ export class TicketService {
         changes: typeof d.changes === 'string' ? JSON.parse(d.changes) : d.changes,
       }));
     } catch (error) {
-      console.error('[TicketService] getAuditLog failed:', error);
+      logger.error('[TicketService] getAuditLog failed', { error: error instanceof Error ? error.message : String(error) });
       return [];
     }
   }
@@ -1242,7 +1325,7 @@ export class TicketService {
         });
       }
     } catch (error) {
-      console.error('[TicketService] checkParentTicketClosure failed:', error);
+      logger.error('[TicketService] checkParentTicketClosure failed', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 }

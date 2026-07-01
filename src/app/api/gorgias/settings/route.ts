@@ -69,22 +69,14 @@ export async function GET(request: NextRequest) {
 
     const settingsMap = new Map(settings?.map(s => [s.key, s.value]) || []);
 
-    // 获取 Webhook 相关状态（安全获取，不抛出异常）
-    let webhookStatus: Awaited<ReturnType<typeof gorgiasService.getWebhookStatus>> | null = null;
-    let webhookSecret: string | null = null;
-    try {
-      [webhookStatus, webhookSecret] = await Promise.all([
-        gorgiasService.getWebhookStatus(),
-        gorgiasService.getWebhookSecret(),
-      ]);
-    } catch (err) {
-      logger.warn('Failed to get webhook status/secret', { error: err instanceof Error ? err.message : 'Unknown' });
-    }
+    // 获取 Webhook 相关状态
+    const webhookStatus = await gorgiasService.getWebhookStatus();
+    const webhookSecret = await gorgiasService.getWebhookSecret();
     
     // 生成 Webhook URL（如果有配置）- 必须包含 ticket_id 模板变量让 Gorgias 替换
     let webhookUrl: string | null = null;
     const publicUrl = settingsMap.get('gorgias_public_url');
-    if (publicUrl && settingsMap.get('gorgias_enabled') === 'true' && webhookSecret) {
+    if (publicUrl && settingsMap.get('gorgias_enabled') === 'true') {
       // Gorgias 会在发送时将 {{ticket.id}} 替换为实际工单 ID
       webhookUrl = `${publicUrl}/api/gorgias/webhook?secret=${webhookSecret}&ticket_id={{ticket.id}}`;
     }
@@ -94,7 +86,7 @@ export async function GET(request: NextRequest) {
       domain: settingsMap.get('gorgias_domain') || '',
       email: settingsMap.get('gorgias_email') || '',
       apiKey: settingsMap.get('gorgias_api_key') ? '********' : '',
-      webhookEnabled: webhookStatus?.enabled ?? false,
+      webhookEnabled: settingsMap.get('gorgias_webhook_enabled') === 'true',
       webhookUrl,
       webhookSecret: webhookSecret ? '********' : null,
     };

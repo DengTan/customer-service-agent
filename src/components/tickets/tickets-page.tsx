@@ -34,7 +34,7 @@ interface TicketDetail {
 }
 
 // Default page size - configurable via ticket_page_size setting
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 20; // Note: hardcoded here for frontend; use TICKET.PAGE_SIZE for API
 
 // Sub-component: Ticket Relations Panel
 function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
@@ -44,8 +44,10 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
   const [showAddRelation, setShowAddRelation] = useState(false);
   const [targetTicketNumber, setTargetTicketNumber] = useState('');
   const [relationType, setRelationType] = useState('related');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    setIsLoading(true);
     fetch(`/api/tickets/${ticketId}/relations`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -55,7 +57,8 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
           setSubProgress(data.sub_ticket_progress || { total: 0, closed: 0, resolved: 0, in_progress: 0 });
         }
       })
-      .catch((err) => console.error('[TicketRelationsPanel] Failed to fetch relations:', err));
+      .catch((err) => console.error('[TicketRelationsPanel] Failed to fetch relations:', err))
+      .finally(() => setIsLoading(false));
   }, [ticketId]);
 
   const handleAddRelation = async () => {
@@ -161,9 +164,13 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
         </div>
       )}
 
-      {relations.length === 0 && subTickets.length === 0 && (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-4">
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : relations.length === 0 && subTickets.length === 0 ? (
         <p className="text-xs text-muted-foreground">暂无关联工单</p>
-      )}
+      ) : null}
     </div>
   );
 }

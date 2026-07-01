@@ -1,71 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireRole } from '@/lib/api-utils';
-import { AgentAssignmentService } from '@/server/services/agent-assignment-service';
-import type { AssignmentStrategy } from '@/server/repositories/agent-assignment-repository';
+import { AgentAssignmentRepository } from '@/server/repositories/agent-assignment-repository';
 import { logger } from '@/lib/logger';
 
-// GET /api/agent-assignment/current-strategy - Get current strategy
+// GET /api/agent-assignment/current-strategy
 export async function GET() {
   try {
-    const service = new AgentAssignmentService();
-    const config = await service.getActiveConfig();
+    const repo = new AgentAssignmentRepository();
+    const config = await repo.getActiveConfig();
 
     if (!config) {
-      // Return default strategy if no config exists
       return NextResponse.json({ strategy: 'round_robin' });
     }
 
     return NextResponse.json({ strategy: config.strategy });
   } catch (error) {
-    logger.agent.error('GET current strategy failed', { error });
-    return NextResponse.json(
-      { error: 'Failed to get current strategy' },
-      { status: 500 }
-    );
+    logger.api.error('[GET /current-strategy] Error', { error });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
-// PUT /api/agent-assignment/current-strategy - Update current strategy
+// PUT /api/agent-assignment/current-strategy
 export async function PUT(request: NextRequest) {
+  logger.api.debug('[PUT /current-strategy] Called');
   try {
-    // Only admin can change strategy
-    const authError = await requireRole(request, ['admin']);
-    if (authError) return authError;
-
     const body = await request.json();
-    const strategy = body.strategy as AssignmentStrategy;
+    const { strategy } = body;
 
-    if (!strategy || !['round_robin', 'load_balance', 'designated_shop'].includes(strategy)) {
-      return NextResponse.json(
-        { error: 'Invalid strategy' },
-        { status: 400 }
-      );
+    logger.api.debug('[PUT /current-strategy] Strategy', { strategy });
+
+    if (!strategy) {
+      return NextResponse.json({ error: 'Missing strategy' }, { status: 400 });
     }
 
-    const service = new AgentAssignmentService();
-    const config = await service.getActiveConfig();
+    const repo = new AgentAssignmentRepository();
+    const config = await repo.getActiveConfig();
+    logger.api.debug('[PUT /current-strategy] Current config', { config });
 
     if (config) {
-      // Update existing config
-      await service.updateConfig({
-        id: config.id,
-        strategy,
-      });
+      logger.api.debug('[PUT /current-strategy] Updating config', { configId: config.id });
+      await repo.updateConfig({ id: config.id, strategy });
     } else {
-      // Create new config with default name
-      await service.createConfig({
-        strategy,
-        name: '默认分配策略',
-        is_enabled: true,
-      });
+      logger.api.debug('[PUT /current-strategy] Creating new config');
+      await repo.createConfig({ strategy, name: '默认分配策略', is_enabled: true });
     }
 
     return NextResponse.json({ success: true, strategy });
   } catch (error) {
-    logger.agent.error('PUT current strategy failed', { error });
-    return NextResponse.json(
-      { error: 'Failed to update strategy' },
-      { status: 500 }
-    );
+    logger.api.error('[PUT /current-strategy] Error', { error });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

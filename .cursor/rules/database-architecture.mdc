@@ -1,0 +1,153 @@
+---
+description: SmartAssist 数据库架构与连接配置参考
+alwaysApply: true
+---
+
+# SmartAssist 数据库架构规则
+
+## 数据库连接配置
+
+### Supabase REST API（应用层使用）
+
+- **COZE_SUPABASE_URL**: `https://br-alive-kea-4152cf8a.supabase2.aidap-global.cn-beijing.volces.com`
+- **COZE_SUPABASE_ANON_KEY**: JWT（role=anon）
+- **COZE_SUPABASE_SERVICE_ROLE_KEY**: JWT（role=service_role）
+
+### PostgreSQL 直连（迁移/运维）
+
+| 参数 | 值 |
+|------|-----|
+| 主机 | `cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com` |
+| 端口 | `5432` |
+| 数据库 | `postgres` |
+| 用户名 | `postgres` |
+| 密码 | `$POSTGRES_PASSWORD`（环境变量） |
+
+## 数据库管理命令
+
+```bash
+# 查看数据库状态
+node scripts/db-admin.js status
+
+# 执行数据库迁移
+node scripts/db-migrate.js
+
+# 初始化默认数据
+node scripts/db-admin.js init
+```
+
+## 数据库表分类总览（60+ 表）
+
+### 核心业务表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `users` | 用户账户 | id, email, name, role(admin/agent/observer), status, password_hash |
+| `conversations` | 对话记录 | id, title, status, rating, handoff_reason, summary, participant_ids, message_count |
+| `messages` | 消息记录 | id, conversation_id, role, content, source, confidence, tool_calls |
+| `auto_reply_rules` | 自动回复规则 | id, keywords, reply_content, priority |
+| `settings` | 系统配置 | key, value（键值对存储） |
+| `shops` | 店铺管理 | id, name, platform, knowledge_ids, config(jsonb), agent_quota |
+| `shop_agent_accounts` | 客服托管账号 | id, shop_id, account_name, encrypted_password, platform, status |
+
+### 知识库表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `knowledge_items` | 知识库条目 | id, title, name, type, category, content_hash, doc_ids, hit_count |
+| `knowledge_chunks` | 文本分片 | id, knowledge_item_id, content, content_hash, version_added, version_removed |
+| `knowledge_versions` | 版本历史 | id, knowledge_item_id, version_number, content, chunk_diff |
+| `knowledge_import_jobs` | 导入任务 | id, status, progress, chunks_preview |
+| `knowledge_learning_queue` | 知识自学习 | id, question, answer, confidence, category, status |
+
+### 客户与营销表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `customers` | 客户画像 | id, name, phone, email, platform, tags, notes |
+| `customer_tags` | 客户标签 | id, name, color, category, customer_count |
+| `marketing_campaigns` | 营销活动 | id, name, type, target_segment, bot_id, status, message_template |
+| `marketing_logs` | 营销日志 | id, campaign_id, customer_id, variant, delivered, replied |
+
+### 坐席与队列表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `agent_sessions` | 坐席会话 | id, user_id, status, current_conversation_id |
+| `agent_queue` | 人工排队 | id, conversation_id, customer_name, priority, assigned_agent_id, status |
+| `skill_groups` | 技能组 | id, name, description, member_ids, is_default |
+| `schedules` | 排班 | id, user_id, skill_group_id, date, shift |
+| `quick_replies` | 话术库 | id, title, content, category, scope, usage_count |
+
+### 质检与标签表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `conversation_tags_def` | 对话标签定义 | id, name, color, category, conversation_count |
+| `conversation_tag_records` | 对话标签记录 | conversation_id, tag_id, tagged_by |
+| `quality_rules` | 质检规则 | id, name, type, config(jsonb), enabled |
+| `quality_checks` | 质检记录 | id, conversation_id, rule_id, result, details |
+
+### Bot 与路由表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `bot_configs` | Bot配置 | id, name, system_prompt, tools, knowledge_ids, parent_bot_id, is_sub_agent |
+| `routing_rules` | 路由规则 | id, condition_type, condition_config, target_bot_id, priority |
+| `agent_delegations` | 子Agent委派 | id, conversation_id, parent_bot_id, sub_bot_id, confidence, status |
+| `agent_collaborations` | 子Agent协作 | id, conversation_id, sender_bot_id, receiver_bot_id, content |
+
+### 工单系统表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `tickets` | 工单 | id, ticket_number, title, category, priority, status, assignee_id |
+| `ticket_comments` | 工单评论 | id, ticket_id, author_id, content, is_internal |
+| `ticket_status_log` | 状态变更日志 | id, ticket_id, from_status, to_status |
+| `ticket_categories` | 工单分类 | id, name, parent_id |
+| `ticket_audit_log` | 操作审计日志 | id, ticket_id, operation, details |
+
+### 推送与告警表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `alerts` | 异常告警 | id, type, severity, message, is_resolved, conversation_id |
+| `push_templates` | 推送模板 | id, name, trigger_event, content_template, enabled |
+| `push_records` | 推送记录 | id, template_id, recipient, content, status |
+| `push_event_log` | 推送事件日志 | id, event_type, event_data, processed_at |
+
+### 商品与尺码表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `product_details` | 商品详情 | id, name, sku, category, brand, price, specifications, status |
+| `size_charts` | 尺码配置 | id, name, category, chart_type, product_id, size_columns, size_rows |
+| `size_chart_versions` | 尺码表版本 | id, size_chart_id, version_number, content_snapshot |
+
+### Gorgias 集成表
+
+| 表名 | 用途 | 关键字段 |
+|------|------|---------|
+| `webhook_event_processed` | Webhook幂等记录 | id, event_id, event_type, processed_at |
+
+## Repository 命名规范
+
+- 文件位置: `src/server/repositories/`
+- 命名格式: `{entity-name}-repository.ts`
+- 类名格式: `XxxRepository`
+
+## 常见字段类型
+
+- UUID 主键: `id`
+- 时间戳: `timestamptz`
+- JSONB: 用于存储动态配置（`metadata`, `config`, `settings`）
+- text[]: PostgreSQL 数组类型
+- varchar(n): 定长字符串
+- decimal(p,s): 精确小数
+
+## 外键关联
+
+- 店铺关联: `platform_connection_id` → `shops.id`
+- 商品关联尺码: `size_charts.product_id` → `product_details.id`
+- 子工单: `tickets.parent_ticket_id` → `tickets.id`
+- Bot 层级: `bot_configs.parent_bot_id` → `bot_configs.id`

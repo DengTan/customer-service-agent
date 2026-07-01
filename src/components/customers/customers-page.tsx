@@ -21,6 +21,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { Customer, CustomerTag, CustomerSource } from '@/lib/types';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
+import { useDebounce } from '@/hooks/use-debounce';
 
 const PLATFORM_ICONS: Record<CustomerSource, React.ReactNode> = {
   web: <Globe className="w-3.5 h-3.5" />,
@@ -43,23 +44,36 @@ export default function CustomersPage() {
   const [activeTab, setActiveTab] = useState<'customers' | 'tags'>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [tags, setTags] = useState<CustomerTag[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const searchQuery = useDebounce(searchInput, 300);
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
-  const [includeAnonymous, setIncludeAnonymous] = useState<boolean>(false); // 默认不显示匿名访客
+  const [includeAnonymous, setIncludeAnonymous] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{ total: number; byPlatform: Record<string, number> }>({ total: 0, byPlatform: {} });
 
   // Detail drawer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [customerNotes, setCustomerNotes] = useState('');
   const [customerConversations, setCustomerConversations] = useState<Array<{ id: string; title: string; status: string; created_at: string }>>([]);
+  // Add new state for load more conversations
+  const [conversationOffset, setConversationOffset] = useState(0);
+  const [hasMoreConversations, setHasMoreConversations] = useState(false);
+
   const [promoteForm, setPromoteForm] = useState<{ name: string; phone: string; email: string }>({ name: '', phone: '', email: '' });
 
   // Tag management modals
   const [createTagModalOpen, setCreateTagModalOpen] = useState(false);
   const [newTag, setNewTag] = useState({ name: '', color: '#2F6BFF', category: 'manual' as 'auto' | 'manual' });
   const [addTagToCustomer, setAddTagToCustomer] = useState(false);
+
+  // Tag detail modal state
+  const [tagDetailModalOpen, setTagDetailModalOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState<CustomerTag | null>(null);
+  const [tagCustomers, setTagCustomers] = useState<Customer[]>([]);
+  const [tagCustomerTotal, setTagCustomerTotal] = useState(0);
+  const [tagCustomerLoading, setTagCustomerLoading] = useState(false);
 
   // Fetch customers
   const fetchCustomers = useCallback(async () => {
@@ -73,6 +87,7 @@ export default function CustomersPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.customers) setCustomers(data.customers);
+      if (data.stats) setStats(data.stats);
     } catch {
       toast.error('获取客户列表失败');
     } finally {
@@ -112,6 +127,8 @@ export default function CustomersPage() {
       const data = await res.json();
       if (data.conversations) {
         setCustomerConversations(data.conversations);
+        setHasMoreConversations(data.conversations.length >= 10);
+        setConversationOffset(data.conversations.length);
       }
     } catch {
       setCustomerConversations([]);
@@ -162,6 +179,15 @@ export default function CustomersPage() {
         setSelectedCustomer(data.customer);
         setPromoteForm({ name: '', phone: '', email: '' });
         toast.success('已升级为正式客户');
+
+        // 升级后自动添加"新客户"标签（如果存在且尚未添加）
+        const newCustomerTag = tags.find(t =>
+          t.name === '新客户' && !selectedCustomer.tags.includes('新客户')
+        );
+        if (newCustomerTag) {
+          await handleAddTagToCustomer('新客户');
+        }
+
         fetchCustomers();
       }
     } catch {
@@ -213,12 +239,41 @@ export default function CustomersPage() {
     }
   };
 
+  // Load more conversations
+  const loadMoreConversations = async () => {
+    if (!selectedCustomer) return;
+    try {
+      const res = await fetch(`/api/customers/${selectedCustomer.id}?offset=${conversationOffset}`);
+      const data = await res.json();
+      if (data.conversations) {
+        setCustomerConversations(prev => [...prev, ...data.conversations]);
+        setHasMoreConversations(data.conversations.length >= 10);
+        setConversationOffset(prev => prev + data.conversations.length);
+      }
+    } catch {
+      toast.error('加载更多对话失败');
+    }
+  };
+
   // Create tag
   const handleCreateTag = async () => {
     if (!newTag.name) {
       toast.error('请输入标签名称');
       return;
     }
+
+    // 检查重名
+    if (tags.some(t => t.name.toLowerCase() === newTag.name.toLowerCase())) {
+      toast.error('标签名称已存在');
+      return;
+    }
+
+    // 检查长度
+    if (newTag.name.length > 50) {
+      toast.error('标签名称不能超过50个字符');
+      return;
+    }
+
     try {
       const res = await fetch('/api/customer-tags', {
         method: 'POST',
@@ -231,12 +286,59 @@ export default function CustomersPage() {
         toast.success('标签创建成功');
         setCreateTagModalOpen(false);
         setNewTag({ name: '', color: '#2F6BFF', category: 'manual' });
+        setEditingTag(null);
         fetchTags();
       } else {
         toast.error(data.error || '创建失败');
       }
     } catch {
       toast.error('创建标签失败');
+    }
+  };
+
+  // Update tag
+  const handleUpdateTag = async () => {
+    if (!editingTag || !newTag.name) {
+      toast.error('请输入标签名称');
+      return;
+    }
+
+    // 检查重名（排除自身）
+    if (tags.some(t => t.id !== editingTag.id && t.name.toLowerCase() === newTag.name.toLowerCase())) {
+      toast.error('标签名称已存在');
+      return;
+    }
+
+    // 检查长度
+    if (newTag.name.length > 50) {
+      toast.error('标签名称不能超过50个字符');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/customer-tags', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingTag.id,
+          name: newTag.name,
+          color: newTag.color,
+          category: newTag.category,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.tag) {
+        toast.success('标签更新成功');
+        setCreateTagModalOpen(false);
+        setNewTag({ name: '', color: '#2F6BFF', category: 'manual' });
+        setEditingTag(null);
+        fetchTags();
+      } else {
+        toast.error(data.error || '更新失败');
+      }
+    } catch {
+      toast.error('更新标签失败');
     }
   };
 
@@ -256,6 +358,41 @@ export default function CustomersPage() {
     } catch {
       toast.error('删除失败');
     }
+  };
+
+  // Open tag detail modal
+  const openTagDetail = async (tag: CustomerTag) => {
+    setEditingTag(tag);
+    setTagDetailModalOpen(true);
+    await fetchTagCustomers(tag.name);
+  };
+
+  // Fetch customers by tag
+  const fetchTagCustomers = async (tagName: string) => {
+    setTagCustomerLoading(true);
+    try {
+      const res = await fetch(`/api/customers?tag=${encodeURIComponent(tagName)}`);
+      const data = await res.json();
+      setTagCustomers(data.customers || []);
+      setTagCustomerTotal(data.stats?.byTag?.[tagName] || data.customers?.length || 0);
+    } catch {
+      setTagCustomers([]);
+      setTagCustomerTotal(0);
+    } finally {
+      setTagCustomerLoading(false);
+    }
+  };
+
+  // Open edit tag modal from detail
+  const handleEditTag = () => {
+    if (!editingTag) return;
+    setNewTag({
+      name: editingTag.name,
+      color: editingTag.color,
+      category: editingTag.category,
+    });
+    setTagDetailModalOpen(false);
+    setCreateTagModalOpen(true);
   };
 
   const formatDate = (date: string) => {
@@ -321,8 +458,8 @@ export default function CustomersPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="搜索姓名、手机、邮箱..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-9 bg-muted border-none"
               />
             </div>
@@ -361,10 +498,10 @@ export default function CustomersPage() {
 
           {/* Stats */}
           <div className="flex gap-4 mb-4 text-sm">
-            <span className="text-muted-foreground">客户总数 <span className="font-semibold text-foreground">{customers.length}</span></span>
-            <span className="text-muted-foreground">Web <span className="font-semibold text-foreground">{customers.filter(c => c.source_platform === 'web').length}</span></span>
-            <span className="text-muted-foreground">千牛 <span className="font-semibold text-foreground">{customers.filter(c => c.source_platform === 'qianniu').length}</span></span>
-            <span className="text-muted-foreground">抖店 <span className="font-semibold text-foreground">{customers.filter(c => c.source_platform === 'doudian').length}</span></span>
+            <span className="text-muted-foreground">客户总数 <span className="font-semibold text-foreground">{stats.total}</span></span>
+            <span className="text-muted-foreground">Web <span className="font-semibold text-foreground">{stats.byPlatform?.web || 0}</span></span>
+            <span className="text-muted-foreground">千牛 <span className="font-semibold text-foreground">{stats.byPlatform?.qianniu || 0}</span></span>
+            <span className="text-muted-foreground">抖店 <span className="font-semibold text-foreground">{stats.byPlatform?.doudian || 0}</span></span>
           </div>
 
           {/* Table */}
@@ -473,7 +610,11 @@ export default function CustomersPage() {
           <div className="flex-1 min-h-0 overflow-auto">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {tags.map((tag) => (
-                <div key={tag.id} className="bg-card rounded-lg shadow-card p-4 flex flex-col gap-3">
+                <div
+                  key={tag.id}
+                  className="bg-card rounded-lg shadow-card p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => openTagDetail(tag)}
+                >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div
@@ -486,7 +627,10 @@ export default function CustomersPage() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDeleteTag(tag.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTag(tag.id);
+                      }}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
@@ -640,6 +784,15 @@ export default function CustomersPage() {
                       </Badge>
                     </div>
                   ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={loadMoreConversations}
+                    disabled={!hasMoreConversations}
+                  >
+                    {hasMoreConversations ? '加载更多' : '已加载全部'}
+                  </Button>
                 </div>
               )}
             </div>
@@ -705,10 +858,16 @@ export default function CustomersPage() {
       )}
 
       {/* Create Tag Modal */}
-      <Dialog open={createTagModalOpen} onOpenChange={setCreateTagModalOpen}>
+      <Dialog open={createTagModalOpen} onOpenChange={(open) => {
+        setCreateTagModalOpen(open);
+        if (!open) {
+          setNewTag({ name: '', color: '#2F6BFF', category: 'manual' });
+          setEditingTag(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>创建标签</DialogTitle>
+            <DialogTitle>{editingTag ? '编辑标签' : '创建标签'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -752,8 +911,77 @@ export default function CustomersPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateTagModalOpen(false)}>取消</Button>
-            <Button onClick={handleCreateTag}>创建</Button>
+            <Button variant="ghost" onClick={() => {
+              setCreateTagModalOpen(false);
+              setNewTag({ name: '', color: '#2F6BFF', category: 'manual' });
+              setEditingTag(null);
+            }}>取消</Button>
+            <Button onClick={editingTag ? handleUpdateTag : handleCreateTag}>{editingTag ? '保存' : '创建'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tag Detail Modal */}
+      <Dialog open={tagDetailModalOpen} onOpenChange={(open) => {
+        setTagDetailModalOpen(open);
+        if (!open) setEditingTag(null);
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>标签详情</DialogTitle>
+          </DialogHeader>
+          {editingTag && (
+            <div className="space-y-4">
+              {/* 标签基本信息 */}
+              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+                <div
+                  className="w-6 h-6 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: editingTag.color }}
+                />
+                <span className="text-lg font-medium">{editingTag.name}</span>
+                <Badge variant="secondary" className={editingTag.category === 'auto' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}>
+                  {editingTag.category === 'auto' ? '自动' : '手动'}
+                </Badge>
+              </div>
+
+              {/* 客户列表 */}
+              <div>
+                <div className="text-sm font-medium mb-2 flex items-center gap-2">
+                  使用该标签的客户
+                  {!tagCustomerLoading && (
+                    <Badge variant="secondary">{tagCustomerTotal}</Badge>
+                  )}
+                </div>
+                <div className="max-h-60 overflow-y-auto space-y-2 border border-border rounded-lg p-3">
+                  {tagCustomerLoading ? (
+                    <div className="text-sm text-muted-foreground text-center py-4">加载中...</div>
+                  ) : tagCustomers.length === 0 ? (
+                    <div className="text-sm text-muted-foreground text-center py-4">暂无客户</div>
+                  ) : (
+                    tagCustomers.map((customer) => (
+                      <div key={customer.id} className="flex items-center justify-between p-2 bg-muted/30 rounded hover:bg-muted/50">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
+                            {customer.name.charAt(0)}
+                          </div>
+                          <span className="text-sm font-medium">{customer.name}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {customer.phone || '-'}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={handleEditTag}>
+              <Edit3 className="w-4 h-4 mr-1" />
+              编辑
+            </Button>
+            <Button onClick={() => setTagDetailModalOpen(false)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

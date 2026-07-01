@@ -7,6 +7,7 @@ import {
 } from '@/server/repositories/marketing-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { logger } from '@/lib/logger';
 
 export interface MarketingOverallStats {
   total_sent: number;
@@ -212,7 +213,7 @@ export class MarketingService {
         successCount++;
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`[MarketingService] Failed to execute campaign for customer ${customer.id}:`, errorMsg);
+        logger.error('[MarketingService] Failed to execute campaign for customer', { error: errorMsg, customerId: customer.id });
         details.push({ customerId: customer.id, customerName: customer.name, status: 'failed', error: errorMsg });
         failCount++;
       }

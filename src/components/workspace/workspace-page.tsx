@@ -55,6 +55,9 @@ export function WorkspacePage() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const { user } = useAuth();
 
   // Refs for tracking loaded counts (avoid closure staleness)
@@ -91,6 +94,7 @@ export function WorkspacePage() {
           const pData = await perfRes.json();
           setPerformance(pData.performance);
         }
+        setError(null);
       } else if (mode === 'load-queued') {
         setIsLoadingMoreQueued(true);
         const offset = queuedItemsLengthRef.current;
@@ -117,6 +121,7 @@ export function WorkspacePage() {
         setIsLoadingMoreAssigned(false);
       }
     } catch (err) {
+      setError('数据加载失败');
       console.error('Failed to fetch data:', err);
     }
     return [];
@@ -185,8 +190,11 @@ export function WorkspacePage() {
         if (items.length > 0 && !selectedConversation) {
           setSelectedConversation(items[0]);
         }
+      } catch {
+        // Error handled in fetchData
       } finally {
         fetchingRef.current = false;
+        setIsInitialLoading(false);
       }
     };
     doFetch();
@@ -234,12 +242,18 @@ export function WorkspacePage() {
         body: JSON.stringify({ queue_id: queueId, agent_id: user?.id }),
       });
       if (res.ok) {
+        const data = await res.json();
+        // Auto-select the claimed conversation
+        if (data.item) {
+          setSelectedConversation(data.item);
+        }
         await fetchData('refresh');
       } else {
-        toast.error('接单失败');
+        const errData = await res.json().catch(() => ({}));
+        toast.error(errData.message || '接单失败');
       }
     } catch {
-      toast.error('接单失败');
+      toast.error('接单失败，请重试');
     }
     setLoading(false);
   };
@@ -266,7 +280,13 @@ export function WorkspacePage() {
   const handleTransferComplete = () => {
     setSelectedConversation(null);
     setMessages([]);
+    setTransferDialogOpen(false);
     fetchData('refresh');
+  };
+
+  const handleCustomerInfoTransfer = () => {
+    // Customer info panel transfer button opens the transfer dialog
+    setTransferDialogOpen(true);
   };
 
   const formatResponseTime = (seconds: number) => {
@@ -278,6 +298,18 @@ export function WorkspacePage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      {/* Initial Loading State */}
+      {isInitialLoading && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground">加载坐席工作台...</p>
+          </div>
+        </div>
+      )}
+
+      {!isInitialLoading && (
+      <>
       {/* Header */}
       <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
         <h1 className="text-base font-semibold text-foreground">坐席工作台</h1>
@@ -374,12 +406,14 @@ export function WorkspacePage() {
           agents={agents}
           onTransfer={handleTransferComplete}
           onResolve={handleResolve}
+          transferDialogOpen={transferDialogOpen}
+          onTransferDialogOpenChange={setTransferDialogOpen}
         />
 
         {/* Right Column - Customer Info */}
         <CustomerInfoPanel
           selectedConversation={selectedConversation}
-          onTransfer={handleTransferComplete}
+          onTransfer={handleCustomerInfoTransfer}
           onResolve={handleResolve}
         />
       </div>
@@ -393,6 +427,8 @@ export function WorkspacePage() {
           <QuickRepliesPanel className="flex-1 overflow-hidden" />
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </div>
   );
 }

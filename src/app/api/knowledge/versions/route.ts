@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess } from '@/lib/api-utils';
+import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
 import { KnowledgeService } from '@/server/services/knowledge-service';
 
 const knowledgeService = new KnowledgeService();
 
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'knowledge', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const itemId = searchParams.get('item_id');
 
@@ -17,6 +20,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'knowledge', 'write');
+  if (denied) return denied;
+
   const body = await request.json();
   const { item_id, title, content, category, change_summary, created_by } = body ?? {};
 
@@ -31,6 +37,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'knowledge', 'write');
+  if (denied) return denied;
+
   const body = await request.json();
   const { version_id, created_by } = body ?? {};
 

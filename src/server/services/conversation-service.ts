@@ -90,6 +90,8 @@ export class ConversationService {
     conversationId: string,
     messageLimit: number,
     messagePage: number = 1,
+    messageOffset: number = 0,
+    messageOrder: 'asc' | 'desc' = 'asc',
   ): Promise<{ conversation: Conversation & { customer?: Customer | null }; messages: Message[]; total_messages: number }> {
     try {
       const conversation = await this.conversations.findById(conversationId);
@@ -97,8 +99,8 @@ export class ConversationService {
         throw new ServiceError('Conversation not found', { status: 404, code: 'NOT_FOUND' });
       }
 
-      const offset = (messagePage - 1) * messageLimit;
-      const messages = await this.conversations.listMessages(conversationId, messageLimit, offset);
+      const offset = messageOffset > 0 ? messageOffset : (messagePage - 1) * messageLimit;
+      const messages = await this.conversations.listMessages(conversationId, messageLimit, offset, messageOrder);
       const totalMessages = await this.conversations.countMessages(conversationId);
       // 客户关联查询为非关键操作，失败时降级为 null
       let customer: Customer | null = null;
@@ -148,6 +150,22 @@ export class ConversationService {
       await this.conversations.delete(conversationId);
     } catch (error) {
       throw toServiceError(error, 'Failed to delete conversation', 'DB_DELETE_ERROR');
+    }
+  }
+
+  /**
+   * Get basic conversation info including platform_connection_id
+   */
+  async getConversationBasic(conversationId: string): Promise<{ id: string; platform_connection_id?: string | null } | null> {
+    try {
+      const conversation = await this.conversations.findById(conversationId);
+      if (!conversation) return null;
+      return {
+        id: conversation.id,
+        platform_connection_id: (conversation as { platform_connection_id?: string | null }).platform_connection_id,
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -267,7 +285,8 @@ export class ConversationService {
     rating: number | undefined,
     comment?: string,
   ): Promise<Conversation> {
-    if (!rating || rating < 1 || rating > 5) {
+    // Handle rating=0 explicitly: 0 is treated as invalid (not falsy)
+    if (!rating || rating < 0 || rating > 5) {
       throw new ServiceError('Rating must be an integer from 1 to 5', {
         status: 400,
         code: 'VALIDATION_ERROR',

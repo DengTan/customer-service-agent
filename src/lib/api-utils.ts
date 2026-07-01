@@ -13,7 +13,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isServiceError } from '@/server/services/service-error';
 import { extractTokenFromCookies, verifyToken } from '@/lib/auth/jwt';
 import { logger as loggerCollection } from '@/lib/logger';
+import { getIPFromRequest } from '@/lib/auth/ip-utils';
+import type { PermissionResource, PermissionAction, UserRole } from '@/lib/types';
+import { PermissionService } from '@/server/services/permission-service';
 const apiLogger = loggerCollection.api;
+const securityLogger = loggerCollection.security;
 
 // ─── HTTP Status Codes ─────────────────────────────────────
 
@@ -211,11 +215,13 @@ export function checkRateLimit(
 
 /**
  * Extract the acting user's role from JWT token in cookie.
- * Falls back to the legacy x-user-role header for backward compatibility.
- * In development without a valid token, falls back to "observer".
+ * The legacy x-user-role header is DEPRECATED and only works in development mode.
+ * 
+ * Security Note: In production, this header is completely ignored to prevent
+ * role spoofing attacks. All requests must use valid JWT tokens.
  */
 export function extractUserRole(request: NextRequest): string | null {
-  // Try JWT token first
+  // Try JWT token first (secure method)
   const cookieHeader = request.headers.get('cookie');
   if (cookieHeader) {
     const token = extractTokenFromCookies(cookieHeader);
@@ -227,8 +233,31 @@ export function extractUserRole(request: NextRequest): string | null {
     }
   }
 
-  // Fallback to legacy header (for development/testing)
-  return request.headers.get('x-user-role') || null;
+  // Legacy header fallback - ONLY allowed in development mode
+  // This is a security risk in production and must be disabled
+  if (process.env.NODE_ENV !== 'production') {
+    const legacyRole = request.headers.get('x-user-role');
+    if (legacyRole) {
+      apiLogger.warn('[Security] Legacy x-user-role header used (dev mode only)', {
+        legacyRole,
+        ip: getIPFromRequest(request as unknown as Request),
+      });
+      return legacyRole;
+    }
+  } else {
+    // 阻止在生产环境中使用伪造的 x-user-role header
+    const legacyRole = request.headers.get('x-user-role');
+    if (legacyRole) {
+      securityLogger.warn('[Security] Blocked attempt to use legacy x-user-role header in production', {
+        ip: getIPFromRequest(request as unknown as Request),
+        attemptedRole: legacyRole,
+      });
+      // 直接返回 403，不继续处理请求
+      return null;
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -261,6 +290,38 @@ export function requireRole(
       status: HttpStatus.FORBIDDEN,
       code: 'FORBIDDEN',
       internalMessage: `Role "${role}" not in [${allowedRoles.join(', ')}]`,
+    });
+  }
+  return null;
+}
+
+/**
+ * Returns a 403 error if the requesting user's role does not have the specified
+ * permission on the given resource. Otherwise returns null (access granted).
+ *
+ * This reads from the role_permissions database table via PermissionService.
+ * If no DB row exists for (role, resource, action), falls back to DEFAULT_PERMISSIONS.
+ */
+export async function requirePermission(
+  request: NextRequest,
+  resource: PermissionResource,
+  action: PermissionAction,
+): Promise<NextResponse | null> {
+  const role = extractUserRole(request);
+  if (!role) {
+    return apiError('未登录或登录已过期', {
+      status: HttpStatus.UNAUTHORIZED,
+      code: 'UNAUTHORIZED',
+    });
+  }
+
+  const service = new PermissionService();
+  const allowed = await service.checkPermission(role as UserRole, resource, action);
+  if (!allowed) {
+    return apiError('权限不足，无法执行此操作', {
+      status: HttpStatus.FORBIDDEN,
+      code: 'FORBIDDEN',
+      internalMessage: `Role "${role}" denied for ${resource}/${action}`,
     });
   }
   return null;

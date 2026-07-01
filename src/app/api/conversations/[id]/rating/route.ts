@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { apiSuccess, apiError, parseJsonBody, HttpStatus, withErrorHandler } from '@/lib/api-utils';
 import { ConversationService } from '@/server/services/conversation-service';
 import { SettingsService } from '@/server/services/settings-service';
+import { logger } from '@/lib/logger';
 
 const conversationService = new ConversationService();
 
@@ -20,7 +21,7 @@ export const POST = withErrorHandler(async (
     }
   } catch (err) {
     // Settings lookup failed; allow rating by default
-    console.error('[Rating API] Failed to check rating_enabled setting:', err);
+    logger.api.warn('[Rating API] Failed to check rating_enabled setting', { error: err, conversationId: id });
   }
 
   const { data: body, error: parseError } = await parseJsonBody<{
@@ -29,6 +30,12 @@ export const POST = withErrorHandler(async (
   }>(request);
   if (parseError) return parseError;
 
-  const conversation = await conversationService.rateConversation(id, body?.rating, body?.comment);
+  // Validate rating: must be 1-5, rating=0 is treated as invalid
+  const rating = body?.rating;
+  if (!rating || rating < 1 || rating > 5) {
+    return apiError('评分必须在 1-5 之间', { status: 400 });
+  }
+
+  const conversation = await conversationService.rateConversation(id, rating, body?.comment);
   return apiSuccess({ conversation });
 });

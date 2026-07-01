@@ -19,7 +19,7 @@ export class UserService {
     }
   }
 
-  async createUser(input: CreateUserInput): Promise<unknown> {
+  async createUser(input: CreateUserInput): Promise<{ user: unknown; tempPassword: string | null }> {
     if (!input.email || !input.name) {
       throw new ServiceError('邮箱和姓名不能为空', {
         status: 400,
@@ -28,7 +28,8 @@ export class UserService {
     }
 
     try {
-      return await this.users.create(input);
+      const result = await this.users.create(input);
+      return { user: result.user, tempPassword: result.tempPassword };
     } catch (error) {
       if (error instanceof ServiceError) throw error;
 
@@ -67,6 +68,19 @@ export class UserService {
       });
     }
 
+    // Check if trying to delete an admin
+    const targetUser = await this.users.findById(id);
+    if (targetUser?.role === 'admin') {
+      // Count remaining admins
+      const { users: admins } = await this.users.list({ role: 'admin' });
+      if (admins.length <= 1) {
+        throw new ServiceError('无法删除最后一个管理员，请先创建新管理员', {
+          status: 403,
+          code: 'LAST_ADMIN_PROTECTION',
+        });
+      }
+    }
+
     try {
       await this.users.delete(id);
     } catch (error) {
@@ -74,7 +88,7 @@ export class UserService {
     }
   }
 
-  async deleteUsers(ids: string[]): Promise<{ deleted: number }> {
+  async deleteUsers(ids: string[]): Promise<{ deleted: number; protected: string[] }> {
     if (!ids.length) {
       throw new ServiceError('缺少用户 ID', {
         status: 400,
@@ -82,11 +96,33 @@ export class UserService {
       });
     }
 
-    try {
-      return await this.users.deleteMany(ids);
-    } catch (error) {
-      throw toServiceError(error, '批量删除用户失败', 'DB_DELETE_ERROR');
+    // Get all admin users to check protection
+    const { users: allAdmins } = await this.users.list({ role: 'admin' });
+    const adminIds = new Set(allAdmins.map(u => u.id));
+
+    // Separate deletable and protected IDs
+    const deletableIds: string[] = [];
+    const protectedIds: string[] = [];
+
+    for (const id of ids) {
+      if (adminIds.has(id) && adminIds.size <= 1) {
+        // This is the last admin, protect it
+        protectedIds.push(id);
+      } else if (adminIds.has(id)) {
+        // More than one admin, allow deletion
+        deletableIds.push(id);
+      } else {
+        deletableIds.push(id);
+      }
     }
+
+    let deleted = 0;
+    if (deletableIds.length > 0) {
+      const result = await this.users.deleteMany(deletableIds);
+      deleted = result.deleted;
+    }
+
+    return { deleted, protected: protectedIds };
   }
 
   async updateUsersStatus(ids: string[], status: string): Promise<{ updated: number }> {

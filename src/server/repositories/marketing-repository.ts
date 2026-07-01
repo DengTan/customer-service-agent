@@ -588,16 +588,40 @@ export class MarketingRepository {
 
       if (campErr) throw new RepositoryError('getTopCampaigns', campErr.message, campErr.code);
 
-      const results = [];
-      for (const camp of campaigns ?? []) {
-        const stats = await this.countLogsByCampaign(camp.id);
-        results.push({
+      if (!campaigns || campaigns.length === 0) {
+        return [];
+      }
+
+      // Batch query: get all stats in a single query grouped by campaign_id
+      const ids = campaigns.map(c => c.id);
+      const { data: allLogs } = await this.client
+        .from('marketing_logs')
+        .select('campaign_id, replied, converted')
+        .in('campaign_id', ids);
+
+      // Aggregate stats by campaign_id
+      const statsMap = new Map<string, { sent: number; replied: number; converted: number }>();
+      for (const camp of campaigns) {
+        statsMap.set(camp.id, { sent: 0, replied: 0, converted: 0 });
+      }
+      for (const log of allLogs || []) {
+        const stats = statsMap.get(log.campaign_id);
+        if (stats) {
+          stats.sent++;
+          if (log.replied) stats.replied++;
+          if (log.converted) stats.converted++;
+        }
+      }
+
+      // Map stats to campaigns without N+1 queries
+      return campaigns.map(camp => {
+        const stats = statsMap.get(camp.id) || { sent: 0, replied: 0, converted: 0 };
+        return {
           ...camp,
           ...stats,
           reply_rate: stats.sent > 0 ? ((stats.replied / stats.sent) * 100).toFixed(1) : '0.0',
-        });
-      }
-      return results;
+        };
+      });
     } catch (error) {
       console.error('getTopCampaigns failed:', error);
       return [];

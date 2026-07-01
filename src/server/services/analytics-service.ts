@@ -196,14 +196,16 @@ export class AnalyticsService {
       const dateStr = d.toISOString().split('T')[0];
       const dayLabel = `${d.getMonth() + 1}/${d.getDate()}`;
       const dayRatings = ratingsWithDate.filter((r) => r.created_at.startsWith(dateStr));
+      // Only include valid ratings (rating > 0), rating=0 is treated as invalid
+      const validRatings = dayRatings.filter((r) => r.rating !== null && r.rating > 0);
       const dayAvg =
-        dayRatings.length > 0
-          ? dayRatings.reduce((sum, r) => sum + (r.rating || 0), 0) / dayRatings.length
+        validRatings.length > 0
+          ? validRatings.reduce((sum, r) => sum + (r.rating || 0), 0) / validRatings.length
           : 0;
       satisfactionTrend.push({
         date: dayLabel,
         avgRating: Math.round(dayAvg * 10) / 10,
-        count: dayRatings.length,
+        count: validRatings.length,
       });
     }
     return satisfactionTrend;
@@ -218,8 +220,8 @@ export class AnalyticsService {
       if (!satisfactionBySource[source]) {
         satisfactionBySource[source] = { avgRating: 0, count: 0 };
       }
-      // 只在 rating 非 null 时累加，避免 null 值被当作 0 稀释平均值
-      if (r.rating !== null) {
+      // Only include valid ratings (rating > 0), rating=0 is treated as invalid
+      if (r.rating !== null && r.rating > 0) {
         satisfactionBySource[source].count++;
         satisfactionBySource[source].avgRating += r.rating;
       }

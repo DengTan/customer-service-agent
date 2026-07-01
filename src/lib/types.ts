@@ -183,7 +183,20 @@ export interface User {
   updated_at: string | null;
 }
 
-export type PermissionResource = 'conversations' | 'knowledge' | 'settings' | 'team' | 'customers' | 'analytics';
+export type PermissionResource =
+  | 'conversations'
+  | 'knowledge'
+  | 'settings'
+  | 'team'
+  | 'customers'
+  | 'analytics'
+  | 'tickets'
+  | 'marketing'
+  | 'bots'
+  | 'sub_agents'
+  | 'routing'
+  | 'quality'
+  | 'push';
 export type PermissionAction = 'read' | 'write' | 'delete';
 
 export interface RolePermission {
@@ -201,6 +214,13 @@ export const PERMISSION_RESOURCES: Record<PermissionResource, string> = {
   team: '团队管理',
   customers: '客户管理',
   analytics: '数据分析',
+  tickets: '工单管理',
+  marketing: '营销管理',
+  bots: 'Bot配置',
+  sub_agents: '子Agent',
+  routing: '路由规则',
+  quality: '质检规则',
+  push: '推送模板',
 };
 
 export const PERMISSION_ACTIONS: Record<PermissionAction, string> = {
@@ -227,7 +247,7 @@ export interface Customer {
   external_id: string | null;
   platform_connection_id: string | null; // 平台客户关联的店铺/连接 ID
   is_anonymous: boolean; // Web 匿名访客自动创建的客户标记，坐席补充信息后改为 false
-  tags: string[]; // tag IDs
+  tags: string[]; // tag 名称列表
   metadata: Record<string, unknown> | null;
   notes: string | null;
   conversation_count: number;
@@ -694,6 +714,8 @@ export interface SimulationConversation {
   message_count: number;
   status: 'active' | 'completed';
   created_by?: string | null;
+  evaluation_rating?: number | null;
+  evaluation_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -712,4 +734,59 @@ export interface SimulationMessage {
   message_type?: string;
   rich_content?: unknown | null;
   created_at: string;
+}
+
+// ===== Simulation Evaluation =====
+
+export interface SimulationEvaluation {
+  id: string;
+  simulation_id: string;
+  user_id: string | null;
+  message_id: string;
+  rating: number; // 1-5
+  tags: string[];
+  comment: string | null;
+  created_at: string;
+  // joined
+  user_name?: string | null;
+}
+
+export interface SimulationEvaluationStats {
+  total: number;
+  average: number;
+  distribution: Record<number, number>; // { "1": count, "2": count, ... }
+}
+
+// Test Case
+export type TestCasePriority = 'low' | 'medium' | 'high' | 'critical';
+export type TestCaseStatus = 'draft' | 'active' | 'archived';
+export type TestCaseCategory = 'order_inquiry' | 'refund' | 'logistics' | 'general' | string;
+
+export interface TestCaseScript {
+  order: number;
+  user_message: string;
+  expected_response?: string;
+  conditions?: Record<string, unknown>;
+}
+
+export interface TestCaseExpectedOutcome {
+  type: string;
+  description: string;
+  criteria?: Record<string, unknown>;
+}
+
+export interface TestCase {
+  id: string;
+  name: string;
+  description?: string | null;
+  scenario_id?: string | null;
+  category: TestCaseCategory;
+  priority: TestCasePriority;
+  status: TestCaseStatus;
+  scripts: TestCaseScript[];
+  expected_outcomes: TestCaseExpectedOutcome[];
+  metadata?: Record<string, unknown> | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at?: string | null;
 }

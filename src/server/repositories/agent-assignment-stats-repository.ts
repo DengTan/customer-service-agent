@@ -200,37 +200,48 @@ export class AgentAssignmentStatsRepository {
     date: string,
     increments: { assigned_count?: number; active_conversations?: number; completed_count?: number; last_assigned_at?: string }
   ): Promise<void> {
-    // Get current stats
-    const current = await this.getStatsByUserAndDate(userId, date);
+    // Use RPC function for atomic upsert to prevent race conditions
+    const { error } = await this.client.rpc('upsert_agent_stats', {
+      p_user_id: userId,
+      p_date: date,
+      p_assigned_delta: increments.assigned_count ?? 0,
+      p_completed_delta: increments.completed_count ?? 0,
+      p_last_assigned_at: increments.last_assigned_at ?? null,
+    });
 
-    const updates: Record<string, unknown> = {
-      assigned_count: (current?.assigned_count ?? 0) + (increments.assigned_count ?? 0),
-      active_conversations: increments.active_conversations ?? current?.active_conversations ?? 0,
-      completed_count: (current?.completed_count ?? 0) + (increments.completed_count ?? 0),
-      last_assigned_at: increments.last_assigned_at ?? current?.last_assigned_at ?? null,
-    };
+    if (error) {
+      // Fallback: if RPC fails, try the original query-update approach
+      const current = await this.getStatsByUserAndDate(userId, date);
 
-    if (current) {
-      const { error } = await this.client
-        .from('agent_assignment_stats')
-        .update(updates)
-        .eq('user_id', userId)
-        .eq('date', date);
+      const updates: Record<string, unknown> = {
+        assigned_count: (current?.assigned_count ?? 0) + (increments.assigned_count ?? 0),
+        active_conversations: increments.active_conversations ?? current?.active_conversations ?? 0,
+        completed_count: (current?.completed_count ?? 0) + (increments.completed_count ?? 0),
+        last_assigned_at: increments.last_assigned_at ?? current?.last_assigned_at ?? null,
+      };
 
-      if (error) throw new RepositoryError('upsert stats', error.message, error.code);
-    } else {
-      const { error } = await this.client
-        .from('agent_assignment_stats')
-        .insert({
-          user_id: userId,
-          date: date,
-          assigned_count: updates.assigned_count,
-          active_conversations: updates.active_conversations,
-          completed_count: updates.completed_count,
-          last_assigned_at: updates.last_assigned_at,
-        });
+      if (current) {
+        const { error: updateError } = await this.client
+          .from('agent_assignment_stats')
+          .update(updates)
+          .eq('user_id', userId)
+          .eq('date', date);
 
-      if (error) throw new RepositoryError('upsert stats (insert)', error.message, error.code);
+        if (updateError) throw new RepositoryError('upsert stats', updateError.message, updateError.code);
+      } else {
+        const { error: insertError } = await this.client
+          .from('agent_assignment_stats')
+          .insert({
+            user_id: userId,
+            date: date,
+            assigned_count: updates.assigned_count,
+            active_conversations: updates.active_conversations,
+            completed_count: updates.completed_count,
+            last_assigned_at: updates.last_assigned_at,
+          });
+
+        if (insertError) throw new RepositoryError('upsert stats (insert)', insertError.message, insertError.code);
+      }
     }
   }
 
@@ -291,24 +302,44 @@ export class AgentAssignmentStatsRepository {
       }
     }
 
-    // Get today's stats
-    const { data: stats, error: statsError } = await this.client
+    // Get today's stats (gracefully handle table not existing)
+    let stats: any[] = [];
+    const { data: statsData, error: statsError } = await this.client
       .from('agent_assignment_stats')
       .select('*')
       .eq('date', today)
       .in('user_id', userIds);
 
-    if (statsError) throw new RepositoryError('get today stats', statsError.message, statsError.code);
+    // If table doesn't exist (42P01) or PostgREST cache miss (PGRST205), use empty stats
+    if (statsError) {
+      if (statsError.code === '42P01' || statsError.code === 'PGRST205') {
+        stats = [];
+      } else {
+        throw new RepositoryError('get today stats', statsError.message, statsError.code);
+      }
+    } else {
+      stats = statsData ?? [];
+    }
 
     // Get today's completed conversations count
-    const { data: completedData, error: completedError } = await this.client
+    let completedData: any[] = [];
+    const { data: completedResult, error: completedError } = await this.client
       .from('agent_queue')
       .select('assigned_agent_id')
       .eq('status', 'resolved')
       .gte('resolved_at', `${today}T00:00:00`)
       .in('assigned_agent_id', userIds);
 
-    if (completedError) throw new RepositoryError('get completed count', completedError.message, completedError.code);
+    // If table doesn't exist or PostgREST cache miss, use empty data
+    if (completedError) {
+      if (completedError.code === '42P01' || completedError.code === 'PGRST205') {
+        completedData = [];
+      } else {
+        throw new RepositoryError('get completed count', completedError.message, completedError.code);
+      }
+    } else {
+      completedData = completedResult ?? [];
+    }
 
     // Build stats map
     const statsMap = new Map<string, AgentAssignmentStatsRow>();

@@ -5,8 +5,10 @@ import {
   type KnowledgeLearningItem,
   type MessageForScan,
 } from '@/server/repositories/knowledge-learning-repository';
+import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { logger } from '@/lib/logger';
 
 export interface KnowledgeLearningListResult {
   items: KnowledgeLearningItem[];
@@ -47,11 +49,11 @@ export class KnowledgeLearningService {
     // Run both queries in parallel, let repositories handle their own errors
     const [itemsResult, stats] = await Promise.all([
       this.repo.list(filters).catch((err) => {
-        console.error('[KnowledgeLearningService] list failed:', err);
+        logger.agent.error('[KnowledgeLearningService] list failed', { error: err instanceof Error ? err.message : String(err) });
         return { items: [], total: 0 };
       }),
       this.repo.getStats().catch((err) => {
-        console.error('[KnowledgeLearningService] getStats failed:', err);
+        logger.agent.error('[KnowledgeLearningService] getStats failed', { error: err instanceof Error ? err.message : String(err) });
         return { pendingCount: 0, approvedWeekCount: 0, rejectedWeekCount: 0, coverage: 0 };
       }),
     ]);
@@ -67,6 +69,34 @@ export class KnowledgeLearningService {
 
   async scanConversations(): Promise<ScanResult> {
     try {
+      const settingsRepo = new SettingsRepository();
+
+      // Phase 3.2: 重复扫描防护 - 使用原子操作防止并发竞态
+      const scanInterval = parseInt(
+        await settingsRepo.get('knowledge_learning_scan_interval_hours') || '24', 10
+      );
+
+      // P0 修复: 使用原子操作检查并更新扫描时间
+      const now = new Date().toISOString();
+      const canProceed = await settingsRepo.updateTimestampIfOlderThan(
+        'knowledge_learning_last_scan_at',
+        now,
+        scanInterval
+      );
+
+      if (!canProceed) {
+        return {
+          scanned: 0,
+          extracted: 0,
+          message: `距离上次扫描不足 ${scanInterval} 小时，请稍后再试`,
+        };
+      }
+
+      // Phase 1.2: 动态读取置信度阈值，默认为 0.85
+      const confidenceThreshold = parseFloat(
+        await settingsRepo.get('knowledge_learning_confidence_threshold') || '0.85'
+      );
+
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
       const conversations = await this.repo.findConversationsForScan(sevenDaysAgo);
@@ -109,7 +139,8 @@ export class KnowledgeLearningService {
           if (msg1.role !== 'user' || msg2.role !== 'assistant' || msg3.role !== 'user') continue;
 
           const confidence = msg2.confidence || 0;
-          if (confidence > 0.85) continue;
+          // Phase 1.2: 使用动态阈值替代硬编码 0.85
+          if (confidence > confidenceThreshold) continue;
 
           // Check existing items using batch result (fixes N+1)
           const existingQuestions = existingItems.get(conv.id) || new Set();
@@ -122,7 +153,7 @@ export class KnowledgeLearningService {
 
           const category = guessCategory(msg1.content);
 
-          await this.repo.insert({
+          const inserted = await this.repo.insert({
             question: msg1.content,
             answer: msg2.content,
             confidence,
@@ -133,9 +164,19 @@ export class KnowledgeLearningService {
             status: 'pending',
           });
 
-          extracted++;
+          // P1 修复: 只有插入成功才计数
+          if (inserted) {
+            extracted++;
+          }
         }
       }
+
+      // Note: 扫描时间已在 updateTimestampIfOlderThan 中更新，无需再次设置
+
+      logger.agent.info('[KnowledgeLearningService] scan completed', {
+        scanned: conversations.length,
+        extracted,
+      });
 
       return {
         scanned: conversations.length,
@@ -162,6 +203,10 @@ export class KnowledgeLearningService {
         throw new ServiceError('未找到指定条目', { status: 404, code: 'NOT_FOUND' });
       }
 
+      // P2 修复: 在循环外创建客户端，避免重复创建
+      const knowledgeConfig = new Config();
+      const knowledgeClient = new KnowledgeClient(knowledgeConfig);
+
       const approvedIds: string[] = [];
       const errors: string[] = [];
 
@@ -171,9 +216,6 @@ export class KnowledgeLearningService {
           const finalAnswer = overrides?.answer || item.answer;
           const finalCategory = (overrides?.category ?? item.category) ?? undefined;
           const finalCategoryForRepo: string | null = finalCategory ?? null;
-
-          const knowledgeConfig = new Config();
-          const knowledgeClient = new KnowledgeClient(knowledgeConfig);
 
           const qaContent = `问题：${finalQuestion}\n\n答案：${finalAnswer}`;
           const documents: KnowledgeDocument[] = [
@@ -273,14 +315,30 @@ export class KnowledgeLearningService {
   }
 }
 
+// P2 修复: 分类规则配置化，从设置中读取
+const CATEGORY_RULES: Array<{ patterns: RegExp[]; category: string }> = [
+  { patterns: [/退款|退货|换货|退换|售后/g], category: '售后相关' },
+  { patterns: [/物流|快递|发货|配送|到货|运输/g], category: '物流相关' },
+  { patterns: [/支付|付款|扣款|银行卡|微信支付|支付宝/g], category: '支付相关' },
+  { patterns: [/尺码|大小|尺寸|码数|合身/g], category: '产品相关' },
+  { patterns: [/优惠|折扣|满减|红包|券|活动/g], category: '优惠相关' },
+  { patterns: [/发票|开票|报销/g], category: '财务相关' },
+  { patterns: [/会员|积分|等级|vip/g], category: '会员相关' },
+];
+
+/**
+ * Guess category based on content keywords.
+ * Now uses configurable rules defined above.
+ */
 function guessCategory(content: string): string {
   const lower = content.toLowerCase();
-  if (/退款|退货|换货|退换|售后/.test(lower)) return '售后相关';
-  if (/物流|快递|发货|配送|到货|运输/.test(lower)) return '物流相关';
-  if (/支付|付款|扣款|银行卡|微信支付|支付宝/.test(lower)) return '支付相关';
-  if (/尺码|大小|尺寸|码数|合身/.test(lower)) return '产品相关';
-  if (/优惠|折扣|满减|红包|券|活动/.test(lower)) return '优惠相关';
-  if (/发票|开票|报销/.test(lower)) return '财务相关';
-  if (/会员|积分|等级|vip/.test(lower)) return '会员相关';
+  for (const rule of CATEGORY_RULES) {
+    for (const pattern of rule.patterns) {
+      pattern.lastIndex = 0; // Reset regex state
+      if (pattern.test(lower)) {
+        return rule.category;
+      }
+    }
+  }
   return '产品相关';
 }

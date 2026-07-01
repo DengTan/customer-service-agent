@@ -300,7 +300,18 @@ export function clearLoggerCache(): void {
 
 // ─── 预设日志器 ────────────────────────────────────────────────
 
-export const logger = {
+// 定义 logger 对象的类型，包含所有预设模块
+type LoggerCollection = {
+  readonly [K in 'auth' | 'database' | 'agent' | 'api' | 'security' | 'platform' | 'default']: Logger;
+} & {
+  // 便捷方法：直接记录错误/警告，无需选择模块
+  error(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: Record<string, unknown>): void;
+  debug(message: string, meta?: Record<string, unknown>): void;
+};
+
+export const logger: LoggerCollection = {
   auth: getLogger('Auth'),
   database: getLogger('Database'),
   agent: getLogger('Agent'),
@@ -308,6 +319,22 @@ export const logger = {
   security: getLogger('Security'),
   platform: getLogger('Platform'),
   default: getLogger('Default'),
-};
+  // 便捷方法：使用默认日志器
+  error(message: string, meta?: Record<string, unknown>) {
+    getLogger().error(message, meta);
+  },
+  warn(message: string, meta?: Record<string, unknown>) {
+    getLogger().warn(message, meta);
+  },
+  info(message: string, meta?: Record<string, unknown>) {
+    getLogger().info(message, meta);
+  },
+  debug(message: string, meta?: Record<string, unknown>) {
+    getLogger().debug(message, meta);
+  },
+} as LoggerCollection;
+
+// Type-safe security logger for security-related logs
+export const securityLogger = logger.security;
 
 export default getLogger();

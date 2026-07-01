@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCategories, createCategory, updateCategory, deleteCategory } from '@/server/repositories/ticket-custom-field-repository';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('TicketsCategories');
 
 export async function GET() {
   try {
     const categories = await getCategories();
     return NextResponse.json({ categories });
   } catch (error) {
-    console.error('[Ticket Categories] GET error:', error);
+    logger.error('[Ticket Categories] GET error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '获取分类列表失败' }, { status: 500 });
   }
 }
@@ -27,7 +30,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ category });
   } catch (error) {
-    console.error('[Ticket Categories] POST error:', error);
+    logger.error('[Ticket Categories] POST error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '创建分类失败' }, { status: 500 });
   }
 }
@@ -42,7 +45,7 @@ export async function PUT(req: NextRequest) {
     const category = await updateCategory(id, updates);
     return NextResponse.json({ category });
   } catch (error) {
-    console.error('[Ticket Categories] PUT error:', error);
+    logger.error('[Ticket Categories] PUT error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '更新分类失败' }, { status: 500 });
   }
 }
@@ -57,7 +60,7 @@ export async function DELETE(req: NextRequest) {
     await deleteCategory(id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[Ticket Categories] DELETE error:', error);
+    logger.error('[Ticket Categories] DELETE error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '删除分类失败' }, { status: 500 });
   }
 }

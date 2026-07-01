@@ -81,4 +81,16 @@ export class CustomerTagService {
       throw toServiceError(error, '删除标签失败', 'DB_DELETE_ERROR');
     }
   }
+
+  async getTagById(id: string): Promise<unknown | null> {
+    if (!id) {
+      return null;
+    }
+
+    try {
+      return await this.tags.findById(id);
+    } catch (error) {
+      throw toServiceError(error, '获取标签详情失败', 'DB_QUERY_ERROR');
+    }
+  }
 }

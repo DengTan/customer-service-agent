@@ -23,6 +23,22 @@ interface KnowledgeGap {
   notes: string | null;
 }
 
+// 对话消息类型（匹配 messages 表结构）
+interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'agent';
+  content: string;
+  sources?: unknown;
+  confidence?: number;
+  confidence_breakdown?: unknown;
+  tool_calls?: unknown;
+  tool_results?: unknown;
+  message_type?: string;
+  rich_content?: unknown;
+  image_url?: string;
+  created_at: string;
+}
+
 interface KnowledgeGapStats {
   total: number;
   open: number;
@@ -53,6 +69,9 @@ export function KnowledgeGapTab() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
+  const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<Record<string, ConversationMessage[]>>({});
+  const [loadingMessages, setLoadingMessages] = useState<string | null>(null);
   const pageSize = 20;
 
   const loadStats = useCallback(async () => {
@@ -66,6 +85,31 @@ export function KnowledgeGapTab() {
       console.error('Failed to load gap stats', err);
     }
   }, []);
+
+  // 加载指定对话的消息
+  const loadConversationMessages = useCallback(async (conversationId: string) => {
+    // 已加载过则跳过
+    if (conversationMessages[conversationId]) return;
+    
+    setLoadingMessages(conversationId);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}?limit=50`, {
+        headers: { 'x-user-role': 'admin' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      // API 返回结构: { success: true, conversation: {...}, messages: [...], total_messages: number }
+      const messages: ConversationMessage[] = json.messages || [];
+      setConversationMessages(prev => ({
+        ...prev,
+        [conversationId]: messages,
+      }));
+    } catch (err) {
+      console.error('Failed to load conversation messages', err);
+    } finally {
+      setLoadingMessages(null);
+    }
+  }, [conversationMessages]);
 
   const loadGaps = useCallback(async () => {
     setLoading(true);
@@ -179,6 +223,42 @@ export function KnowledgeGapTab() {
     }
   };
 
+  // 处理缺口项展开/折叠
+  const handleToggleExpand = async (gap: KnowledgeGap) => {
+    if (expandedGapId === gap.id) {
+      // 折叠
+      setExpandedGapId(null);
+    } else {
+      // 展开，加载对话消息
+      setExpandedGapId(gap.id);
+      
+      // 如果有源对话ID，加载最新一个对话的消息
+      if (gap.source_conversation_ids && gap.source_conversation_ids.length > 0) {
+        await loadConversationMessages(gap.source_conversation_ids[0]);
+      }
+    }
+  };
+
+  // 格式化消息时间
+  const formatMessageTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  // 过滤并格式化消息，用于展示（排除系统消息和知识缺口元数据）
+  const formatMessagesForDisplay = (messages: ConversationMessage[]) => {
+    return messages.filter(msg => {
+      // 只保留 user 和 assistant 角色的消息
+      if (msg.role !== 'user' && msg.role !== 'assistant') return false;
+      // 排除知识缺口元数据消息
+      if (msg.content.startsWith('{"from_gap')) return false;
+      return true;
+    });
+  };
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -268,64 +348,163 @@ export function KnowledgeGapTab() {
             </thead>
             <tbody className="divide-y divide-border">
               {gaps.map((gap) => (
-                <tr key={gap.id} className="hover:bg-muted/20">
-                  <td className="px-3 py-2">
-                    <div className="line-clamp-2 text-foreground">{gap.sample_question}</div>
-                    {gap.triggers_handoff && (
-                      <span className="inline-flex items-center gap-1 mt-1 text-xs text-amber-600">
-                        <AlertTriangle className="w-3 h-3" />
-                        触发过转人工
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="font-mono text-base font-semibold text-amber-600">
-                      {gap.frequency}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {gap.question_category || '-'}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">
-                    {gap.last_top_score !== null && gap.last_top_score !== undefined
-                      ? gap.last_top_score.toFixed(2)
-                      : '-'}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
-                    {new Date(gap.last_seen_at).toLocaleString()}
-                  </td>
-                  <td className="px-3 py-2">
-                    {statusTab === 'open' || statusTab === 'in_progress' ? (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handlePromote(gap)}
-                          className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
-                          title="转入知识自学习队列"
-                        >
-                          转入学习
-                        </button>
-                        <button
-                          onClick={() => handleResolve(gap)}
-                          className="text-xs px-2 py-1 rounded border border-emerald-500 text-emerald-600 hover:bg-emerald-50"
-                          title="标记为已解决"
-                        >
-                          解决
-                        </button>
-                        <button
-                          onClick={() => handleDismiss(gap)}
-                          className="text-xs px-2 py-1 rounded border border-zinc-300 text-muted-foreground hover:bg-muted"
-                          title="忽略"
-                        >
-                          忽略
-                        </button>
+                <>
+                  <tr key={gap.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => handleToggleExpand(gap)}>
+                    <td className="px-3 py-2">
+                      <div className="flex items-start gap-2">
+                        <ChevronRight className={`w-4 h-4 mt-0.5 flex-shrink-0 transition-transform ${expandedGapId === gap.id ? 'rotate-90' : ''}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="line-clamp-2 text-foreground">{gap.sample_question}</div>
+                          {gap.triggers_handoff && (
+                            <span className="inline-flex items-center gap-1 mt-1 text-xs text-amber-600">
+                              <AlertTriangle className="w-3 h-3" />
+                              触发过转人工
+                            </span>
+                          )}
+                          {gap.source_conversation_ids && gap.source_conversation_ids.length > 0 && (
+                            <span className="inline-flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                              <MessageSquare className="w-3 h-3" />
+                              {gap.source_conversation_ids.length} 条相关对话
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {gap.notes || '-'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="font-mono text-base font-semibold text-amber-600">
+                        {gap.frequency}
                       </span>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {gap.question_category || '-'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {gap.last_top_score !== null && gap.last_top_score !== undefined
+                        ? gap.last_top_score.toFixed(2)
+                        : '-'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {new Date(gap.last_seen_at).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      {statusTab === 'open' || statusTab === 'in_progress' ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handlePromote(gap)}
+                            className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:opacity-90"
+                            title="转入知识自学习队列"
+                          >
+                            转入学习
+                          </button>
+                          <button
+                            onClick={() => handleResolve(gap)}
+                            className="text-xs px-2 py-1 rounded border border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                            title="标记为已解决"
+                          >
+                            解决
+                          </button>
+                          <button
+                            onClick={() => handleDismiss(gap)}
+                            className="text-xs px-2 py-1 rounded border border-zinc-300 text-muted-foreground hover:bg-muted"
+                            title="忽略"
+                          >
+                            忽略
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {gap.notes || '-'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  {/* 展开的对话上下文 */}
+                  {expandedGapId === gap.id && (
+                    <tr key={`${gap.id}-expanded`} className="bg-muted/20">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-foreground">对话上下文</h4>
+                            {gap.source_conversation_ids && gap.source_conversation_ids.length > 1 && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  共 {gap.source_conversation_ids.length} 条对话
+                                </span>
+                                {gap.source_conversation_ids.map((convId, idx) => (
+                                  <button
+                                    key={convId}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      loadConversationMessages(convId);
+                                    }}
+                                    className={`text-xs px-2 py-1 rounded ${
+                                      idx === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                                    }`}
+                                  >
+                                    对话 {idx + 1}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          
+                          {loadingMessages === (gap.source_conversation_ids?.[0]) ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <div className="animate-pulse">加载对话中...</div>
+                            </div>
+                          ) : gap.source_conversation_ids && gap.source_conversation_ids.length > 0 ? (
+                            <div className="bg-background rounded-lg border border-border/50 overflow-hidden">
+                              {(() => {
+                                const messages = formatMessagesForDisplay(
+                                  conversationMessages[gap.source_conversation_ids[0]] || []
+                                );
+                                if (messages.length === 0) {
+                                  return (
+                                    <div className="text-center py-8 text-sm text-muted-foreground">
+                                      暂无对话消息
+                                    </div>
+                                  );
+                                }
+                                return messages.map((msg) => (
+                                  <div
+                                    key={msg.id}
+                                    className={`px-4 py-2 border-b border-border/30 last:border-b-0 ${
+                                      msg.role === 'user' ? 'bg-blue-50/50' : 'bg-white'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className={`text-xs font-medium ${
+                                        msg.role === 'user' ? 'text-blue-600' : 
+                                        msg.role === 'assistant' ? 'text-emerald-600' : 'text-gray-500'
+                                      }`}>
+                                        {msg.role === 'user' ? '用户' : msg.role === 'assistant' ? '客服' : '系统'}
+                                      </span>
+                                      <span className="text-xs text-muted-foreground">
+                                        {formatMessageTime(msg.created_at)}
+                                      </span>
+                                      {msg.confidence !== undefined && msg.confidence !== null && (
+                                        <span className="text-xs text-muted-foreground">
+                                          置信度: {msg.confidence.toFixed(2)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-foreground whitespace-pre-wrap">
+                                      {msg.content}
+                                    </p>
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 text-sm text-muted-foreground">
+                              无关联对话记录
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>

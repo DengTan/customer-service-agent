@@ -12,6 +12,7 @@ import {
   ChevronLeft, ChevronRight,
   Plus, Package, PackageX, TrendingUp, ArrowDownCircle, ArrowUpCircle,
   StickyNote, Ruler, Image as ImageLucide,
+  FlaskConical,
 } from 'lucide-react';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
 import { ErrorBoundary } from '@/components/common/error-boundary';
@@ -19,14 +20,25 @@ import { ImportProgress } from './import-progress';
 import { ProductFormModal } from './product-form-modal';
 import { SizeChartFormModal } from './size-chart-form-modal';
 import { QuickRepliesPanel } from '@/components/quick-replies/quick-replies-panel';
+import { SearchTestTab } from './search-test-tab';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
-type TabType = 'knowledge' | 'learning' | 'products' | 'size_charts';
+type TabType = 'knowledge' | 'learning' | 'products' | 'size_charts' | 'search_test';
 
 interface KnowledgeItem {
   id: string;
@@ -117,6 +129,40 @@ function FaqPageInner() {
   const [viewingVersion, setViewingVersion] = useState<{ title: string; content: string; version: number } | null>(null);
   const [editExpiresAt, setEditExpiresAt] = useState<string>('');
 
+  // 分块查看相关状态
+  const [showChunksDialog, setShowChunksDialog] = useState(false);
+  const [chunksItemId, setChunksItemId] = useState<string | null>(null);
+  const [chunksItemName, setChunksItemName] = useState<string>('');
+  const [chunks, setChunks] = useState<Array<{
+    id: string;
+    chunk_index: number;
+    content: string;
+    content_hash: string;
+    doc_id: string | null;
+  }>>([]);
+  const [loadingChunks, setLoadingChunks] = useState(false);
+
+  // 弹窗打开时加载数据，关闭时清空状态
+  useEffect(() => {
+    if (!showChunksDialog) {
+      setChunks([]);
+      setChunksItemId(null);
+      setChunksItemName('');
+      return;
+    }
+    if (!chunksItemId) return;
+    setLoadingChunks(true);
+    fetch(`/api/knowledge/items/${chunksItemId}/chunks`)
+      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+      .then(data => setChunks(data.chunks || []))
+      .catch(() => { toast.error('加载分块失败'); setChunks([]); })
+      .finally(() => setLoadingChunks(false));
+  }, [showChunksDialog, chunksItemId]);
+
+  // 文本转义（防御性处理，确保显示安全）
+  const escapeHtml = (str: string) =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
   // 批量操作 / 归档 / 合并分类
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
@@ -171,6 +217,8 @@ function FaqPageInner() {
   const [batchProductStatus, setBatchProductStatus] = useState('off_sale');
   const [batchProductCategory, setBatchProductCategory] = useState('');
   const [batchOperatingProduct, setBatchOperatingProduct] = useState(false);
+  const [confirmToggleProduct, setConfirmToggleProduct] = useState<ProductItem | null>(null);
+  const [confirmToggleSizeChart, setConfirmToggleSizeChart] = useState<SizeChartItem | null>(null);
 
   // Derived state
   const productStats = useMemo(() => ({
@@ -202,8 +250,15 @@ function FaqPageInner() {
     setEditingProduct(product);
     setShowProductForm(true);
   };
-  const handleToggleProductStatus = async (product: ProductItem) => {
+  const handleToggleProductStatus = (product: ProductItem) => {
+    setConfirmToggleProduct(product);
+  };
+
+  const confirmToggleProductStatus = async () => {
+    if (!confirmToggleProduct) return;
+    const product = confirmToggleProduct;
     const newStatus = product.status === 'on_sale' ? 'off_sale' : 'on_sale';
+    setConfirmToggleProduct(null);
     try {
       const res = await fetch('/api/knowledge/products', {
         method: 'PUT',
@@ -362,8 +417,15 @@ function FaqPageInner() {
     }
   };
 
-  const handleToggleSizeChartStatus = async (chart: SizeChartItem) => {
+  const handleToggleSizeChartStatus = (chart: SizeChartItem) => {
+    setConfirmToggleSizeChart(chart);
+  };
+
+  const confirmToggleSizeChartStatus = async () => {
+    if (!confirmToggleSizeChart) return;
+    const chart = confirmToggleSizeChart;
     const newStatus = chart.status === 'active' ? 'disabled' : 'active';
+    setConfirmToggleSizeChart(null);
     try {
       const res = await fetch('/api/knowledge/size-charts', {
         method: 'PUT',
@@ -421,6 +483,9 @@ function FaqPageInner() {
   const [filterConfidence, setFilterConfidence] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLearningIds, setSelectedLearningIds] = useState<Set<string>>(new Set());
+  const [expandedLearningId, setExpandedLearningId] = useState<string | null>(null);
+  const [showLearningBatchCategoryModal, setShowLearningBatchCategoryModal] = useState(false);
+  const [learningBatchCategory, setLearningBatchCategory] = useState('');
   const [editModal, setEditModal] = useState<{
     open: boolean;
     item: LearningItem | null;
@@ -587,6 +652,37 @@ function FaqPageInner() {
     } catch (err) {
       console.error('Batch reject failed:', err);
       toast.error('批量拒绝失败，请重试');
+    }
+  };
+
+  const handleLearningBatchUpdateCategory = async () => {
+    if (selectedLearningIds.size === 0) return;
+    if (!learningBatchCategory.trim()) {
+      toast.error('请选择分类');
+      return;
+    }
+    try {
+      const promises = Array.from(selectedLearningIds).map(id =>
+        fetch('/api/knowledge-learning', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, category: learningBatchCategory }),
+        })
+      );
+      const results = await Promise.all(promises);
+      const failed = results.filter(r => !r.ok).length;
+      if (failed > 0) {
+        toast.error(`部分更新失败，${failed} 个`);
+      } else {
+        toast.success(`已更新 ${selectedLearningIds.size} 个条目的分类`);
+      }
+      setShowLearningBatchCategoryModal(false);
+      setLearningBatchCategory('');
+      setSelectedLearningIds(new Set());
+      await fetchLearningItems();
+    } catch (err) {
+      console.error('Batch update category failed:', err);
+      toast.error('批量更新失败');
     }
   };
 
@@ -1005,6 +1101,15 @@ function FaqPageInner() {
   };
 
   // ============================================================
+  // 分块查看
+  // ============================================================
+  const handleViewChunks = (itemId: string, itemName: string) => {
+    setChunksItemId(itemId);
+    setChunksItemName(itemName);
+    setShowChunksDialog(true);
+  };
+
+  // ============================================================
   // 生命周期：归档/恢复（单条 + 批量）
   // ============================================================
   const handleArchiveItem = async (id: string) => {
@@ -1316,6 +1421,17 @@ function FaqPageInner() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setActiveTab('search_test')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                activeTab === 'search_test'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <FlaskConical className="w-3 h-3" />
+              检索测试
+            </button>
           </div>
         </div>
         {activeTab === 'knowledge' && (
@@ -1510,6 +1626,12 @@ function FaqPageInner() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => setShowLearningBatchCategoryModal(true)}
+                    className="bg-primary/10 text-primary px-3 py-1.5 rounded-md text-xs font-medium hover:bg-primary/20 transition-all inline-flex items-center gap-1.5"
+                  >
+                    <Folder className="w-3 h-3" />批量分类
+                  </button>
+                  <button
                     onClick={handleBatchApprove}
                     className="bg-success text-white px-3 py-1.5 rounded-md text-xs font-medium hover:opacity-90 transition-all inline-flex items-center gap-1.5"
                   >
@@ -1566,71 +1688,88 @@ function FaqPageInner() {
               ) : (
                 <div className="divide-y divide-border/50">
                   {learningItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid grid-cols-[40px_1fr_1fr_90px_140px_110px_90px_160px] px-4 py-3 hover:bg-muted/50 transition-all duration-200 items-center"
-                    >
-                      <span>
-                        <input
-                          type="checkbox"
-                          checked={selectedLearningIds.has(item.id)}
-                          onChange={() => toggleLearningSelect(item.id)}
-                          className="w-3.5 h-3.5 rounded accent-primary"
-                        />
-                      </span>
-                      <span className="text-sm font-medium text-foreground line-clamp-2 pr-2" title={item.question}>
-                        {item.question}
-                      </span>
-                      <span className="text-sm text-muted-foreground line-clamp-2 pr-2" title={item.answer}>
-                        {item.answer}
-                      </span>
-                      <span className="inline-flex items-center justify-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-semibold ${getConfidenceStyle(item.confidence)}`}>
-                          {item.confidence.toFixed(2)}
-                        </span>
-                      </span>
-                      <a
-                        href={item.conversation_id ? `/history?conv=${item.conversation_id}` : '#'}
-                        className="text-sm text-primary hover:underline truncate"
+                    <div key={item.id}>
+                      {/* Main row */}
+                      <div
+                        className="grid grid-cols-[40px_1fr_1fr_90px_140px_110px_90px_160px] px-4 py-3 hover:bg-muted/50 transition-all duration-200 items-center"
                       >
-                        {item.conversation_title || '未知对话'}
-                      </a>
-                      <span className="text-xs text-muted-foreground">{formatDate(item.created_at)}</span>
-                      <span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${getLearningStatusStyle(item.status)} w-fit`}>
-                          {getLearningStatusLabel(item.status)}
+                        <span>
+                          <input
+                            type="checkbox"
+                            checked={selectedLearningIds.has(item.id)}
+                            onChange={() => toggleLearningSelect(item.id)}
+                            className="w-3.5 h-3.5 rounded accent-primary"
+                          />
                         </span>
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {item.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => handleApprove(item.id)}
-                              className="text-xs font-medium px-2 py-1 rounded bg-success/10 text-success hover:bg-success/20 transition-colors"
-                            >
-                              通过
-                            </button>
-                            <button
-                              onClick={() => handleEditApprove(item)}
-                              className="text-xs font-medium px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                            >
-                              编辑通过
-                            </button>
-                            <button
-                              onClick={() => handleReject(item.id)}
-                              className="text-xs font-medium px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
-                            >
-                              拒绝
-                            </button>
-                          </>
-                        )}
-                        {item.status === 'approved' && (
-                          <span className="text-xs text-success">已入库</span>
-                        )}
-                        {item.status === 'rejected' && (
-                          <span className="text-xs text-muted-foreground">已拒绝</span>
-                        )}
+                        <span className="text-sm font-medium text-foreground line-clamp-2 pr-2" title={item.question}>
+                          {item.question}
+                        </span>
+                        <span className="text-sm text-muted-foreground line-clamp-2 pr-2" title={item.answer}>
+                          {item.answer}
+                        </span>
+                        <span className="inline-flex items-center justify-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-semibold ${getConfidenceStyle(item.confidence)}`}>
+                            {item.confidence.toFixed(2)}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setExpandedLearningId(expandedLearningId === item.id ? null : item.id)}
+                            className="text-sm text-primary hover:underline truncate inline-flex items-center gap-1 max-w-[100px]"
+                            title={item.conversation_title || '未知对话'}
+                          >
+                            {item.conversation_title || '未知对话'}
+                            {item.source_context && (
+                              <ChevronDown className={`w-3 h-3 flex-shrink-0 transition-transform ${expandedLearningId === item.id ? 'rotate-180' : ''}`} />
+                            )}
+                          </button>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{formatDate(item.created_at)}</span>
+                        <span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${getLearningStatusStyle(item.status)} w-fit`}>
+                            {getLearningStatusLabel(item.status)}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {item.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(item.id)}
+                                className="text-xs font-medium px-2 py-1 rounded bg-success/10 text-success hover:bg-success/20 transition-colors"
+                              >
+                                通过
+                              </button>
+                              <button
+                                onClick={() => handleEditApprove(item)}
+                                className="text-xs font-medium px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              >
+                                编辑通过
+                              </button>
+                              <button
+                                onClick={() => handleReject(item.id)}
+                                className="text-xs font-medium px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
+                              >
+                                拒绝
+                              </button>
+                            </>
+                          )}
+                          {item.status === 'approved' && (
+                            <span className="text-xs text-success">已入库</span>
+                          )}
+                          {item.status === 'rejected' && (
+                            <span className="text-xs text-muted-foreground">已拒绝</span>
+                          )}
+                        </div>
                       </div>
+                      {/* Expanded source context */}
+                      {expandedLearningId === item.id && item.source_context && (
+                        <div className="px-4 pb-3 bg-muted/30 -mt-1">
+                          <div className="text-xs text-muted-foreground mb-1 font-medium">原始对话上下文:</div>
+                          <pre className="text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-wrap font-mono">
+                            {item.source_context}
+                          </pre>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1954,7 +2093,15 @@ function FaqPageInner() {
                         )}
                         <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground/60 flex-wrap">
                           <span>{new Date(item.created_at).toLocaleDateString('zh-CN')}</span>
-                          {item.chunk_count > 0 && <span>{item.chunk_count} 个分块</span>}
+                          {item.chunk_count > 0 && (
+                            <button
+                              onClick={() => handleViewChunks(item.id, item.name)}
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
+                              title="查看分块内容"
+                            >
+                              {item.chunk_count} 个分块
+                            </button>
+                          )}
                           {(item.hit_count ?? 0) > 0 && (
                             <span className="inline-flex items-center gap-1" title={`被引用 ${item.hit_count} 次${item.last_hit_at ? `，最近 ${new Date(item.last_hit_at).toLocaleDateString('zh-CN')}` : ''}`}>
                               <Eye className="w-3 h-3" />
@@ -2345,6 +2492,8 @@ function FaqPageInner() {
           </div>
         )}
 
+        {activeTab === 'search_test' && <SearchTestTab />}
+
       </div>
 
       {/* Edit Modal for Learning */}
@@ -2353,7 +2502,7 @@ function FaqPageInner() {
           <div className="bg-card rounded-xl shadow-dialog w-[640px] max-h-[80vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-border/30">
               <h2 className="text-base font-semibold text-foreground">编辑并入库</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">编辑问题和答案后确认入库知识库</p>
+              <p className="text-xs text-muted-foreground mt-0.5">编辑问题和答案后确认入库知识库，确认后将直接创建知识条目</p>
             </div>
             <div className="px-6 py-4 space-y-4">
               <div>
@@ -2396,10 +2545,54 @@ function FaqPageInner() {
               </button>
               <button
                 onClick={handleEditSubmit}
-                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                className="bg-success hover:bg-success/90 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >
-                保存并入库
+                {saving ? '入库中...' : '确认入库'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Category Modal for Learning */}
+      {showLearningBatchCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[480px] bg-card rounded-xl border border-border shadow-lg">
+            <div className="h-12 border-b border-border px-5 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">批量编辑分类</h3>
+              <button onClick={() => setShowLearningBatchCategoryModal(false)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                将为 <span className="text-primary font-medium">{selectedLearningIds.size}</span> 个条目设置分类
+              </p>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">分类名称</label>
+                <select
+                  value={learningBatchCategory}
+                  onChange={(e) => setLearningBatchCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm"
+                >
+                  <option value="">请选择分类</option>
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2 justify-end pt-1">
+                <button onClick={() => setShowLearningBatchCategoryModal(false)} className="px-3 py-1.5 rounded-lg text-xs">
+                  取消
+                </button>
+                <button
+                  onClick={handleLearningBatchUpdateCategory}
+                  disabled={!learningBatchCategory.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs"
+                >
+                  确认修改
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2739,6 +2932,63 @@ function FaqPageInner() {
         </div>
       )}
 
+      {/* Chunks Dialog */}
+      <Dialog open={showChunksDialog} onOpenChange={setShowChunksDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              分块内容
+              <span className="text-xs font-normal text-muted-foreground ml-1">— {chunksItemName}</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {loadingChunks ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm">加载中...</span>
+              </div>
+            </div>
+          ) : chunks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <FileText className="w-12 h-12 mb-2 opacity-30" />
+              <p className="text-sm">暂无分块数据</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {chunks.map((chunk, idx) => (
+                <div key={chunk.id} className="p-4 rounded-lg bg-muted/50 border border-border/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                        {chunk.chunk_index + 1}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {chunk.content.length} 字符
+                      </span>
+                    </div>
+                    {chunk.doc_id && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                        已向量化
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                    {escapeHtml(chunk.content)}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-border/30">
+                    <span className="text-xs text-muted-foreground/60 font-mono">
+                      hash: {chunk.content_hash.slice(0, 16)}...
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Batch Category Modal */}
       {showBatchCategoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -2883,6 +3133,70 @@ function FaqPageInner() {
           <QuickRepliesPanel className="flex-1 overflow-hidden" />
         </DialogContent>
       </Dialog>
+
+      {/* 商品上下架确认弹窗 */}
+      <AlertDialog open={!!confirmToggleProduct} onOpenChange={() => setConfirmToggleProduct(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认{confirmToggleProduct?.status === 'on_sale' ? '下架' : '上架'}商品</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要{confirmToggleProduct?.status === 'on_sale' ? '下架' : '上架'}
+              「{confirmToggleProduct?.name}」吗？
+              {confirmToggleProduct?.status === 'on_sale' ? (
+                <span className="block mt-1 text-amber-600">下架后该商品将不会在 AI 回复中被推荐。</span>
+              ) : (
+                <span className="block mt-1 text-green-600">上架后该商品将恢复在 AI 回复中被推荐。</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmToggleProduct(null)}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmToggleProductStatus}
+              className={confirmToggleProduct?.status === 'on_sale'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'bg-green-500 hover:bg-green-600 text-white'
+              }
+            >
+              确认{confirmToggleProduct?.status === 'on_sale' ? '下架' : '上架'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 尺码表启用/禁用确认弹窗 */}
+      <AlertDialog open={!!confirmToggleSizeChart} onOpenChange={() => setConfirmToggleSizeChart(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认{confirmToggleSizeChart?.status === 'active' ? '禁用' : '启用'}尺码表</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要{confirmToggleSizeChart?.status === 'active' ? '禁用' : '启用'}
+              「{confirmToggleSizeChart?.name}」吗？
+              {confirmToggleSizeChart?.status === 'active' ? (
+                <span className="block mt-1 text-amber-600">禁用后该尺码表将不会在 AI 回复中被推荐。</span>
+              ) : (
+                <span className="block mt-1 text-green-600">启用后该尺码表将恢复在 AI 回复中被推荐。</span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmToggleSizeChart(null)}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmToggleSizeChartStatus}
+              className={confirmToggleSizeChart?.status === 'active'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'bg-green-500 hover:bg-green-600 text-white'
+              }
+            >
+              确认{confirmToggleSizeChart?.status === 'active' ? '禁用' : '启用'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </ErrorBoundary>
   );

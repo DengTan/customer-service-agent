@@ -41,12 +41,14 @@ export function QualityPage() {
   const [tags, setTags] = useState<ConversationTagDef[]>([]);
   const [tagSearch, setTagSearch] = useState('');
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState<ConversationTagDef | null>(null);
   const [tagForm, setTagForm] = useState({ name: '', color: '#2F6BFF', category: 'question_type' });
 
   // Rules state
   const [rules, setRules] = useState<QualityRule[]>([]);
   const [ruleFilter, setRuleFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<QualityRule | null>(null);
   const [ruleForm, setRuleForm] = useState({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
 
   // Checks state
@@ -91,18 +93,34 @@ export function QualityPage() {
   }, [fetchTags, fetchRules, fetchChecks]);
 
   // Tag CRUD
-  const handleCreateTag = async () => {
+  const openEditTagDialog = (tag: ConversationTagDef) => {
+    setEditingTag(tag);
+    setTagForm({
+      name: tag.name,
+      color: tag.color,
+      category: tag.category,
+    });
+    setTagDialogOpen(true);
+  };
+
+  const handleSaveTag = async () => {
     try {
       const res = await fetch('/api/conversation-tags', {
-        method: 'POST',
+        method: editingTag ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tagForm),
+        body: JSON.stringify({
+          id: editingTag?.id,
+          name: tagForm.name,
+          color: tagForm.color,
+          category: tagForm.category,
+        }),
       });
       if (!res.ok) {
-        toast.error('创建标签失败');
+        toast.error(editingTag ? '更新标签失败' : '创建标签失败');
         return;
       }
       setTagDialogOpen(false);
+      setEditingTag(null);
       setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
       fetchTags();
     } catch (e) { console.error(e); }
@@ -123,19 +141,38 @@ export function QualityPage() {
   };
 
   // Rule CRUD
-  const handleCreateRule = async () => {
+  const openEditRuleDialog = (rule: QualityRule) => {
+    const configObj = typeof rule.config === 'string' ? JSON.parse(rule.config) : (rule.config ?? {});
+    setEditingRule(rule);
+    setRuleForm({
+      name: rule.name,
+      type: rule.type,
+      config_text: JSON.stringify(configObj, null, 2),
+      is_enabled: rule.is_enabled,
+    });
+    setRuleDialogOpen(true);
+  };
+
+  const handleSaveRule = async () => {
     try {
       const config = JSON.parse(ruleForm.config_text || '{}');
       const res = await fetch('/api/quality-checks', {
-        method: 'POST',
+        method: editingRule ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: ruleForm.name, type: ruleForm.type, config, is_enabled: ruleForm.is_enabled }),
+        body: JSON.stringify({
+          id: editingRule?.id,
+          name: ruleForm.name,
+          type: ruleForm.type,
+          config,
+          is_enabled: ruleForm.is_enabled,
+        }),
       });
       if (!res.ok) {
-        toast.error('创建规则失败');
+        toast.error(editingRule ? '更新规则失败' : '创建规则失败');
         return;
       }
       setRuleDialogOpen(false);
+      setEditingRule(null);
       setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
       fetchRules();
     } catch (e) { console.error(e); }
@@ -232,8 +269,18 @@ export function QualityPage() {
             </div>
           </div>
           <Button 
-            onClick={() => activeTab === 'tags' ? setTagDialogOpen(true) : setRuleDialogOpen(true)} 
-            size="sm" 
+            onClick={() => {
+              if (activeTab === 'tags') {
+                setEditingTag(null);
+                setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
+                setTagDialogOpen(true);
+              } else if (activeTab === 'rules') {
+                setEditingRule(null);
+                setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+                setRuleDialogOpen(true);
+              }
+            }}
+            size="sm"
             className="gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -286,6 +333,7 @@ export function QualityPage() {
                       <div className="flex gap-1">
                         <button
                           className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                          onClick={() => openEditTagDialog(tag)}
                           title="编辑"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -391,14 +439,23 @@ export function QualityPage() {
                           />
                         </td>
                         <td className="px-4 py-3.5 text-right">
-                          <button
-                            className="inline-flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                            onClick={() => handleDeleteRule(rule.id)}
-                            disabled={deletingRuleId === rule.id}
-                            title="删除"
-                          >
-                            {deletingRuleId === rule.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              onClick={() => openEditRuleDialog(rule)}
+                              title="编辑"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                              onClick={() => handleDeleteRule(rule.id)}
+                              disabled={deletingRuleId === rule.id}
+                              title="删除"
+                            >
+                              {deletingRuleId === rule.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -518,10 +575,16 @@ export function QualityPage() {
       )}
 
       {/* Tag Dialog */}
-      <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+      <Dialog open={tagDialogOpen} onOpenChange={(open) => {
+        setTagDialogOpen(open);
+        if (!open) {
+          setEditingTag(null);
+          setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">创建对话标签</DialogTitle>
+            <DialogTitle className="text-base font-semibold">{editingTag ? '编辑对话标签' : '创建对话标签'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -565,16 +628,22 @@ export function QualityPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setTagDialogOpen(false)} className="rounded-lg">取消</Button>
-            <Button onClick={handleCreateTag} disabled={!tagForm.name.trim()} className="rounded-lg">创建</Button>
+            <Button onClick={handleSaveTag} disabled={!tagForm.name.trim()} className="rounded-lg">{editingTag ? '保存' : '创建'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Rule Dialog */}
-      <Dialog open={ruleDialogOpen} onOpenChange={setRuleDialogOpen}>
+      <Dialog open={ruleDialogOpen} onOpenChange={(open) => {
+        setRuleDialogOpen(open);
+        if (!open) {
+          setEditingRule(null);
+          setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">创建质检规则</DialogTitle>
+            <DialogTitle className="text-base font-semibold">{editingRule ? '编辑质检规则' : '创建质检规则'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -620,7 +689,7 @@ export function QualityPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRuleDialogOpen(false)} className="rounded-lg">取消</Button>
-            <Button onClick={handleCreateRule} disabled={!ruleForm.name.trim()} className="rounded-lg">创建</Button>
+            <Button onClick={handleSaveRule} disabled={!ruleForm.name.trim()} className="rounded-lg">{editingRule ? '保存' : '创建'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

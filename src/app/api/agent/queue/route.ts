@@ -1,11 +1,17 @@
 import { NextRequest } from 'next/server';
 import { AgentService } from '@/server/services/agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, getAuthenticatedUserId } from '@/lib/api-utils';
 
 const service = new AgentService();
 
 // GET /api/agent/queue - 获取排队与服务中列表
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  // Verify authentication
+  const currentUserId = getAuthenticatedUserId(request);
+  if (!currentUserId) {
+    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
+  }
+
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status') ?? undefined;
   const agent_id = searchParams.get('agent_id') ?? undefined;
@@ -23,6 +29,12 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // POST /api/agent/queue - 坐席接单
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  // Verify authentication
+  const currentUserId = getAuthenticatedUserId(request);
+  if (!currentUserId) {
+    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
+  }
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -33,12 +45,23 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     return apiError('缺少必要参数', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
   }
 
+  // Only allow agents to accept orders for themselves
+  if (agent_id !== currentUserId) {
+    return apiError('无权代其他坐席接单', { status: HttpStatus.FORBIDDEN, code: 'FORBIDDEN' });
+  }
+
   const result = await service.acceptQueueItem(queue_id, agent_id);
   return apiSuccess(result);
 });
 
 // PATCH /api/agent/queue - 更新排队项状态 (resolve/transfer)
 export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
+  // Verify authentication
+  const currentUserId = getAuthenticatedUserId(request);
+  if (!currentUserId) {
+    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
+  }
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 

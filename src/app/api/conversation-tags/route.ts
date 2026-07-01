@@ -22,7 +22,8 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  if (body?.name && !body?.conversation_id) {
+  // 创建标签（无 id 时为创建）
+  if (body?.name && !body?.id) {
     const tag = await service.createDefinition({
       name: body.name as string,
       color: body.color as string,
@@ -31,6 +32,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     return apiSuccess({ tag });
   }
 
+  // 为对话打标签
   if (body?.conversation_id && body?.tag_id) {
     const record = await service.tagConversation({
       conversation_id: body.conversation_id as string,
@@ -41,6 +43,22 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   throw new Error('无效的请求参数');
+});
+
+export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const { data: body, error: parseError } = await parseJsonBody(request);
+  if (parseError) return parseError;
+
+  if (!body?.id) {
+    throw new Error('缺少标签ID');
+  }
+
+  const tag = await service.updateDefinition(body.id as string, {
+    name: body.name as string,
+    color: body.color as string,
+    category: body.category as string,
+  });
+  return apiSuccess({ tag });
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {

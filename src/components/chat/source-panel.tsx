@@ -5,7 +5,7 @@ import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 
 interface SourceItem {
-  type: string;
+  type?: string; // optional for backward compatibility, defaults handled in processing
   content?: string;
   score?: number;
   keyword?: string;
@@ -32,7 +32,7 @@ interface SourcePanelProps {
   onClose: () => void;
 }
 
-function getSourceIcon(type: string) {
+function getSourceIcon(type: string | undefined) {
   switch (type) {
     case 'knowledge':
       return <BookOpen className="w-3.5 h-3.5 text-primary" />;
@@ -49,7 +49,7 @@ function getSourceIcon(type: string) {
   }
 }
 
-function getSourceLabel(type: string) {
+function getSourceLabel(type: string | undefined) {
   switch (type) {
     case 'knowledge':
       return '知识库';
@@ -86,7 +86,8 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
 
   // Group sources by type for summary
   const sourceTypeCounts = sources.reduce<Record<string, number>>((acc, s) => {
-    acc[s.type] = (acc[s.type] || 0) + 1;
+    const type = s.type || 'unknown';
+    acc[type] = (acc[type] || 0) + 1;
     return acc;
   }, {});
 

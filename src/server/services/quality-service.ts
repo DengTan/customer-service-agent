@@ -8,6 +8,7 @@ import {
 import type { QualityRule } from '@/lib/types';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { logger } from '@/lib/logger';
 
 export interface QualityRulesResult {
   rules: QualityRule[];
@@ -133,7 +134,7 @@ export class QualityService {
       }
     } catch (error) {
       // Quality check failure should not block message processing
-      console.error('[QualityService] runQualityCheck failed:', error);
+      logger.error('[QualityService] runQualityCheck failed', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 }

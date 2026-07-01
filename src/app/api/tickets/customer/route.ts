@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requirePermission } from '@/lib/api-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getLogger } from '@/lib/logger';
+import { TICKET } from '@/lib/constants';
+
+const logger = getLogger('TicketsCustomer');
 
 export async function GET(req: NextRequest) {
+  const denied = await requirePermission(req, 'tickets', 'read');
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(req.url);
     const conversationId = searchParams.get('conversation_id');
@@ -17,7 +25,7 @@ export async function GET(req: NextRequest) {
       .from('tickets')
       .select('id, ticket_number, title, status, priority, category, created_at, updated_at')
       .order('created_at', { ascending: false })
-      .limit(20);
+      .limit(TICKET.CUSTOMER_TICKET_LIMIT);
 
     if (conversationId) {
       query = query.eq('conversation_id', conversationId);
@@ -54,7 +62,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ tickets });
   } catch (error) {
-    console.error('[Ticket Customer] GET error:', error);
+    logger.error('[Ticket Customer] GET error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '查询工单失败' }, { status: 500 });
   }
 }

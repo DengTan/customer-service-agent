@@ -1,13 +1,16 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandler, apiSuccess } from '@/lib/api-utils';
+import { withErrorHandler, apiSuccess, requirePermission, getAuthenticatedUserId } from '@/lib/api-utils';
 import { TicketService } from '@/server/services/ticket-service';
 
 const ticketService = new TicketService();
 
 export const GET = withErrorHandler(async (
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const denied = await requirePermission(request, 'tickets', 'read');
+  if (denied) return denied;
+
   const { id } = await params;
   const comments = await ticketService.listComments(id);
   return apiSuccess({
@@ -23,11 +26,15 @@ export const POST = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const denied = await requirePermission(request, 'tickets', 'write');
+  if (denied) return denied;
+
   const { id } = await params;
   const body = await request.json();
   const content = (body?.content as string) || '';
   const is_internal = (body?.is_internal as boolean) || false;
-  const author_id = (body?.author_id as string) || null;
+  // author_id 强制从 JWT 获取，禁止从请求体伪造
+  const author_id = getAuthenticatedUserId(request) ?? null;
 
   const comment = await ticketService.addComment({
     ticket_id: id,

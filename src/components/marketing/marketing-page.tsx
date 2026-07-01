@@ -200,14 +200,16 @@ export default function MarketingPage() {
     const [previewing, setPreviewing] = useState(false);
     const [createOpen, setCreateOpen] = useState(false);
     const [editingCampaign, setEditingCampaign] = useState<MarketingCampaign | null>(null);
+    const [viewingCampaign, setViewingCampaign] = useState<MarketingCampaign | null>(null);
+    const [detailOpen, setDetailOpen] = useState(false);
 
     const buildSegment = () => {
         const seg: Record<string, unknown> = {};
-        if (segmentForm.platform) seg.platform = segmentForm.platform;
-        if (segmentForm.tag) seg.tag = segmentForm.tag;
-        if (segmentForm.member_level) seg.member_level = segmentForm.member_level;
-        if (segmentForm.inactive_days) seg.inactive_days = Number(segmentForm.inactive_days);
-        if (segmentForm.new_customer_days) seg.new_customer_days = Number(segmentForm.new_customer_days);
+        if (segmentForm.platform && segmentForm.platform !== "all") seg.platform = segmentForm.platform;
+        if (segmentForm.tag && segmentForm.tag !== "all") seg.tag = segmentForm.tag;
+        if (segmentForm.member_level && segmentForm.member_level !== "all") seg.member_level = segmentForm.member_level;
+        if (segmentForm.inactive_days && segmentForm.inactive_days !== "all") seg.inactive_days = Number(segmentForm.inactive_days);
+        if (segmentForm.new_customer_days && segmentForm.new_customer_days !== "all") seg.new_customer_days = Number(segmentForm.new_customer_days);
         if (segmentForm.min_conversations) seg.min_conversations = Number(segmentForm.min_conversations);
         if (segmentForm.max_conversations) seg.max_conversations = Number(segmentForm.max_conversations);
         if (segmentForm.exclude_anonymous) seg.exclude_anonymous = true;
@@ -273,6 +275,11 @@ export default function MarketingPage() {
             } catch { /* ignore */ }
         }
     }, [campaigns]);
+
+    const handleOpenDetail = (campaign: MarketingCampaign) => {
+        setViewingCampaign(campaign);
+        setDetailOpen(true);
+    };
 
     const handlePromoteWinner = async (campaignId: string, winner: string) => {
         setPromoting(campaignId);
@@ -569,7 +576,7 @@ export default function MarketingPage() {
                                                     {promoting === campaign.id ? "推广中..." : "推广获胜变体"}
                                                 </Button>
                                             )}
-                                            <Button variant="ghost" size="sm" className="text-muted-foreground">
+                                            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => handleOpenDetail(campaign)}>
                                                 <BarChart3 className="h-3 w-3 mr-1" />详情
                                             </Button>
                                         </div>
@@ -752,208 +759,609 @@ export default function MarketingPage() {
             </div>
 
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-                <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                        <DialogTitle>{editingCampaign ? '编辑营销活动' : '创建营销活动'}</DialogTitle>
+                <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto !rounded-2xl">
+                    <DialogHeader className="space-y-2 pb-4 border-b">
+                        <DialogTitle className="flex items-center gap-2">
+                            {editingCampaign ? (
+                                <>
+                                    <div className="p-1.5 rounded-md bg-amber-100 dark:bg-amber-900/30">
+                                        <Eye className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                    </div>
+                                    编辑营销活动
+                                </>
+                            ) : (
+                                <>
+                                    <div className="p-1.5 rounded-md bg-green-100 dark:bg-green-900/30">
+                                        <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                    </div>
+                                    创建营销活动
+                                </>
+                            )}
+                        </DialogTitle>
+                        {editingCampaign && (
+                            <p className="text-sm text-muted-foreground pl-8">
+                                修改活动配置后保存即可更新活动信息
+                            </p>
+                        )}
                     </DialogHeader>
                     <div className="space-y-5 py-4">
                         {/* 基础信息 */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">活动名称</label>
-                            <Input
-                                value={campaignForm.name}
-                                onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })}
-                                placeholder="输入活动名称" />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">活动类型</label>
-                            <Select value={campaignForm.type} onValueChange={v => setCampaignForm({ ...campaignForm, type: v })}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="abandoned_cart">购物车挽回</SelectItem>
-                                    <SelectItem value="browsing_nurture">浏览培育</SelectItem>
-                                    <SelectItem value="win_back">流失客户召回</SelectItem>
-                                    <SelectItem value="promotion">促销活动</SelectItem>
-                                    <SelectItem value="announcement">公告通知</SelectItem>
-                                    <SelectItem value="loyalty">会员关怀</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* 消息模板 */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">消息模板 <span className="text-xs text-muted-foreground font-normal">（支持变量：&#123;&#123;customer_name&#125;&#125;、&#123;&#123;campaign_name&#125;&#125;）</span></label>
-                            <textarea
-                                className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                value={campaignForm.message_template}
-                                onChange={e => setCampaignForm({ ...campaignForm, message_template: e.target.value })}
-                                placeholder="您好，&#123;&#123;customer_name&#125;&#125;，&#123;&#123;campaign_name&#125;&#125;火热进行中，欢迎咨询！" />
-                        </div>
-
-                        {/* 投放方式 */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground">投放方式</label>
-                            <Select value={campaignForm.trigger_type} onValueChange={v => setCampaignForm({ ...campaignForm, trigger_type: v as 'manual' | 'scheduled' | 'event' })}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="manual">立即投放（手动启动）</SelectItem>
-                                    <SelectItem value="scheduled">定时投放（指定时间自动发送）</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {campaignForm.trigger_type === "scheduled" && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-foreground">投放时间</label>
-                                <input
-                                    type="datetime-local"
-                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                    value={campaignForm.scheduled_at}
-                                    onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })}
-                                    min={new Date().toISOString().slice(0, 16)}
-                                />
-                            </div>
-                        )}
-
-                        {/* 客群定向 */}
-                        <div className="space-y-3">
-                            <label className="text-sm font-medium text-foreground">目标客群</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-muted-foreground">来源平台</label>
-                                    <Select value={segmentForm.platform} onValueChange={v => setSegmentForm({ ...segmentForm, platform: v })}>
-                                        <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">全部</SelectItem>
-                                            <SelectItem value="web">网页</SelectItem>
-                                            <SelectItem value="qianniu">千牛</SelectItem>
-                                            <SelectItem value="doudian">抖店</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                        <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-800/50 dark:to-slate-800/30">
+                            <CardContent className="p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-md bg-blue-100 dark:bg-blue-900/30">
+                                        <Megaphone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-foreground">活动配置</h3>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-muted-foreground">客户标签</label>
-                                    <Select value={segmentForm.tag} onValueChange={v => setSegmentForm({ ...segmentForm, tag: v })}>
-                                        <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">全部</SelectItem>
-                                            {customerTags.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-muted-foreground">会员等级</label>
-                                    <Select value={segmentForm.member_level} onValueChange={v => setSegmentForm({ ...segmentForm, member_level: v })}>
-                                        <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">全部</SelectItem>
-                                            <SelectItem value="普通">普通</SelectItem>
-                                            <SelectItem value="银卡">银卡</SelectItem>
-                                            <SelectItem value="金卡">金卡</SelectItem>
-                                            <SelectItem value="钻石">钻石</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-muted-foreground">活跃状态</label>
-                                    <Select value={segmentForm.inactive_days} onValueChange={v => setSegmentForm({ ...segmentForm, inactive_days: v, new_customer_days: "" })}>
-                                        <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">全部</SelectItem>
-                                            <SelectItem value="7">活跃（7天内）</SelectItem>
-                                            <SelectItem value="30">一般（7-30天）</SelectItem>
-                                            <SelectItem value="60">沉默（30天以上）</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-muted-foreground">客户类型</label>
-                                    <Select value={segmentForm.new_customer_days} onValueChange={v => setSegmentForm({ ...segmentForm, new_customer_days: v, inactive_days: "" })}>
-                                        <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">全部</SelectItem>
-                                            <SelectItem value="7">新客户（7天内）</SelectItem>
-                                            <SelectItem value="30">新客户（30天内）</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="flex items-end gap-2">
-                                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={segmentForm.exclude_anonymous}
-                                            onChange={e => setSegmentForm({ ...segmentForm, exclude_anonymous: e.target.checked })}
-                                            className="rounded border-border" />
-                                        排除匿名访客
-                                    </label>
-                                </div>
-                                <div className="col-span-2 space-y-1">
-                                    <label className="text-xs text-muted-foreground">对话数区间</label>
-                                    <div className="flex items-center gap-2">
+                                <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                            <span>活动名称</span>
+                                            <span className="text-red-500">*</span>
+                                        </label>
                                         <Input
-                                            type="number"
-                                            min="0"
-                                            value={segmentForm.min_conversations}
-                                            onChange={e => setSegmentForm({ ...segmentForm, min_conversations: e.target.value })}
-                                            placeholder="最小" className="w-28" />
-                                        <span className="text-muted-foreground">—</span>
-                                        <Input
-                                            type="number"
-                                            min="0"
-                                            value={segmentForm.max_conversations}
-                                            onChange={e => setSegmentForm({ ...segmentForm, max_conversations: e.target.value })}
-                                            placeholder="最大" className="w-28" />
+                                            value={campaignForm.name}
+                                            onChange={e => setCampaignForm({ ...campaignForm, name: e.target.value })}
+                                            placeholder="输入活动名称" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground">活动类型</label>
+                                        <Select value={campaignForm.type} onValueChange={v => setCampaignForm({ ...campaignForm, type: v })}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="abandoned_cart">
+                                                    <div className="flex items-center gap-2">
+                                                        <ShoppingCart className="h-4 w-4 text-orange-500" />
+                                                        <span>购物车挽回</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="browsing_nurture">
+                                                    <div className="flex items-center gap-2">
+                                                        <Eye className="h-4 w-4 text-blue-500" />
+                                                        <span>浏览培育</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="win_back">
+                                                    <div className="flex items-center gap-2">
+                                                        <UserCheck className="h-4 w-4 text-purple-500" />
+                                                        <span>流失客户召回</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="promotion">
+                                                    <div className="flex items-center gap-2">
+                                                        <Megaphone className="h-4 w-4 text-red-500" />
+                                                        <span>促销活动</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="announcement">
+                                                    <div className="flex items-center gap-2">
+                                                        <Send className="h-4 w-4 text-teal-500" />
+                                                        <span>公告通知</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="loyalty">
+                                                    <div className="flex items-center gap-2">
+                                                        <Crown className="h-4 w-4 text-yellow-500" />
+                                                        <span>会员关怀</span>
+                                                    </div>
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                 </div>
-                            </div>
-                            {/* 客群预览 */}
-                            <div className="flex items-center gap-3">
-                                <Button variant="outline" size="sm" onClick={handlePreviewSegment} disabled={previewing}>
-                                    {previewing ? "预览中..." : "预览匹配人数"}
-                                </Button>
-                                {segmentPreview !== null && (
-                                    <span className="text-sm text-muted-foreground">
-                                        匹配 <strong className="text-foreground">{segmentPreview.total}</strong> 位客户
-                                        {segmentPreview.samples.length > 0 && (
-                                            <span className="ml-1">（{segmentPreview.samples.map(s => s.name).join('、')}）</span>
+                            </CardContent>
+                        </Card>
+
+                        {/* 消息模板 */}
+                        <Card className="border-0 shadow-sm bg-gradient-to-r from-green-50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/10">
+                            <CardContent className="p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-md bg-green-100 dark:bg-green-900/30">
+                                        <MessageSquare className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-foreground">消息内容</h3>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                        <span>消息模板</span>
+                                        <span className="text-xs opacity-60">（支持变量替换）</span>
+                                    </label>
+                                    <textarea
+                                        className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                                        value={campaignForm.message_template}
+                                        onChange={e => setCampaignForm({ ...campaignForm, message_template: e.target.value })}
+                                        placeholder="您好，&#123;&#123;customer_name&#125;&#125;，&#123;&#123;campaign_name&#125;&#125;火热进行中，欢迎咨询！" />
+                                </div>
+                                <div className="flex flex-wrap gap-2 text-xs">
+                                    <span className="text-muted-foreground">可用变量：</span>
+                                    <code className="px-2 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-mono">&#123;&#123;customer_name&#125;&#125;</code>
+                                    <code className="px-2 py-1 rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-mono">&#123;&#123;campaign_name&#125;&#125;</code>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* 投放设置 */}
+                        <Card className="border-0 shadow-sm bg-gradient-to-r from-orange-50 to-amber-50/50 dark:from-orange-900/20 dark:to-amber-900/10">
+                            <CardContent className="p-4 space-y-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-md bg-orange-100 dark:bg-orange-900/30">
+                                        <CalendarDays className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-foreground">投放设置</h3>
+                                </div>
+                                <div className="space-y-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-medium text-muted-foreground">投放方式</label>
+                                        <Select value={campaignForm.trigger_type} onValueChange={v => setCampaignForm({ ...campaignForm, trigger_type: v as 'manual' | 'scheduled' | 'event' })}>
+                                            <SelectTrigger><SelectValue /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="manual">
+                                                    <div className="flex items-center gap-2">
+                                                        <Play className="h-4 w-4 text-green-500" />
+                                                        <span>立即投放（手动启动）</span>
+                                                    </div>
+                                                </SelectItem>
+                                                <SelectItem value="scheduled">
+                                                    <div className="flex items-center gap-2">
+                                                        <CalendarDays className="h-4 w-4 text-orange-500" />
+                                                        <span>定时投放（指定时间自动发送）</span>
+                                                    </div>
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {campaignForm.trigger_type === "scheduled" && (
+                                        <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                                            <label className="text-xs font-medium text-muted-foreground">投放时间</label>
+                                            <input
+                                                type="datetime-local"
+                                                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                value={campaignForm.scheduled_at}
+                                                onChange={e => setCampaignForm({ ...campaignForm, scheduled_at: e.target.value })}
+                                                min={new Date().toISOString().slice(0, 16)} />
+                                        </div>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* 客群定向 */}
+                        <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-orange-50/50 dark:from-amber-900/20 dark:to-orange-900/10">
+                            <CardContent className="p-4 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1.5 rounded-md bg-amber-100 dark:bg-amber-900/30">
+                                            <Users className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-foreground">目标客群</h3>
+                                    </div>
+                                    <Button variant="outline" size="sm" onClick={handlePreviewSegment} disabled={previewing}>
+                                        {previewing ? (
+                                            <span className="flex items-center gap-1">
+                                                <span className="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                                                预览中...
+                                            </span>
+                                        ) : (
+                                            <>预览匹配人数</>
                                         )}
-                                    </span>
+                                    </Button>
+                                </div>
+
+                                {segmentPreview !== null && (
+                                    <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-3 border border-amber-200/50 dark:border-amber-800/30">
+                                        <div className="flex items-center gap-2">
+                                            <Users className="h-4 w-4 text-amber-600" />
+                                            <span className="text-sm">
+                                                匹配 <strong className="text-amber-600 text-base">{segmentPreview.total}</strong> 位客户
+                                            </span>
+                                            {segmentPreview.samples.length > 0 && (
+                                                <span className="text-xs text-muted-foreground ml-2">
+                                                    （{segmentPreview.samples.map(s => s.name).join('、')}）
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
-                            </div>
-                        </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted-foreground">来源平台</label>
+                                        <Select value={segmentForm.platform} onValueChange={v => setSegmentForm({ ...segmentForm, platform: v })}>
+                                            <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">全部平台</SelectItem>
+                                                <SelectItem value="web">🌐 网页</SelectItem>
+                                                <SelectItem value="qianniu">🐮 千牛</SelectItem>
+                                                <SelectItem value="doudian">🎵 抖店</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted-foreground">客户标签</label>
+                                        <Select value={segmentForm.tag} onValueChange={v => setSegmentForm({ ...segmentForm, tag: v })}>
+                                            <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">全部标签</SelectItem>
+                                                {customerTags.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted-foreground">会员等级</label>
+                                        <Select value={segmentForm.member_level} onValueChange={v => setSegmentForm({ ...segmentForm, member_level: v })}>
+                                            <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">全部等级</SelectItem>
+                                                <SelectItem value="普通">🌱 普通</SelectItem>
+                                                <SelectItem value="银卡">🥈 银卡</SelectItem>
+                                                <SelectItem value="金卡">🥇 金卡</SelectItem>
+                                                <SelectItem value="钻石">💎 钻石</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted-foreground">活跃状态</label>
+                                        <Select value={segmentForm.inactive_days} onValueChange={v => setSegmentForm({ ...segmentForm, inactive_days: v, new_customer_days: "" })}>
+                                            <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">全部状态</SelectItem>
+                                                <SelectItem value="7">🟢 活跃（7天内）</SelectItem>
+                                                <SelectItem value="30">🟡 一般（7-30天）</SelectItem>
+                                                <SelectItem value="60">🔴 沉默（30天以上）</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-muted-foreground">客户类型</label>
+                                        <Select value={segmentForm.new_customer_days} onValueChange={v => setSegmentForm({ ...segmentForm, new_customer_days: v, inactive_days: "" })}>
+                                            <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">全部类型</SelectItem>
+                                                <SelectItem value="7">✨ 新客户（7天内）</SelectItem>
+                                                <SelectItem value="30">⭐ 新客户（30天内）</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-1 flex items-end">
+                                        <label className="flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background cursor-pointer hover:bg-muted/50 transition-colors">
+                                            <input
+                                                type="checkbox"
+                                                checked={segmentForm.exclude_anonymous}
+                                                onChange={e => setSegmentForm({ ...segmentForm, exclude_anonymous: e.target.checked })}
+                                                className="rounded border-border" />
+                                            <span className="text-sm">排除匿名访客</span>
+                                        </label>
+                                    </div>
+                                    <div className="col-span-2 space-y-1">
+                                        <label className="text-xs text-muted-foreground">对话数区间</label>
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                value={segmentForm.min_conversations}
+                                                onChange={e => setSegmentForm({ ...segmentForm, min_conversations: e.target.value })}
+                                                placeholder="最小" className="w-28" />
+                                            <span className="text-muted-foreground">—</span>
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                value={segmentForm.max_conversations}
+                                                onChange={e => setSegmentForm({ ...segmentForm, max_conversations: e.target.value })}
+                                                placeholder="最大" className="w-28" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
 
                         {/* A/B 测试 */}
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="ab-test"
-                                checked={campaignForm.ab_enabled}
-                                onChange={e => setCampaignForm({ ...campaignForm, ab_enabled: e.target.checked })}
-                                className="rounded border-border" />
-                            <label htmlFor="ab-test" className="text-sm font-medium text-foreground">启用A/B测试</label>
-                        </div>
-                        {campaignForm.ab_enabled && <div className="space-y-3 pl-4 border-l-2 border-primary/20">
-                            <div className="space-y-1">
-                                <label className="text-xs font-medium text-muted-foreground">变体 A</label>
-                                <Input
-                                    value={campaignForm.variant_a}
-                                    onChange={e => setCampaignForm({ ...campaignForm, variant_a: e.target.value })}
-                                    placeholder="变体A内容" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-medium text-muted-foreground">变体 B</label>
-                                <Input
-                                    value={campaignForm.variant_b}
-                                    onChange={e => setCampaignForm({ ...campaignForm, variant_b: e.target.value })}
-                                    placeholder="变体B内容" />
-                            </div>
-                        </div>}
+                        <Card className="border-0 shadow-sm bg-gradient-to-r from-violet-50 to-purple-50/50 dark:from-violet-900/20 dark:to-purple-900/10">
+                            <CardContent className="p-4 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1.5 rounded-md bg-violet-100 dark:bg-violet-900/30">
+                                            <Target className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-foreground">A/B 测试</h3>
+                                    </div>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <span className="text-sm text-muted-foreground">启用</span>
+                                        <div className="relative">
+                                            <input
+                                                type="checkbox"
+                                                id="ab-test"
+                                                checked={campaignForm.ab_enabled}
+                                                onChange={e => setCampaignForm({ ...campaignForm, ab_enabled: e.target.checked })}
+                                                className="sr-only peer" />
+                                            <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-violet-500 transition-colors" />
+                                            <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow-sm peer-checked:translate-x-4 transition-transform" />
+                                        </div>
+                                    </label>
+                                </div>
+
+                                {campaignForm.ab_enabled && (
+                                    <div className="grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                                <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 h-5 px-1.5">A</Badge>
+                                                对照组
+                                            </label>
+                                            <textarea
+                                                className="w-full min-h-[80px] rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20 px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                                value={campaignForm.variant_a}
+                                                onChange={e => setCampaignForm({ ...campaignForm, variant_a: e.target.value })}
+                                                placeholder="输入变体A内容..." />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                                <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200 h-5 px-1.5">B</Badge>
+                                                实验组
+                                            </label>
+                                            <textarea
+                                                className="w-full min-h-[80px] rounded-md border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/20 px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400"
+                                                value={campaignForm.variant_b}
+                                                onChange={e => setCampaignForm({ ...campaignForm, variant_b: e.target.value })}
+                                                placeholder="输入变体B内容..." />
+                                        </div>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
                 </DialogContent>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
-                    <Button onClick={handleSaveCampaign} disabled={!campaignForm.name}>{editingCampaign ? '保存' : '创建'}</Button>
+                <DialogFooter className="border-t pt-4 gap-2">
+                    <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                        取消
+                    </Button>
+                    <Button onClick={handleSaveCampaign} disabled={!campaignForm.name}>
+                        {editingCampaign ? (
+                            <>
+                                <Eye className="h-4 w-4 mr-1.5" />
+                                保存修改
+                            </>
+                        ) : (
+                            <>
+                                <Plus className="h-4 w-4 mr-1.5" />
+                                创建活动
+                            </>
+                        )}
+                    </Button>
                 </DialogFooter>
+            </Dialog>
+
+            {/* 活动详情 Dialog */}
+            <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+                <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto !rounded-2xl">
+                    <DialogHeader className="space-y-3 pb-4 border-b">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                                <BarChart3 className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-lg">{viewingCampaign?.name}</DialogTitle>
+                                <div className="flex items-center gap-2 mt-1">
+                                    {viewingCampaign && (
+                                        <>
+                                            <Badge className={TYPE_CONFIG[viewingCampaign.type]?.color}>
+                                                {TYPE_CONFIG[viewingCampaign.type]?.label || viewingCampaign.type}
+                                            </Badge>
+                                            <Badge className={STATUS_CONFIG[viewingCampaign.status]?.color}>
+                                                {STATUS_CONFIG[viewingCampaign.status]?.label || viewingCampaign.status}
+                                            </Badge>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </DialogHeader>
+                    {viewingCampaign && (
+                        <div className="space-y-5 py-4">
+                            {/* 基本信息 */}
+                            <Card className="border-0 shadow-sm bg-gradient-to-r from-slate-50 to-slate-100/50 dark:from-slate-800/50 dark:to-slate-800/30">
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="p-1.5 rounded-md bg-blue-100 dark:bg-blue-900/30">
+                                            <Megaphone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-foreground">基本信息</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <p className="text-xs text-muted-foreground">触发方式</p>
+                                            <p className="text-sm font-medium flex items-center gap-1.5">
+                                                {viewingCampaign.trigger_type === 'manual' ? (
+                                                    <><Play className="h-3.5 w-3.5 text-green-500" />手动投放</>
+                                                ) : viewingCampaign.trigger_type === 'scheduled' ? (
+                                                    <><CalendarDays className="h-3.5 w-3.5 text-orange-500" />定时投放</>
+                                                ) : (
+                                                    <><TrendingUp className="h-3.5 w-3.5 text-purple-500" />事件触发</>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-xs text-muted-foreground">创建时间</p>
+                                            <p className="text-sm font-medium">{new Date(viewingCampaign.created_at).toLocaleString('zh-CN')}</p>
+                                        </div>
+                                        {viewingCampaign.scheduled_at && (
+                                            <div className="space-y-1">
+                                                <p className="text-xs text-muted-foreground">计划投放时间</p>
+                                                <p className="text-sm font-medium">{new Date(viewingCampaign.scheduled_at).toLocaleString('zh-CN')}</p>
+                                            </div>
+                                        )}
+                                        {viewingCampaign.bot_id && (
+                                            <div className="space-y-1">
+                                                <p className="text-xs text-muted-foreground">关联 Bot</p>
+                                                <p className="text-sm font-medium">已关联</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* 消息模板 */}
+                            {viewingCampaign.message_template && (
+                                <Card className="border-0 shadow-sm bg-gradient-to-r from-green-50 to-emerald-50/50 dark:from-green-900/20 dark:to-emerald-900/10">
+                                    <CardContent className="p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="p-1.5 rounded-md bg-green-100 dark:bg-green-900/30">
+                                                <MessageSquare className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                            </div>
+                                            <h3 className="text-sm font-semibold text-foreground">消息模板</h3>
+                                        </div>
+                                        <div className="bg-white/80 dark:bg-slate-800/50 rounded-lg p-4 border border-green-200/50 dark:border-green-800/30">
+                                            <p className="text-sm whitespace-pre-wrap leading-relaxed">{viewingCampaign.message_template}</p>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
+                                            <span>支持变量：</span>
+                                            <code className="px-1.5 py-0.5 rounded bg-muted text-xs">&#123;&#123;customer_name&#125;&#125;</code>
+                                            <code className="px-1.5 py-0.5 rounded bg-muted text-xs">&#123;&#123;campaign_name&#125;&#125;</code>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* 目标客群 */}
+                            <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50 to-orange-50/50 dark:from-amber-900/20 dark:to-orange-900/10">
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="p-1.5 rounded-md bg-amber-100 dark:bg-amber-900/30">
+                                            <Users className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-foreground">目标客群</h3>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {Object.entries(viewingCampaign.target_segment || {}).map(([key, value]) => {
+                                            const label = key.replace(/_/g, ' ');
+                                            return (
+                                                <div key={key} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/80 dark:bg-slate-800/50 border border-amber-200/50 dark:border-amber-800/30">
+                                                    <span className="text-xs text-muted-foreground capitalize">{label}：</span>
+                                                    <span className="text-sm font-medium">
+                                                        {key === 'exclude_anonymous' ? (value ? '是' : '否') :
+                                                         Array.isArray(value) ? value.join('、') : String(value)}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* A/B 测试 */}
+                            {viewingCampaign.ab_variants?.enabled && (
+                                <Card className="border-0 shadow-sm bg-gradient-to-r from-violet-50 to-purple-50/50 dark:from-violet-900/20 dark:to-purple-900/10">
+                                    <CardContent className="p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="p-1.5 rounded-md bg-violet-100 dark:bg-violet-900/30">
+                                                <Target className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                                            </div>
+                                            <h3 className="text-sm font-semibold text-foreground">A/B 测试</h3>
+                                            {abWinners[viewingCampaign.id]?.winner && (
+                                                <Badge variant="outline" className="ml-auto bg-amber-50 text-amber-700 border-amber-200">
+                                                    <Crown className="h-3 w-3 mr-1" />
+                                                    变体 {abWinners[viewingCampaign.id].winner} 领先
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-blue-50/80 dark:bg-blue-900/30 rounded-lg p-3 border border-blue-200/50 dark:border-blue-800/30">
+                                                <div className="flex items-center gap-1.5 mb-2">
+                                                    <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200">A</Badge>
+                                                    <span className="text-xs text-muted-foreground">对照组</span>
+                                                </div>
+                                                <p className="text-sm whitespace-pre-wrap">{viewingCampaign.ab_variants.variant_a}</p>
+                                            </div>
+                                            <div className="bg-green-50/80 dark:bg-green-900/30 rounded-lg p-3 border border-green-200/50 dark:border-green-800/30">
+                                                <div className="flex items-center gap-1.5 mb-2">
+                                                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200">B</Badge>
+                                                    <span className="text-xs text-muted-foreground">实验组</span>
+                                                </div>
+                                                <p className="text-sm whitespace-pre-wrap">{viewingCampaign.ab_variants.variant_b}</p>
+                                            </div>
+                                        </div>
+                                        {abWinners[viewingCampaign.id]?.reason && (
+                                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                                                判定原因：{abWinners[viewingCampaign.id].reason}
+                                            </p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* 活动效果 */}
+                            <Card className="border-0 shadow-sm bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-900/20 dark:to-blue-900/10">
+                                <CardContent className="p-4">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <div className="p-1.5 rounded-md bg-indigo-100 dark:bg-indigo-900/30">
+                                            <TrendingUp className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                                        </div>
+                                        <h3 className="text-sm font-semibold text-foreground">活动效果</h3>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div className="relative">
+                                            <div className="text-center">
+                                                <div className="text-3xl font-bold bg-gradient-to-b from-blue-600 to-blue-700 bg-clip-text text-transparent">
+                                                    {viewingCampaign.stats?.sent ?? 0}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground mt-1">触达数</div>
+                                            </div>
+                                            <div className="absolute inset-x-0 -bottom-3 h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent rounded-full opacity-50" />
+                                        </div>
+                                        <div className="relative">
+                                            <div className="text-center">
+                                                <div className="text-3xl font-bold bg-gradient-to-b from-green-600 to-green-700 bg-clip-text text-transparent">
+                                                    {viewingCampaign.stats?.replied ?? 0}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground mt-1">回复数</div>
+                                            </div>
+                                            <div className="absolute inset-x-0 -bottom-3 h-1 bg-gradient-to-r from-transparent via-green-400 to-transparent rounded-full opacity-50" />
+                                        </div>
+                                        <div className="relative">
+                                            <div className="text-center">
+                                                <div className="text-3xl font-bold bg-gradient-to-b from-purple-600 to-purple-700 bg-clip-text text-transparent">
+                                                    {viewingCampaign.stats?.converted ?? 0}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground mt-1">转化数</div>
+                                            </div>
+                                            <div className="absolute inset-x-0 -bottom-3 h-1 bg-gradient-to-r from-transparent via-purple-400 to-transparent rounded-full opacity-50" />
+                                        </div>
+                                    </div>
+                                    {viewingCampaign.stats && viewingCampaign.stats.sent > 0 && (
+                                        <div className="mt-4 pt-4 border-t border-indigo-200/50 dark:border-indigo-800/30">
+                                            <div className="flex justify-center gap-8">
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-blue-600">
+                                                        {((viewingCampaign.stats.replied / viewingCampaign.stats.sent) * 100).toFixed(1)}%
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground">回复率</div>
+                                                </div>
+                                                <div className="text-center">
+                                                    <div className="text-lg font-bold text-green-600">
+                                                        {((viewingCampaign.stats.converted / viewingCampaign.stats.sent) * 100).toFixed(1)}%
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground">转化率</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+                    <DialogFooter className="border-t pt-4 gap-2">
+                        <Button variant="outline" onClick={() => setDetailOpen(false)}>
+                            关闭
+                        </Button>
+                        <Button variant="default" onClick={() => {
+                            setDetailOpen(false);
+                            if (viewingCampaign) openEdit(viewingCampaign);
+                        }}>
+                            <Eye className="h-4 w-4 mr-1.5" />
+                            编辑活动
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
             </Dialog>
         </div>
     );

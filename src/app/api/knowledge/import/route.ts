@@ -3,6 +3,7 @@ import { KnowledgeClient, Config, KnowledgeDocument, DataSourceType } from 'coze
 import { S3Storage } from 'coze-coding-dev-sdk';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { apiError, apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, checkRateLimit, escapeLikePattern } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 import { createHash } from 'crypto';
 
 // Allowed file extensions and their MIME types
@@ -207,7 +208,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       // Item 1: DB 写入失败时清理已上传的 S3 文件，防止存储泄漏
       if (dbError) {
         await safeDeleteS3(storageKey);
-        console.error('保存知识库条目失败:', dbError);
+        logger.agent.error('保存知识库条目失败', { error: dbError });
         return apiError('保存知识库条目失败', { status: HttpStatus.INTERNAL_SERVER_ERROR, internalMessage: dbError.message, code: 'DB_ERROR' });
       }
 
@@ -252,7 +253,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     // Item 1: DB 写入失败时清理已上传的 S3 文件，防止存储泄漏
     if (dbError) {
       await safeDeleteS3(storageKey);
-      console.error('保存知识库条目失败:', dbError);
+      logger.agent.error('保存知识库条目失败', { error: dbError });
       return apiError('保存知识库条目失败', { status: HttpStatus.INTERNAL_SERVER_ERROR, internalMessage: dbError.message, code: 'DB_ERROR' });
     }
 
@@ -320,7 +321,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       });
 
       if (dbError) {
-        console.error('保存知识库条目失败:', dbError);
+        logger.agent.error('保存知识库条目失败', { error: dbError });
         return apiError('保存知识库条目失败', { status: HttpStatus.INTERNAL_SERVER_ERROR, internalMessage: dbError.message, code: 'DB_ERROR' });
       }
 
@@ -357,7 +358,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   });
 
   if (dbError) {
-    console.error('保存知识库条目失败:', dbError);
+    logger.agent.error('保存知识库条目失败', { error: dbError });
     return apiError('保存知识库条目失败', { status: HttpStatus.INTERNAL_SERVER_ERROR, internalMessage: dbError.message, code: 'DB_ERROR' });
   }
 

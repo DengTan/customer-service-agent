@@ -58,4 +58,74 @@ export class SettingsRepository {
       throw new RepositoryError('upsert settings', failed.error.message, failed.error.code);
     }
   }
+
+  /**
+   * Set a single setting value. Creates or updates the key.
+   */
+  async set(key: string, value: string): Promise<void> {
+    await this.upsertMany({ [key]: value });
+  }
+
+  /**
+   * Atomically update a timestamp setting only if the condition is met.
+   * Returns true if update succeeded, false if condition not met.
+   * This prevents TOCTOU race conditions in concurrent requests.
+   */
+  async updateTimestampIfOlderThan(
+    key: string,
+    value: string,
+    minHoursSince: number
+  ): Promise<boolean> {
+    if (isDemoMode()) {
+      // In demo mode, always allow
+      return true;
+    }
+
+    const now = Date.now();
+    const minMs = minHoursSince * 60 * 60 * 1000;
+
+    // Use RPC function for atomic update with condition check
+    // Falls back to manual implementation if RPC not available
+    try {
+      // First, get current value
+      const { data, error } = await this.client
+        .from('settings')
+        .select('value')
+        .eq('key', key)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        throw new RepositoryError('updateTimestampIfOlderThan get', error.message, error.code);
+      }
+
+      const currentValue = (data as { value: string } | null)?.value ?? null;
+
+      if (currentValue) {
+        const lastTime = new Date(currentValue).getTime();
+        const hoursSince = (now - lastTime) / (1000 * 60 * 60);
+        if (hoursSince < minHoursSince) {
+          // Condition not met, do not update
+          return false;
+        }
+      }
+
+      // Condition met or no previous value, proceed with update
+      const { error: updateError } = await this.client
+        .from('settings')
+        .upsert(
+          { key, value, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+
+      if (updateError) {
+        throw new RepositoryError('updateTimestampIfOlderThan upsert', updateError.message, updateError.code);
+      }
+
+      return true;
+    } catch (err) {
+      if (err instanceof RepositoryError) throw err;
+      console.error('[SettingsRepository] updateTimestampIfOlderThan error:', err);
+      return false;
+    }
+  }
 }

@@ -16,6 +16,7 @@ export const DEMO_MAIN_BOTS: BotConfigRow[] = [
     collaboration_config: null,
     is_sub_agent: false,
     status: 'active',
+    platform_connection_id: null,
     created_at: '2026-01-01T00:00:00Z',
   },
   {
@@ -32,6 +33,7 @@ export const DEMO_MAIN_BOTS: BotConfigRow[] = [
     collaboration_config: null,
     is_sub_agent: false,
     status: 'active',
+    platform_connection_id: null,
     created_at: '2026-02-01T00:00:00Z',
   },
 ];
@@ -52,6 +54,7 @@ export const DEMO_SUB_AGENTS: BotConfigRow[] = [
     collaboration_config: { can_collaborate_with: ['demo-sub-2', 'demo-sub-3'], communication_mode: 'async' },
     is_sub_agent: true,
     status: 'active',
+    platform_connection_id: null,
     created_at: '2026-03-01T00:00:00Z',
   },
   {
@@ -68,6 +71,7 @@ export const DEMO_SUB_AGENTS: BotConfigRow[] = [
     collaboration_config: { can_collaborate_with: ['demo-sub-1', 'demo-sub-3'], communication_mode: 'async' },
     is_sub_agent: true,
     status: 'active',
+    platform_connection_id: null,
     created_at: '2026-03-02T00:00:00Z',
   },
   {
@@ -84,6 +88,7 @@ export const DEMO_SUB_AGENTS: BotConfigRow[] = [
     collaboration_config: { can_collaborate_with: ['demo-sub-1', 'demo-sub-2'], communication_mode: 'async' },
     is_sub_agent: true,
     status: 'active',
+    platform_connection_id: null,
     created_at: '2026-03-03T00:00:00Z',
   },
 ];

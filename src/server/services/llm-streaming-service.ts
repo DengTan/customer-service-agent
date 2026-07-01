@@ -7,6 +7,7 @@ import { ConversationService } from './conversation-service';
 import { SubAgentService } from './sub-agent-service';
 import { QualityService } from './quality-service';
 import { KnowledgeGapService } from './knowledge-gap-service';
+import { LLMClientAdapter } from './llm-client-adapter';
 import type { KnowledgeImageRef } from './knowledge-search-service';
 import type { MessageHistoryItem } from '@/server/repositories/conversation-repository';
 
@@ -21,6 +22,7 @@ export interface LLMStreamOptions {
   customHeaders?: Record<string, string>;
   knowledgeMinScore?: number;
   parentBotId?: string; // 主Bot ID，用于子Agent委派
+  parentBotName?: string; // 主Bot名称，用于前端显示
   enableSubAgentDelegation?: boolean; // 是否启用子Agent委派
   aiModel?: string; // 普通模型（来自设置）
   multimodalModel?: string; // 多模态模型（来自设置）
@@ -30,6 +32,11 @@ export interface LLMStreamOptions {
   systemPrompt?: string; // 系统提示词（来自设置）
   temperature?: number; // AI 温度（来自设置）
   maxTokens?: number; // AI 最大 Token（来自设置）
+  // 扩展 LLM Provider 配置
+  llmProviderId?: string; // LLM Provider ID（优先使用）
+  llmProviderBaseUrl?: string; // Provider API Base URL
+  llmProviderApiKey?: string; // Provider API Key
+  llmProviderType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom'; // Provider 类型
 }
 
 type ImageUrlPart = { type: 'image_url'; image_url: { url: string; detail?: string } };
@@ -279,7 +286,7 @@ export class LLMStreamingService {
                 [], // no images in disabled multimodal path
                 fallbackBreakdown,
               );
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources, confidence: 0, confidence_breakdown: fallbackBreakdown, has_tool_calls: false })}\n\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources, confidence: 0, confidence_breakdown: fallbackBreakdown, has_tool_calls: false, botId: options.parentBotId, botName: options.parentBotName })}\n\n`));
               controller.close();
               return;
             }
@@ -287,26 +294,60 @@ export class LLMStreamingService {
             llmModel = options.aiModel || defaultAiModel;
           }
 
-          const llmConfig = new Config();
-          const customHeaders = options.customHeaders || {};
-          const llmClient = new LLMClient(llmConfig, customHeaders);
+          // Determine which LLM client to use based on provider type
           const llmTemperature = options.temperature ?? 0.7;
           const llmMaxTokens = options.maxTokens;
+          const customHeaders = options.customHeaders || {};
 
-          // Initial LLM call
-          const llmStreamOptions: { model: string; temperature: number; max_tokens?: number } = {
-            model: llmModel,
-            temperature: llmTemperature,
-          };
-          if (llmMaxTokens) {
-            llmStreamOptions.max_tokens = llmMaxTokens;
+          // Check if using extended LLM provider (non-Coze)
+          const useExtendedProvider = options.llmProviderType && options.llmProviderType !== 'coze' && options.llmProviderBaseUrl && options.llmProviderApiKey;
+          
+          let llmStreamIterator: AsyncGenerator<{ content?: string }>;
+
+          if (useExtendedProvider) {
+            // Use generic OpenAI-compatible adapter for extended providers
+            const adapter = new LLMClientAdapter({
+              baseUrl: options.llmProviderBaseUrl!,
+              apiKey: options.llmProviderApiKey!,
+              customHeaders: options.customHeaders,
+            });
+
+            const streamOptions = {
+              model: llmModel,
+              temperature: llmTemperature,
+            };
+            if (llmMaxTokens) {
+              (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
+            }
+
+            llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
+          } else {
+            // Use Coze SDK (default)
+            const llmConfig = new Config();
+            const llmClient = new LLMClient(llmConfig, customHeaders);
+
+            const llmStreamOptions: { model: string; temperature: number; max_tokens?: number } = {
+              model: llmModel,
+              temperature: llmTemperature,
+            };
+            if (llmMaxTokens) {
+              llmStreamOptions.max_tokens = llmMaxTokens;
+            }
+
+            const cozeStream = llmClient.stream(
+              llmMessages as Parameters<typeof llmClient.stream>[0],
+              llmStreamOptions,
+            );
+
+            // Convert Coze stream to generic iterator
+            llmStreamIterator = (async function* () {
+              for await (const chunk of cozeStream) {
+                yield { content: chunk.content?.toString() };
+              }
+            })();
           }
-          const llmStream = llmClient.stream(
-            llmMessages as Parameters<typeof llmClient.stream>[0],
-            llmStreamOptions,
-          );
 
-          for await (const chunk of llmStream) {
+          for await (const chunk of llmStreamIterator) {
             if (isAborted) break;
             if (chunk.content) {
               const text = chunk.content.toString();
@@ -342,12 +383,51 @@ export class LLMStreamingService {
               content: `以下是工具执行结果：\n\n${toolResultsSummary}\n\n请根据工具执行结果，用自然语言向用户总结并解释这些结果。`,
             });
 
-            const continueStream = llmClient.stream(
-              llmMessages as Parameters<typeof llmClient.stream>[0],
-              llmStreamOptions,
-            );
+            // Get continuation stream using the same provider
+            let continueStreamIterator: AsyncGenerator<{ content?: string }>;
 
-            for await (const contChunk of continueStream) {
+            if (useExtendedProvider && options.llmProviderBaseUrl && options.llmProviderApiKey) {
+              const adapter = new LLMClientAdapter({
+                baseUrl: options.llmProviderBaseUrl,
+                apiKey: options.llmProviderApiKey,
+                customHeaders: options.customHeaders,
+              });
+
+              const streamOptions = {
+                model: llmModel,
+                temperature: llmTemperature,
+              };
+              if (llmMaxTokens) {
+                (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
+              }
+
+              continueStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
+            } else {
+              const llmConfig = new Config();
+              const customHeaders = options.customHeaders || {};
+              const llmClient = new LLMClient(llmConfig, customHeaders);
+
+              const continueStreamOptions: { model: string; temperature: number; max_tokens?: number } = {
+                model: llmModel,
+                temperature: llmTemperature,
+              };
+              if (llmMaxTokens) {
+                continueStreamOptions.max_tokens = llmMaxTokens;
+              }
+
+              const cozeContinueStream = llmClient.stream(
+                llmMessages as Parameters<typeof llmClient.stream>[0],
+                continueStreamOptions,
+              );
+
+              continueStreamIterator = (async function* () {
+                for await (const chunk of cozeContinueStream) {
+                  yield { content: chunk.content?.toString() };
+                }
+              })();
+            }
+
+            for await (const contChunk of continueStreamIterator) {
               if (contChunk.content) {
                 const text = contChunk.content.toString();
                 fullContent += text;
@@ -552,6 +632,8 @@ export class LLMStreamingService {
             tool_calls: toolCallsData.length > 0 ? toolCallsData : undefined,
             delegations: delegationResults.length > 0 ? delegationResults : undefined,
             images: extractedImages.length > 0 ? extractedImages : undefined,
+            botId: options.parentBotId,
+            botName: options.parentBotName,
           })}\n\n`));
 
           // Post-stream operations (fire-and-forget, non-blocking)
@@ -836,8 +918,8 @@ async function parseAndExecuteToolCalls(
 
       const toolResult = await toolExecution.executeTool(toolName, args);
       toolExecutions.push({ name: toolName, args, result: toolResult.result, confidence: toolResult.confidence });
-    } catch {
-      // Tool call parsing failed, skip
+    } catch (err) {
+      logger.warn('Tool call parse failed', { toolName, error: String(err) });
     }
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { QuickReplyService } from '@/server/services/quick-reply-service';
 import { checkRateLimit } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 import * as XLSX from 'xlsx';
 
 const service = new QuickReplyService();
@@ -77,7 +78,7 @@ export const GET = async (request: NextRequest) => {
       },
     });
   } catch (error) {
-    console.error('Export failed:', error);
+    logger.api.error('Export failed', { error });
     return NextResponse.json({ error: '导出失败' }, { status: 500 });
   }
 };

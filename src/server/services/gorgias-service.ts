@@ -5,6 +5,7 @@
 
 import { getLogger } from '@/lib/logger';
 import { gorgiasRepository, type GorgiasTicket, type GorgiasMessage, type GorgiasCustomer, type GorgiasUser, type GorgiasTag } from '@/server/repositories/gorgias-repository';
+import { encrypt, safeDecrypt } from '@/lib/crypto';
 
 const logger = getLogger('GorgiasService');
 

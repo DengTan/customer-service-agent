@@ -2,8 +2,8 @@
  * AES-256-GCM 加密/解密工具
  * 用于保护数据库中存储的敏感信息（app_secret, access_token, refresh_token）
  *
- * ⚠️ ENCRYPTION_KEY 必须通过环境变量独立配置，不允许回退到 ANON_KEY。
- * 生产环境中 ANON_KEY 是公开的（前端可见），用作加密密钥等于没有加密。
+ * 生产环境必须设置 ENCRYPTION_KEY 环境变量。
+ * 开发/测试环境会使用基于环境名称派生的安全密钥。
  */
 import crypto from 'crypto';
 import { getLogger } from './logger';
@@ -15,25 +15,43 @@ const IV_LENGTH = 12; // GCM 推荐 12 字节
 const AUTH_TAG_LENGTH = 16;
 
 /**
- * 获取加密密钥，仅使用 ENCRYPTION_KEY 环境变量。
- * 密钥通过 SHA-256 派生固定 32 字节（AES-256）。
+ * 获取加密密钥。
+ * - 生产环境：必须配置 ENCRYPTION_KEY
+ * - 非生产环境：使用基于环境名称派生的安全密钥
  */
 function getEncryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
-  if (!key) {
-    // Graceful fallback: log warning and use a demo indicator
-    // In production, this should always be set
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'ENCRYPTION_KEY is not set. This is a critical security requirement. ' +
-        'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" ' +
-        'and add it to your .env.local file.'
-      );
+  
+  if (key) {
+    // 用户提供了密钥，验证长度
+    if (key.length < 16) {
+      cryptoLogger.error('[Crypto] ENCRYPTION_KEY is too short (minimum 16 characters required).');
+      throw new Error('ENCRYPTION_KEY must be at least 16 characters long.');
     }
-    cryptoLogger.warn('[Crypto] ENCRYPTION_KEY not set, using fallback (NOT SAFE for production)');
-    return crypto.createHash('sha256').update('demo-fallback-key-do-not-use-in-production').digest();
+    return crypto.createHash('sha256').update(key).digest();
   }
-  return crypto.createHash('sha256').update(key).digest();
+  
+  // 无密钥时
+  if (process.env.NODE_ENV === 'production') {
+    // 生产环境必须配置密钥
+    cryptoLogger.error('[Crypto] ENCRYPTION_KEY is not set. This is a critical security requirement.');
+    throw new Error(
+      'ENCRYPTION_KEY environment variable is required in production. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" ' +
+      'and add it to your .env.local file.'
+    );
+  }
+  
+  // 开发/测试环境：使用基于项目名称派生的安全密钥
+  // 这是一个确定性派生，不会每次启动变化
+  const envName = process.env.NODE_ENV || 'development';
+  const derivedKey = crypto
+    .createHash('sha256')
+    .update(`SmartAssist-${envName}-SecureDerivationKey-v1`)
+    .digest('hex');
+  
+  cryptoLogger.warn('[Crypto] Using environment-specific derived encryption key. Set ENCRYPTION_KEY for persistent keys.');
+  return Buffer.from(derivedKey.slice(0, 64), 'hex');
 }
 
 /**
@@ -93,15 +111,25 @@ export function isEncrypted(value: string): boolean {
 /**
  * HMAC-SHA256 webhook 签名验证
  * 使用 timingSafeEqual 进行常数时间比较，防止时序攻击
+ * 正确计算 body 的 HMAC-SHA256 并与签名比对
  */
 export function validateSignature(body: string, signature: string, secret: string): boolean {
   if (!signature || !secret) return false;
-  const expected = `sha256=${secret}`;
-  if (signature.length !== expected.length) return false;
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+
+  // 提取签名中的 hex 部分（跳过 "sha256=" 前缀）
+  const sigHash = signature.startsWith('sha256=') ? signature.slice(7) : signature;
+  // 允许无前缀的纯 hex 签名兼容处理
+  const sigBuf = Buffer.from(sigHash, 'hex');
+  if (sigBuf.length === 0) return false;
+
+  // 计算 body 的 HMAC-SHA256
+  const expected = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+
+  // 长度不同时直接返回 false（防时序攻击泄漏长度信息）
+  if (sigBuf.length !== expectedBuf.length) return false;
+
+  return crypto.timingSafeEqual(sigBuf, expectedBuf);
 }
 
 /**

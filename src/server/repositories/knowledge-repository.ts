@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
 import { DEMO_ITEMS } from './demo-data/demo-knowledge';
+import { escapeLikePattern } from '@/lib/api-utils';
 export interface KnowledgeItemFilters {
   [key: string]: unknown;
 }
@@ -87,9 +88,10 @@ export interface VersionWithCreator {
   version: number;
   title: string;
   content: string;
-  category: string | null;
   change_summary: string | null;
   created_by: string | null;
+  chunk_diff: Record<string, unknown> | null;
+  chunk_count: number | null;
   created_at: string;
   creator_name: string | null;
 }
@@ -115,6 +117,7 @@ export class KnowledgeRepository {
     // 1) 默认仅查询 status != 'deleted' 的条目
     // 2) 默认排除已归档（archived_at 非空）；includeArchived=true 时返回全部
     // 3) 默认排除已过期（expires_at 已过）；includeExpired=true 时返回全部（包含未到期）
+    // 4) 支持 _filters 参数过滤（status / category / search）
     let query = this.client
       .from('knowledge_items')
       .select('*')
@@ -122,6 +125,19 @@ export class KnowledgeRepository {
 
     if (!options.includeArchived) {
       query = query.is('archived_at', null);
+    }
+
+    // Apply _filters (status, category, search) — mirrors real-mode pattern used in other repositories
+    const filters = _filters as { status?: string; category?: string; search?: string };
+    if (filters.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters.category) {
+      query = query.eq('category', filters.category);
+    }
+    if (filters.search) {
+      const escaped = escapeLikePattern(filters.search);
+      query = query.or(`title.ilike.%${escaped}%,name.ilike.%${escaped}%`);
     }
 
     query = query.order('archived_at', { ascending: true }).order('created_at', { ascending: false });
@@ -233,8 +249,8 @@ export class KnowledgeRepository {
     if (isDemoMode()) {
       if (!filters.item_id) return [];
       return [
-        { id: 'demo-ver-1', knowledge_item_id: filters.item_id, version: 2, title: '退换货政策', content: '7天无理由退换货...', category: '售后', change_summary: '更新退换货时限', created_by: null, created_at: '2026-06-01T00:00:00Z', creator_name: null },
-        { id: 'demo-ver-2', knowledge_item_id: filters.item_id, version: 1, title: '退换货政策', content: '15天无理由退换货...', category: '售后', change_summary: '初始版本', created_by: null, created_at: '2026-01-01T00:00:00Z', creator_name: null },
+        { id: 'demo-ver-1', knowledge_item_id: filters.item_id, version: 2, title: '退换货政策', content: '7天无理由退换货...', change_summary: '更新退换货时限', created_by: null, chunk_diff: null, chunk_count: 3, created_at: '2026-06-01T00:00:00Z', creator_name: null },
+        { id: 'demo-ver-2', knowledge_item_id: filters.item_id, version: 1, title: '退换货政策', content: '15天无理由退换货...', change_summary: '初始版本', created_by: null, chunk_diff: null, chunk_count: 2, created_at: '2026-01-01T00:00:00Z', creator_name: null },
       ];
     }
     if (!filters.item_id) {
@@ -251,23 +267,26 @@ export class KnowledgeRepository {
       throw new RepositoryError('list versions', error.message, error.code);
     }
 
-    const enrichedVersions = await Promise.all(
-      (versions || []).map(async (v: Record<string, unknown>) => {
-        let creatorName = null;
-        if (v.created_by) {
-          const { data: user } = await this.client
-            .from('users')
-            .select('name')
-            .eq('id', v.created_by as string)
-            .maybeSingle();
-          creatorName = (user as { name: string } | null)?.name || null;
-        }
-        return {
-          ...v,
-          creator_name: creatorName,
-        } as VersionWithCreator;
-      })
-    );
+    // Fix N+1 query: batch fetch all creators instead of one query per version
+    const versionsList = (versions as Array<Record<string, unknown>>) || [];
+    const creatorIds = [...new Set(versionsList.map(v => v.created_by).filter(Boolean))] as string[];
+    
+    let userMap: Map<string, string> = new Map();
+    if (creatorIds.length > 0) {
+      const { data: users } = await this.client
+        .from('users')
+        .select('id, name')
+        .in('id', creatorIds);
+      
+      if (users) {
+        userMap = new Map((users as Array<{ id: string; name: string }>).map(u => [u.id, u.name]));
+      }
+    }
+
+    const enrichedVersions: VersionWithCreator[] = versionsList.map((v) => ({
+      ...v,
+      creator_name: v.created_by ? (userMap.get(v.created_by as string) || null) : null,
+    } as VersionWithCreator));
 
     return enrichedVersions;
   }

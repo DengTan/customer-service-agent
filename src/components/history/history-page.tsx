@@ -68,34 +68,29 @@ export function HistoryPage() {
       const params = new URLSearchParams();
       // Use searchInputRef to avoid stale closure
       if (searchInputRef.current) params.set('search', searchInputRef.current);
-      if (statusFilter === 'rated') params.set('status', 'ended');
+      // Use server-side has_rating filter
+      if (statusFilter === 'rated') {
+        params.set('has_rating', 'true');
+      } else if (statusFilter === 'unrated') {
+        params.set('has_rating', 'false');
+      }
+      if (sourceFilter !== 'all') {
+        params.set('source', sourceFilter);
+      }
+      if (dateRange.start) {
+        params.set('start_date', dateRange.start);
+      }
+      if (dateRange.end) {
+        params.set('end_date', dateRange.end);
+      }
       params.set('page', String(currentPage));
       params.set('limit', String(pageSize));
       const res = await fetch(`/api/conversations?${params.toString()}`);
       const data = await res.json();
-      let convs: Conversation[] = data.conversations || [];
+      const convs: Conversation[] = data.conversations || [];
       if (data.total !== undefined) {
         setTotalCount(data.total || convs.length);
       }
-
-      // Client-side filters
-      if (statusFilter === 'rated') {
-        convs = convs.filter((c) => c.rating !== null);
-      } else if (statusFilter === 'unrated') {
-        convs = convs.filter((c) => c.rating === null);
-      }
-
-      if (sourceFilter !== 'all') {
-        convs = convs.filter((c) => c.source === sourceFilter);
-      }
-
-      if (dateRange.start) {
-        convs = convs.filter((c) => c.created_at.substring(0, 10) >= dateRange.start);
-      }
-      if (dateRange.end) {
-        convs = convs.filter((c) => c.created_at.substring(0, 10) <= dateRange.end);
-      }
-
       setConversations(convs);
     } catch (err) {
       console.error('加载历史记录失败:', err);
@@ -141,8 +136,9 @@ export function HistoryPage() {
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!confirm(`确定要删除选中的 ${selectedIds.size} 条对话记录吗？`)) return;
+    toast.loading('正在删除...', { id: 'batch-delete' });
     try {
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         Array.from(selectedIds).map((id) =>
           fetch(`/api/conversations/${id}`, { method: 'DELETE' }).then(async (res) => {
             if (!res.ok) throw new Error(`删除失败: ${id}`);
@@ -150,15 +146,38 @@ export function HistoryPage() {
           })
         )
       );
-      setConversations((prev) => prev.filter((c) => !selectedIds.has(c.id)));
-      setTotalCount((prev) => prev - results.length);
+
+      // Separate successful and failed deletions
+      const successfulIds: string[] = [];
+      const failedIds: string[] = [];
+      results.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          successfulIds.push(result.value);
+        } else {
+          failedIds.push(result.reason?.message || '未知错误');
+        }
+      });
+
+      // Update UI only with successful deletions
+      if (successfulIds.length > 0) {
+        setConversations((prev) => prev.filter((c) => !successfulIds.includes(c.id)));
+        setTotalCount((prev) => Math.max(0, prev - successfulIds.length));
+      }
+
       setSelectedIds(new Set());
       setBatchMode(false);
-      toast.success(`成功删除 ${results.length} 条对话记录`);
+
+      // Show appropriate message
+      if (failedIds.length === 0) {
+        toast.success(`成功删除 ${successfulIds.length} 条对话记录`, { id: 'batch-delete' });
+      } else if (successfulIds.length > 0) {
+        toast.warning(`删除完成：成功 ${successfulIds.length} 条，失败 ${failedIds.length} 条`, { id: 'batch-delete' });
+      } else {
+        toast.error(`删除失败：${failedIds.length} 条`, { id: 'batch-delete' });
+      }
     } catch (err) {
       console.error('批量删除失败:', err);
-      toast.error('批量删除失败，请重试');
-      loadConversations();
+      toast.error('批量删除失败，请重试', { id: 'batch-delete' });
     }
   };
 
@@ -181,31 +200,26 @@ export function HistoryPage() {
         return;
       }
 
-      toast.loading('正在导出...', { id: 'export' });
+      toast.loading(`正在准备导出 (0/${selectedConversations.length})...`, { id: 'export' });
 
       // CSV 表头
       const headers = ['对话ID', '对话标题', '状态', '评分', '来源', '创建时间', '角色', '消息时间', '消息内容'];
       const rows: string[][] = [headers];
+      let exportSuccess = true;
+      const maxMessagesPerConversation = 100; // Limit messages per conversation
 
       // 逐个获取对话详情
-      for (const conv of selectedConversations) {
-        const data = await fetchConversationWithMessages(conv.id);
-        const messages = data.messages || [];
+      for (let i = 0; i < selectedConversations.length; i++) {
+        const conv = selectedConversations[i];
+        try {
+          // Update progress
+          toast.loading(`正在获取对话 ${i + 1}/${selectedConversations.length}...`, { id: 'export' });
 
-        if (messages.length === 0) {
-          // 无消息的对话也保留一行
-          rows.push([
-            escapeCSV(conv.id),
-            escapeCSV(conv.title || ''),
-            escapeCSV(conv.status === 'active' ? '进行中' : '已结束'),
-            escapeCSV(conv.rating || ''),
-            escapeCSV(conv.source || 'web'),
-            escapeCSV(conv.created_at),
-            '', '', ''
-          ]);
-        } else {
-          // 每条消息一行
-          for (const msg of messages) {
+          const data = await fetchConversationWithMessages(conv.id);
+          const messages = (data.messages || []).slice(0, maxMessagesPerConversation);
+
+          if (messages.length === 0) {
+            // 无消息的对话也保留一行
             rows.push([
               escapeCSV(conv.id),
               escapeCSV(conv.title || ''),
@@ -213,11 +227,37 @@ export function HistoryPage() {
               escapeCSV(conv.rating || ''),
               escapeCSV(conv.source || 'web'),
               escapeCSV(conv.created_at),
-              escapeCSV(msg.role === 'user' ? '客户' : msg.role === 'assistant' ? 'AI客服' : '系统'),
-              escapeCSV(msg.created_at),
-              escapeCSV(msg.content),
+              '', '', ''
             ]);
+          } else {
+            // 每条消息一行
+            for (const msg of messages) {
+              rows.push([
+                escapeCSV(conv.id),
+                escapeCSV(conv.title || ''),
+                escapeCSV(conv.status === 'active' ? '进行中' : '已结束'),
+                escapeCSV(conv.rating || ''),
+                escapeCSV(conv.source || 'web'),
+                escapeCSV(conv.created_at),
+                escapeCSV(msg.role === 'user' ? '客户' : msg.role === 'assistant' ? 'AI客服' : '系统'),
+                escapeCSV(msg.created_at),
+                escapeCSV(msg.content),
+              ]);
+            }
           }
+        } catch (convErr) {
+          console.error(`获取对话 ${conv.id} 失败:`, convErr);
+          exportSuccess = false;
+          // Still add a row for this conversation with error info
+          rows.push([
+            escapeCSV(conv.id),
+            escapeCSV(conv.title || ''),
+            escapeCSV(conv.status === 'active' ? '进行中' : '已结束'),
+            escapeCSV(conv.rating || ''),
+            escapeCSV(conv.source || 'web'),
+            escapeCSV(conv.created_at),
+            '导出失败', '', ''
+          ]);
         }
       }
 
@@ -234,7 +274,11 @@ export function HistoryPage() {
 
       setSelectedIds(new Set());
       setBatchMode(false);
-      toast.success(`已导出 ${selectedConversations.length} 条对话`, { id: 'export' });
+      if (exportSuccess) {
+        toast.success(`已导出 ${selectedConversations.length} 条对话`, { id: 'export' });
+      } else {
+        toast.warning(`导出完成，但部分对话获取失败`, { id: 'export' });
+      }
     } catch (err) {
       console.error('批量导出失败:', err);
       toast.error('批量导出失败，请重试', { id: 'export' });
@@ -244,10 +288,11 @@ export function HistoryPage() {
   const handleViewDetail = async (conv: Conversation) => {
     setDetailConv(conv);
     setDetailMessages([]);
-    setDetailPage(1);
+    setDetailPage(0);
     setDetailLoading(true);
     try {
-      const params = new URLSearchParams({ page: '1', limit: String(detailPageSize) });
+      // Load newest messages first with DESC order
+      const params = new URLSearchParams({ page: '1', limit: String(detailPageSize), order: 'desc' });
       const res = await fetch(`/api/conversations/${conv.id}?${params}`);
       if (!res.ok) throw new Error('加载失败');
       const data = await res.json();
@@ -264,15 +309,29 @@ export function HistoryPage() {
 
   const loadMoreMessages = async () => {
     if (!detailConv || detailLoading) return;
+    // detailPage tracks how many pages have been loaded
     const nextPage = detailPage + 1;
     setDetailLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(nextPage), limit: String(detailPageSize) });
+      // Calculate offset for older messages (skip already loaded messages)
+      const offset = nextPage * detailPageSize;
+      const params = new URLSearchParams({
+        page: '1',
+        limit: String(detailPageSize),
+        offset: String(offset),
+        order: 'desc'
+      });
       const res = await fetch(`/api/conversations/${detailConv.id}?${params}`);
       if (!res.ok) throw new Error('加载更多消息失败');
       const data = await res.json();
-      setDetailMessages((prev) => [...(data.messages || []), ...prev]);
-      setDetailPage(nextPage);
+      if (data.messages && data.messages.length > 0) {
+        // Prepend older messages at the top (maintaining DESC order: newest first)
+        setDetailMessages((prev) => [...data.messages, ...prev]);
+        setDetailPage(nextPage);
+      } else {
+        // No more messages to load
+        setDetailTotalMessages(detailMessages.length);
+      }
     } catch (err) {
       console.error('加载更多消息失败:', err);
       toast.error('加载更多消息失败');
@@ -538,7 +597,28 @@ export function HistoryPage() {
       {/* List */}
       <div className="flex-1 overflow-y-auto px-6 py-4 pb-24">
         {loading ? (
-          <div className="text-center py-12 text-muted-foreground text-sm">加载中...</div>
+          <div className="space-y-3 max-w-4xl">
+            {[...Array(5)].map((_, idx) => (
+              <div
+                key={idx}
+                className="border border-border rounded-xl bg-card overflow-hidden animate-pulse"
+              >
+                <div className="flex items-center px-5 py-4">
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+                      <div className="h-4 w-16 bg-muted rounded-full animate-pulse" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+                      <div className="h-3 w-20 bg-muted rounded animate-pulse" />
+                      <div className="h-3 w-16 bg-muted rounded animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : conversations.length === 0 ? (
           <div className="text-center py-16 animate-fadeIn">
             <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
@@ -769,7 +849,8 @@ export function HistoryPage() {
                   type="number"
                   min={1}
                   max={totalPages}
-                  value={jumpPage || currentPage}
+                  placeholder={String(currentPage)}
+                  value={jumpPage}
                   onChange={(e) => setJumpPage(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -782,7 +863,8 @@ export function HistoryPage() {
                       }
                     }
                   }}
-                  className="w-12 h-7 px-2 text-center border border-border rounded bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  onBlur={() => setJumpPage('')}
+                  className="w-12 h-7 px-2 text-center border border-border rounded bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground/50"
                 />
                 <span className="text-muted-foreground">页</span>
               </div>
@@ -829,6 +911,23 @@ export function HistoryPage() {
                 </div>
               ) : detailMessages.length > 0 ? (
                 <>
+                  {/* Load more button at the top */}
+                  {detailMessages.length < detailTotalMessages && (
+                    <div className="flex justify-center pb-2">
+                      <button
+                        onClick={loadMoreMessages}
+                        disabled={detailLoading}
+                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {detailLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                        加载更早消息 ({detailTotalMessages - detailMessages.length} 条)
+                      </button>
+                    </div>
+                  )}
                   {detailMessages.map((msg, idx) => (
                     <div
                       key={msg.id}
@@ -853,17 +952,6 @@ export function HistoryPage() {
                       </div>
                     </div>
                   ))}
-                  {detailMessages.length < detailTotalMessages && (
-                    <div className="flex justify-center pt-2">
-                      <button
-                        onClick={loadMoreMessages}
-                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        <ChevronUp className="w-4 h-4" />
-                        加载更早消息 ({detailTotalMessages - detailMessages.length} 条)
-                      </button>
-                    </div>
-                  )}
                 </>
               ) : (
                 <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple } from '@/lib/api-utils';
+import { apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, requirePermission } from '@/lib/api-utils';
 import { logger } from '@/lib/logger';
 import { ConversationService } from '@/server/services/conversation-service';
 import { CustomerService } from '@/server/services/customer-service';
@@ -10,14 +10,35 @@ const conversationService = new ConversationService();
 const customerService = new CustomerService();
 
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'conversations', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
   const search = searchParams.get('search');
   const page = parseInt(searchParams.get('page') || '1', 10);
   const limit = parseInt(searchParams.get('limit') || '20', 10);
+  const hasRatingParam = searchParams.get('has_rating');
+  const source = searchParams.get('source');
+  const start_date = searchParams.get('start_date');
+  const end_date = searchParams.get('end_date');
+
+  // Parse has_rating: 'true' -> true, 'false' -> false, null -> no filter
+  let has_rating: boolean | null = null;
+  if (hasRatingParam === 'true') has_rating = true;
+  else if (hasRatingParam === 'false') has_rating = false;
 
   const offset = (page - 1) * limit;
-  const result = await conversationService.listConversations({ status, search, limit, offset });
+  const result = await conversationService.listConversations({
+    status,
+    search,
+    limit,
+    offset,
+    has_rating,
+    source,
+    start_date,
+    end_date,
+  });
   return apiSuccess({
     conversations: result.conversations,
     total: result.total,
@@ -28,6 +49,8 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'conversations', 'write');
+  if (denied) return denied;
   const { data: body, error: parseError } = await parseJsonBody<{
     title?: string;
     source?: string;

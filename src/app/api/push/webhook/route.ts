@@ -2,6 +2,14 @@ import { NextRequest } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { apiError, apiSuccess, HttpStatus, withErrorHandlerSimple } from '@/lib/api-utils';
 import { validateSignature } from '@/lib/crypto';
+import { logger } from '@/lib/logger';
+
+/**
+ * Escape special regex characters to prevent regex injection.
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // POST - Receive webhook events from external platforms
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
@@ -17,16 +25,19 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     .eq('key', 'push_webhook_secret')
     .maybeSingle();
 
-  const webhookSecret = (secretSetting as { value: string } | null)?.value || 'default-secret';
+  const webhookSecret = (secretSetting as { value: string } | null)?.value;
 
-  // Validate signature — always validate if webhookSecret is configured
-  if (webhookSecret && webhookSecret !== 'default-secret') {
-    if (!signature) {
-      return apiError("Missing signature", { status: 401, code: "MISSING_SIGNATURE" });
-    }
-    if (!validateSignature(body, signature, webhookSecret)) {
-      return apiError("Invalid signature", { status: 401, code: "INVALID_SIGNATURE" });
-    }
+  // 如果未配置 secret，以失败安全方式拒绝请求，不允许跳过签名验证
+  if (!webhookSecret || webhookSecret === 'default-secret') {
+    return apiError("Webhook secret 未配置，无法处理请求", { status: 500, code: "SECRET_NOT_CONFIGURED" });
+  }
+
+  // Validate signature
+  if (!signature) {
+    return apiError("Missing signature", { status: 401, code: "MISSING_SIGNATURE" });
+  }
+  if (!validateSignature(body, signature, webhookSecret)) {
+    return apiError("Invalid signature", { status: 401, code: "INVALID_SIGNATURE" });
   }
 
   const event = JSON.parse(body);
@@ -51,7 +62,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     .single();
 
   if (logError) {
-    console.error('记录事件日志失败:', logError);
+    logger.api.error('Failed to log webhook event', { error: logError, eventType });
   }
 
   // Find matching enabled templates
@@ -80,7 +91,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     // Replace template variables with event data
     let content = (template as { content_template: string }).content_template;
     for (const [key, value] of Object.entries(eventData)) {
-      content = content.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+      // Escape regex special characters to prevent regex injection
+      const escapedKey = escapeRegExp(key);
+      content = content.replace(new RegExp(`\\{${escapedKey}\\}`, 'g'), String(value));
     }
     // Also replace common variables
     content = content.replace(/\{order_id\}/g, orderId);
@@ -100,7 +113,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
         });
 
       if (insertError) {
-        console.error('创建推送记录失败:', insertError);
+        logger.api.error('Failed to create push record', { error: insertError, eventType, templateId: (template as { id: string }).id });
       }
     }
   }

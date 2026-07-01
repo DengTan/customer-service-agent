@@ -70,4 +70,18 @@ export const FRONTEND = {
   NOW_REFRESH_INTERVAL_MS: 10_000, // 10 seconds - queue wait time refresh
   SEARCH_DEBOUNCE_MS: 300, // 300ms - search input debounce
   AGENT_STATUS_POLL_MS: 5_000, // 5 seconds - agent status polling
+  TIME_DIVIDER_MS: 5 * 60 * 1000, // 5 minutes - time divider gap
+} as const;
+
+// ============================================================
+// 工单管理
+// ============================================================
+export const TICKET = {
+  PAGE_SIZE: 50,
+  MAX_TITLE_LENGTH: 500,
+  MAX_DESCRIPTION_LENGTH: 5000,
+  MAX_COMMENT_LENGTH: 5000,
+  BATCH_MAX_SIZE: 100,
+  EXPORT_MAX_ROWS: 5000,
+  CUSTOMER_TICKET_LIMIT: 20,
 } as const;

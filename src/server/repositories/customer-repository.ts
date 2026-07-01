@@ -87,7 +87,8 @@ export class CustomerRepository {
       query = query.eq('source_platform', filters.platform);
     }
     if (filters.tag) {
-      query = query.contains('tags', [filters.tag]);
+      // Use contains for JSONB array to check if it contains the tag
+      query = query.contains('tags', filters.tag);
     }
 
     const { data, error, count } = await query;
@@ -167,7 +168,26 @@ export class CustomerRepository {
       throw new RepositoryError('update customer', error.message, error.code);
     }
 
+    // 当 tags 更新时，同步标签计数（Fire-and-forget）
+    if (input.tags !== undefined) {
+      this.syncTagCounts(input.tags).catch(() => {});
+    }
+
     return data;
+  }
+
+  /**
+   * 同步标签计数：将给定标签名称数组对应的 customer_tags 记录重新计算 customer_count
+   */
+  private async syncTagCounts(tagNames: string[]): Promise<void> {
+    try {
+      await this.client.rpc('update_customer_tag_counts_batch', {
+        tag_names: tagNames,
+      });
+    } catch (err) {
+      // 静默失败，不阻断主流程，但记录日志便于排查
+      console.error('[CustomerRepository] Failed to sync tag counts:', err);
+    }
   }
 
   async delete(id: string): Promise<void> {
@@ -308,5 +328,35 @@ export class CustomerRepository {
       return customerData[0] ?? null;
     }
     return customerData ?? null;
+  }
+
+  /**
+   * 按标签名查询客户列表（支持分页）
+   * 用于标签详情页展示使用该标签的所有客户
+   */
+  async findByTag(tagName: string, limit = 10, offset = 0): Promise<{ customers: CustomerRow[]; total: number }> {
+    if (isDemoMode()) {
+      const filtered = (DEMO_CUSTOMERS as unknown as CustomerRow[]).filter((c) => c.tags?.includes(tagName));
+      return {
+        customers: filtered.slice(offset, offset + limit),
+        total: filtered.length,
+      };
+    }
+
+    const { data, error, count } = await this.client
+      .from('customers')
+      .select('*', { count: 'exact' })
+      .contains('tags', tagName)
+      .order('last_seen_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      throw new RepositoryError('find customers by tag', error.message, error.code);
+    }
+
+    return {
+      customers: (data ?? []) as CustomerRow[],
+      total: count ?? 0,
+    };
   }
 }

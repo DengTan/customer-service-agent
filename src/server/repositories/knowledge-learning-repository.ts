@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
+import { logger } from '@/lib/logger';
 
 export interface KnowledgeLearningItem {
   id: string;
@@ -191,11 +192,11 @@ export class KnowledgeLearningRepository {
       }
 
       const knowledgeItems = totalKnowledgeResult.count || 0;
+      const weekTotal = approvedWeekResult.count || 0;
       const pendingItems = pendingResult.count || 0;
-      const coverageRatio =
-        knowledgeItems > 0
-          ? Math.min(Math.round((knowledgeItems / (knowledgeItems + pendingItems * 0.5)) * 100), 100)
-          : 0;
+      const coverageRatio = (weekTotal + pendingItems) > 0
+        ? Math.round((weekTotal / (weekTotal + pendingItems)) * 100)
+        : 0;
 
       return {
         pendingCount: pendingResult.count || 0,
@@ -269,14 +270,20 @@ export class KnowledgeLearningRepository {
     source_context: string;
     category: string;
     status: string;
-  }): Promise<void> {
-    if (isDemoMode()) return;
+  }): Promise<boolean> {
+    if (isDemoMode()) return true;
     try {
       const { error } = await this.client.from('knowledge_learning_queue').insert(item);
       if (error) throw new RepositoryError('insert learning item', error.message, error.code);
+      return true;
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] insert error:', err);
-      // Silent fail in demo mode or on error
+      if (err instanceof RepositoryError) {
+        logger.agent.error('[KnowledgeLearningRepository] insert failed', {
+          error: err.message,
+          conversation_id: item.conversation_id,
+        });
+      }
+      return false;
     }
   }
 

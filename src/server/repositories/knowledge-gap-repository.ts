@@ -48,8 +48,8 @@ export class KnowledgeGapRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
   /**
-   * Record a gap signal. If a row with the same question_hash already exists, increment
-   * frequency and update last_seen_at; otherwise insert a new row.
+   * Record a gap signal. Uses atomic try-insert-then-update pattern to avoid
+   * race conditions when multiple concurrent requests record the same gap.
    */
   async recordSignal(params: RecordGapParams): Promise<KnowledgeGapSignal> {
     if (isDemoMode()) {
@@ -75,48 +75,10 @@ export class KnowledgeGapRepository {
       });
     }
 
-    // Use a Postgres function via RPC if available; otherwise fetch-then-upsert pattern.
-    // Supabase JS doesn't support INSERT ... ON CONFLICT DO UPDATE with RETURNING directly,
-    // but upsert() does. We use upsert + select.
     const now = new Date().toISOString();
 
-    // First, try to read the existing row
-    const { data: existing, error: readErr } = await this.client
-      .from('knowledge_gap_signals')
-      .select('*')
-      .eq('question_hash', params.questionHash)
-      .maybeSingle();
-    if (readErr) throw new RepositoryError('read gap signal', readErr.message, readErr.code);
-
-    if (existing) {
-      const row = existing as KnowledgeGapSignal;
-      const mergedConvs = Array.from(
-        new Set([...(row.source_conversation_ids || []), params.conversationId]),
-      ).slice(-MAX_CONVERSATION_REFS);
-      const updates = {
-        frequency: row.frequency + 1,
-        last_seen_at: now,
-        last_top_score: params.topScore ?? row.last_top_score,
-        triggers_handoff: row.triggers_handoff || params.triggeredHandoff,
-        source_conversation_ids: mergedConvs,
-        updated_at: now,
-        // If a previously-resolved gap reappears, reopen it
-        ...(row.status === 'resolved' || row.status === 'dismissed'
-          ? { status: 'open', resolved_at: null, resolved_by: null }
-          : {}),
-      };
-      const { data, error } = await this.client
-        .from('knowledge_gap_signals')
-        .update(updates)
-        .eq('id', row.id)
-        .select('*')
-        .single();
-      if (error) throw new RepositoryError('update gap signal', error.message, error.code);
-      return this.toRow(data as Record<string, unknown>);
-    }
-
-    // No existing row — insert
-    const { data, error } = await this.client
+    // Step 1: Try to insert a new row
+    const { error: insertErr } = await this.client
       .from('knowledge_gap_signals')
       .insert({
         question_hash: params.questionHash,
@@ -129,11 +91,66 @@ export class KnowledgeGapRepository {
         triggers_handoff: params.triggeredHandoff,
         source_conversation_ids: [params.conversationId],
         status: 'open',
-      })
+      });
+
+    if (!insertErr) {
+      // Insert succeeded — fetch and return the new row
+      const { data, error } = await this.client
+        .from('knowledge_gap_signals')
+        .select('*')
+        .eq('question_hash', params.questionHash)
+        .single();
+      if (error) throw new RepositoryError('fetch inserted gap signal', error.message, error.code);
+      return this.toRow(data as Record<string, unknown>);
+    }
+
+    // Insert failed — check if it's a unique constraint violation
+    if (insertErr.code !== '23505') {
+      // Not a unique constraint error — unexpected error
+      throw new RepositoryError('insert gap signal', insertErr.message, insertErr.code);
+    }
+
+    // Step 2: Unique constraint conflict — update existing row atomically
+    // Read current values first to build the merged update
+    const { data: existing, error: readErr } = await this.client
+      .from('knowledge_gap_signals')
+      .select('*')
+      .eq('question_hash', params.questionHash)
+      .maybeSingle();
+    if (readErr) throw new RepositoryError('read gap signal for update', readErr.message, readErr.code);
+    if (!existing) {
+      // Edge case: row was deleted between insert failure and this read
+      throw new RepositoryError('gap signal not found after conflict', 'P0001', 'not_found');
+    }
+
+    const row = existing as KnowledgeGapSignal;
+    const mergedConvs = Array.from(
+      new Set([...(row.source_conversation_ids || []), params.conversationId]),
+    ).slice(-MAX_CONVERSATION_REFS);
+    const wasResolved = row.status === 'resolved' || row.status === 'dismissed';
+    const updates: Record<string, unknown> = {
+      frequency: row.frequency + 1,
+      last_seen_at: now,
+      last_top_score: params.topScore ?? row.last_top_score,
+      triggers_handoff: row.triggers_handoff || params.triggeredHandoff,
+      source_conversation_ids: mergedConvs,
+      updated_at: now,
+    };
+    // Reopen if previously resolved/dismissed
+    if (wasResolved) {
+      updates.status = 'open';
+      updates.resolved_at = null;
+      updates.resolved_by = null;
+    }
+
+    const { data: updated, error: updateErr } = await this.client
+      .from('knowledge_gap_signals')
+      .update(updates)
+      .eq('question_hash', params.questionHash)
       .select('*')
       .single();
-    if (error) throw new RepositoryError('insert gap signal', error.message, error.code);
-    return this.toRow(data as Record<string, unknown>);
+    if (updateErr) throw new RepositoryError('update gap signal frequency', updateErr.message, updateErr.code);
+    return this.toRow(updated as Record<string, unknown>);
   }
 
   async list(params: {

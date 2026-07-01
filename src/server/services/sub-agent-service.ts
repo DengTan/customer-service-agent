@@ -6,6 +6,7 @@ import {
   type CreateDelegationInput,
   type CreateCollaborationInput,
 } from '@/server/repositories/sub-agent-repository';
+import { logger } from '@/lib/logger';
 
 // Local error class for service-level errors
 class ServiceError extends Error {
@@ -372,7 +373,7 @@ export class SubAgentService {
 
       return responseContent;
     } catch (error) {
-      console.error('[SubAgentService] Failed to generate sub-agent response via LLM:', error);
+      logger.error('[SubAgentService] Failed to generate sub-agent response via LLM', { error: error instanceof Error ? error.message : String(error) });
       const toolList = Array.isArray(childBot.tools) ? childBot.tools.map((t: unknown) => {
         const toolName = String(t);
         const toolLabels: Record<string, string> = {

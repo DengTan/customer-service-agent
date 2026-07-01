@@ -1,17 +1,23 @@
 import { NextRequest } from 'next/server';
 import { RoutingService } from '@/server/services/routing-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
 
 const service = new RoutingService();
 
 // GET /api/routing-rules - List all routing rules
-export const GET = withErrorHandlerSimple(async () => {
+export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'routing', 'read');
+  if (denied) return denied;
+
   const result = await service.listRules();
   return apiSuccess(result);
 });
 
 // POST /api/routing-rules - Create a new routing rule
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'routing', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -29,6 +35,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // PUT /api/routing-rules - Update a routing rule
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'routing', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -47,6 +56,9 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
 // DELETE /api/routing-rules?id=xxx - Delete a routing rule
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'routing', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 

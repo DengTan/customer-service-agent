@@ -1,13 +1,16 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandler, apiSuccess, requireRole } from '@/lib/api-utils';
+import { withErrorHandler, apiSuccess, requireRole, requirePermission, getAuthenticatedUserId } from '@/lib/api-utils';
 import { TicketService } from '@/server/services/ticket-service';
 
 const ticketService = new TicketService();
 
 export const GET = withErrorHandler(async (
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const denied = await requirePermission(request, 'tickets', 'read');
+  if (denied) return denied;
+
   const { id } = await params;
   const detail = await ticketService.getTicket(id);
   return apiSuccess(detail);
@@ -17,9 +20,15 @@ export const PATCH = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  const denied = await requirePermission(request, 'tickets', 'write');
+  if (denied) return denied;
+
   const { id } = await params;
   const body = await request.json();
-  const { status, assignee_id, operator_id, auto_assign } = body ?? {};
+  const { status, assignee_id, auto_assign } = body ?? {};
+
+  // operator_id 强制从 JWT 获取，禁止从请求体伪造
+  const operatorId = getAuthenticatedUserId(request) ?? undefined;
 
   // Auto-assign mode
   if (auto_assign) {
@@ -31,7 +40,7 @@ export const PATCH = withErrorHandler(async (
     id,
     status,
     assignee_id,
-    operator_id,
+    operator_id: operatorId,
   });
   return apiSuccess({ ticket });
 });
@@ -40,8 +49,8 @@ export const DELETE = withErrorHandler(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const roleError = requireRole(request, ['admin']);
-  if (roleError) return roleError;
+  const denied = await requirePermission(request, 'tickets', 'delete');
+  if (denied) return denied;
 
   const { id } = await params;
   
@@ -54,10 +63,9 @@ export const DELETE = withErrorHandler(async (
     // No body provided
   }
   
-  // Get operator info from headers
-  const operatorId = request.headers.get('x-user-id') || undefined;
-  const operatorName = request.headers.get('x-user-name') || undefined;
-  
-  await ticketService.deleteTicket(id, operatorId, operatorName, reason);
+  // operatorId is forced from JWT, body operator_name is ignored
+  const operatorId = getAuthenticatedUserId(request) ?? undefined;
+
+  await ticketService.deleteTicket(id, operatorId, undefined, reason);
   return apiSuccess({ success: true });
 });

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
+import { escapeLikePattern } from '@/lib/api-utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -285,7 +286,8 @@ export class ProductDetailRepository {
     if (filters.sync_source) query = query.eq('sync_source', filters.sync_source);
     if (filters.search) {
       const q = (filters.search as string).toLowerCase();
-      query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%,brand.ilike.%${q}%`);
+      const escaped = escapeLikePattern(q);
+      query = query.or(`name.ilike.%${escaped}%,sku.ilike.%${escaped}%,brand.ilike.%${escaped}%`);
     }
 
     query = query.order('created_at', { ascending: false });

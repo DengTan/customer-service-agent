@@ -7,7 +7,7 @@ import {
   Link2, Unlink, ExternalLink, Bot, Palette, Cpu, MessageSquare,
   Bell, Edit3, Copy, Eye, EyeOff, RefreshCw, X, Network, ChevronRight, ChevronDown,
   Package, Truck, CreditCard, XCircle, Clock, AlertTriangle,
-  Store, Globe, Users, UserCheck,
+  Store, Globe, Users, UserCheck, GraduationCap,
 } from 'lucide-react';
 import type { PushTemplate } from '@/lib/types';
 import ShopCreateWizard from './shop-create-wizard';
@@ -15,6 +15,7 @@ import GorgiasSettings from './gorgias-settings';
 import { AgentAssignmentSettings } from './agent-assignment-settings';
 import SensitiveWordManager from './sensitive-word-manager';
 import DomainWhitelistManager from './domain-whitelist-manager';
+import { LlmProviderManager } from './llm-provider-manager';
 
 interface AutoReplyRule {
   id: string;
@@ -69,6 +70,7 @@ const FACTORY_DEFAULTS: Record<string, string> = {
   alert_high_rounds_critical_threshold: '15',
   alert_auto_handoff_rounds: '6',
   ai_model: 'doubao-seed-2-0-lite-260215',
+  llm_provider_id: 'coze', // 默认使用 Coze 提供商
   multimodal_enabled: 'true',
   multimodal_model: 'doubao-seed-2-0-pro-260215',
   multimodal_disabled_action: 'fixed_message',
@@ -138,7 +140,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [activeSection, setActiveSection] = useState<'auto-reply' | 'chat' | 'ai' | 'alert' | 'appearance' | 'shop' | 'agent-assignment' | 'push' | 'bot' | 'gorgias'>('auto-reply');
+  const [activeSection, setActiveSection] = useState<'auto-reply' | 'chat' | 'ai' | 'alert' | 'appearance' | 'shop' | 'agent-assignment' | 'push' | 'bot' | 'gorgias' | 'knowledge-learning'>('auto-reply');
 
   // Content filter state
   const [showSensitiveWordManager, setShowSensitiveWordManager] = useState(false);
@@ -165,7 +167,7 @@ export function SettingsPage() {
     id: string; name: string; description: string; system_prompt: string;
     tools: string[]; knowledge_ids: string[]; is_default: boolean;
     parent_bot_id: string | null; is_sub_agent: boolean; status: string;
-    sub_agent_count?: number; created_at: string;
+    sub_agent_count?: number; created_at: string; platform_connection_id?: string;
   }>>([]);
   const [expandedBotId, setExpandedBotId] = useState<string | null>(null);
   const [subAgents, setSubAgents] = useState<Record<string, Array<{
@@ -178,7 +180,7 @@ export function SettingsPage() {
   const [showSubAgentModal, setShowSubAgentModal] = useState(false);
   const [editingBot, setEditingBot] = useState<typeof mainBots[0] | null>(null);
   const [editingSubAgent, setEditingSubAgent] = useState<{ parentBotId: string; agent: typeof subAgents[string][0] | null }>({ parentBotId: '', agent: null });
-  const [botForm, setBotForm] = useState({ name: '', description: '', system_prompt: '' });
+  const [botForm, setBotForm] = useState({ name: '', description: '', system_prompt: '', platform_connection_id: '' });
   const [subAgentForm, setSubAgentForm] = useState({ name: '', description: '', system_prompt: '', tools: [] as string[], delegation_prompt: '', collaboration_config: '' });
   const [selectedParentBotId, setSelectedParentBotId] = useState('');
 
@@ -609,21 +611,51 @@ export function SettingsPage() {
   const handleCreateBot = async () => {
     if (!botForm.name.trim()) return;
     try {
+      // 编辑模式
+      if (editingBot) {
+        const res = await fetch('/api/bot-configs', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingBot.id,
+            name: botForm.name,
+            description: botForm.description,
+            system_prompt: botForm.system_prompt,
+            platform_connection_id: botForm.platform_connection_id || null,
+          }),
+        });
+        if (res.ok) {
+          loadMainBots();
+          setShowBotModal(false);
+          setEditingBot(null);
+          setBotForm({ name: '', description: '', system_prompt: '', platform_connection_id: '' });
+          toast.success('主Bot已更新');
+        }
+        return;
+      }
+      // 创建模式
       const res = await fetch('/api/bot-configs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...botForm, tools: [], knowledge_ids: [], skill_group_id: '' }),
+        body: JSON.stringify({
+          ...botForm,
+          tools: [],
+          knowledge_ids: [],
+          skill_group_id: '',
+          // 转换空字符串为 null
+          platform_connection_id: botForm.platform_connection_id || null,
+        }),
       });
       const data = await res.json();
       if (data.config) {
         loadMainBots();
         setShowBotModal(false);
-        setBotForm({ name: '', description: '', system_prompt: '' });
+        setBotForm({ name: '', description: '', system_prompt: '', platform_connection_id: '' });
         toast.success('主Bot创建成功');
       }
     } catch (err) {
-      console.error('创建Bot失败:', err);
-      toast.error('创建Bot失败');
+      console.error('操作Bot失败:', err);
+      toast.error('操作Bot失败');
     }
   };
 
@@ -737,6 +769,17 @@ export function SettingsPage() {
     }
   };
 
+  const openEditBot = (bot: typeof mainBots[0]) => {
+    setEditingBot(bot);
+    setBotForm({
+      name: bot.name,
+      description: bot.description || '',
+      system_prompt: bot.system_prompt || '',
+      platform_connection_id: (bot as typeof mainBots[0]).platform_connection_id || '',
+    });
+    setShowBotModal(true);
+  };
+
   const openCreateSubAgent = (parentBotId: string) => {
     setSelectedParentBotId(parentBotId);
     setEditingSubAgent({ parentBotId: '', agent: null });
@@ -795,6 +838,7 @@ export function SettingsPage() {
     { key: 'push' as const, label: '主动推送', icon: Bell },
     { key: 'bot' as const, label: 'Bot与子Agent', icon: Network },
     { key: 'gorgias' as const, label: 'Gorgias 集成', icon: Globe },
+    { key: 'knowledge-learning' as const, label: '知识自学习', icon: GraduationCap },
   ];
 
   return (
@@ -1165,6 +1209,14 @@ export function SettingsPage() {
                 <p className="text-xs text-muted-foreground mb-4">选择模型和调整参数以优化回复质量</p>
 
                 <div className="space-y-6">
+                  {/* LLM Provider Manager */}
+                  <div className="rounded-xl border border-border bg-card p-5">
+                    <LlmProviderManager 
+                      currentProviderId={settings.llm_provider_id}
+                      onProviderChange={(providerId) => setSettings((prev) => ({ ...prev, llm_provider_id: providerId }))}
+                    />
+                  </div>
+
                   {/* Regular Model Selection */}
                   <div className="rounded-xl border border-border bg-card p-5">
                     <label className="text-xs font-medium text-foreground mb-1 block">普通模型</label>
@@ -2177,12 +2229,79 @@ export function SettingsPage() {
               <GorgiasSettings />
             )}
 
+            {/* Knowledge Learning Settings */}
+            {activeSection === 'knowledge-learning' && (
+              <section>
+                <h2 className="text-sm font-semibold text-foreground mb-1">知识自学习</h2>
+                <p className="text-xs text-muted-foreground mb-4">配置知识自学习功能的行为参数</p>
+                <div className="space-y-6">
+                  {/* Confidence Threshold */}
+                  <div className="rounded-xl border border-border bg-card p-5">
+                    <label className="text-xs font-medium text-foreground mb-1 block">置信度阈值</label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      AI 回复置信度高于此值时不提取为候选知识
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        value={settings.knowledge_learning_confidence_threshold ?? '0.85'}
+                        onChange={(e) => setSettings((prev) => ({ ...prev, knowledge_learning_confidence_threshold: e.target.value }))}
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        className="w-32 px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <span className="text-xs text-muted-foreground">（范围: 0 - 1）</span>
+                    </div>
+                  </div>
+
+                  {/* Scan Interval */}
+                  <div className="rounded-xl border border-border bg-card p-5">
+                    <label className="text-xs font-medium text-foreground mb-1 block">扫描间隔</label>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      避免短时间内重复扫描同一对话
+                    </p>
+                    <select
+                      value={settings.knowledge_learning_scan_interval_hours ?? '24'}
+                      onChange={(e) => setSettings((prev) => ({ ...prev, knowledge_learning_scan_interval_hours: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="6">6 小时</option>
+                      <option value="12">12 小时</option>
+                      <option value="24">24 小时</option>
+                      <option value="168">每周（168 小时）</option>
+                    </select>
+                  </div>
+
+                  {/* Auto Scan Toggle */}
+                  <div className="rounded-xl border border-border bg-card p-5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-xs font-medium text-foreground block">自动扫描</label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          定时执行扫描任务，自动提取候选知识
+                        </p>
+                      </div>
+                      <select
+                        value={settings.knowledge_learning_auto_scan_enabled ?? 'false'}
+                        onChange={(e) => setSettings((prev) => ({ ...prev, knowledge_learning_auto_scan_enabled: e.target.value }))}
+                        className="px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="false">关闭</option>
+                        <option value="true">开启</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {activeSection === 'bot' && (
               <section>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-medium text-foreground">Bot与子Agent管理</h2>
                   <button
-                    onClick={() => { setEditingBot(null); setBotForm({ name: '', description: '', system_prompt: '' }); setShowBotModal(true); }}
+                    onClick={() => { setEditingBot(null); setBotForm({ name: '', description: '', system_prompt: '', platform_connection_id: '' }); setShowBotModal(true); }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -2192,6 +2311,12 @@ export function SettingsPage() {
 
                 <p className="text-xs text-muted-foreground mb-4">
                   创建主Bot作为协调者，在其下添加专项子Agent（如订单处理、退款处理），主Bot会根据意图自动委派任务给子Agent。
+                </p>
+                <p className="text-[11px] text-muted-foreground/70 mb-4 p-2 rounded-lg bg-muted/50 border border-border">
+                  <span className="font-medium text-foreground/80">💡 店铺绑定说明</span><br/>
+                  • 主Bot可绑定店铺，绑定后该店铺的对话将使用此Bot<br/>
+                  • 每个店铺只能绑定一个Bot，绑定新Bot会自动解除旧绑定<br/>
+                  • 删除店铺后，该Bot的店铺绑定将自动解除
                 </p>
 
                 {/* Bot Tree */}
@@ -2228,17 +2353,32 @@ export function SettingsPage() {
                               {bot.sub_agent_count != null && bot.sub_agent_count > 0 && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">{bot.sub_agent_count} 个子Agent</span>
                               )}
+                              {(bot as typeof mainBots[0]).platform_connection_id && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600">
+                                  {shops.find(s => s.id === (bot as typeof mainBots[0]).platform_connection_id)?.name || '已绑定店铺'}
+                                </span>
+                              )}
                             </div>
                             {bot.description && (
                               <p className="text-xs text-muted-foreground truncate mt-0.5">{bot.description}</p>
                             )}
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteBot(bot.id); }}
-                            className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEditBot(bot); }}
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                              title="编辑"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteBot(bot.id); }}
+                              className="text-muted-foreground hover:text-destructive transition-colors"
+                              title="删除"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Sub-Agents */}
@@ -2307,13 +2447,13 @@ export function SettingsPage() {
               </section>
             )}
 
-            {/* Bot Create Modal */}
+            {/* Bot Create/Edit Modal */}
             {showBotModal && (
               <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                 <div className="bg-card rounded-lg shadow-float w-[520px] max-h-[80vh] overflow-y-auto popup-enter">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                    <h3 className="text-sm font-medium text-foreground">新建主Bot</h3>
-                    <button onClick={() => setShowBotModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                    <h3 className="text-sm font-medium text-foreground">{editingBot ? '编辑主Bot' : '新建主Bot'}</h3>
+                    <button onClick={() => { setShowBotModal(false); setEditingBot(null); }} className="text-muted-foreground hover:text-foreground transition-colors">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -2327,13 +2467,30 @@ export function SettingsPage() {
                       <input type="text" value={botForm.description} onChange={(e) => setBotForm({ ...botForm, description: e.target.value })} placeholder="如：处理所有电商客服场景" className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30" />
                     </div>
                     <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">绑定店铺</label>
+                      <select
+                        value={botForm.platform_connection_id}
+                        onChange={(e) => setBotForm({ ...botForm, platform_connection_id: e.target.value })}
+                        className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="">不绑定（全局Bot）</option>
+                        {shops.filter(s => s.status === 'active').map((shop) => (
+                          <option key={shop.id} value={shop.id}>{shop.name}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1">绑定后，该店铺的对话将优先使用此Bot</p>
+                      <p className="text-[10px] text-amber-600/70 mt-0.5">注意：每个店铺只能绑定一个Bot，绑定新Bot会自动解除旧绑定</p>
+                    </div>
+                    <div>
                       <label className="text-xs text-muted-foreground mb-1 block">系统提示词</label>
                       <textarea value={botForm.system_prompt} onChange={(e) => setBotForm({ ...botForm, system_prompt: e.target.value })} placeholder="定义Bot的角色和行为..." rows={4} className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
                     </div>
                   </div>
                   <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-                    <button onClick={() => setShowBotModal(false)} className="px-4 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">取消</button>
-                    <button onClick={handleCreateBot} disabled={!botForm.name.trim()} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">创建</button>
+                    <button onClick={() => { setShowBotModal(false); setEditingBot(null); }} className="px-4 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">取消</button>
+                    <button onClick={handleCreateBot} disabled={!botForm.name.trim()} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                      {editingBot ? '保存' : '创建'}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2373,6 +2530,9 @@ export function SettingsPage() {
                         <label className="text-xs text-muted-foreground mb-1.5 block">描述</label>
                         <input type="text" value={subAgentForm.description} onChange={(e) => setSubAgentForm({ ...subAgentForm, description: e.target.value })} placeholder="如：专注订单查询、修改地址、取消订单" className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors" />
                       </div>
+                      <p className="text-[10px] text-muted-foreground/60 -mt-1">
+                        💡 子Agent隶属于主Bot，由主Bot自动委派任务，不能直接绑定店铺
+                      </p>
                     </div>
 
                     {/* Config Section */}

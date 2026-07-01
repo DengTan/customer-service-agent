@@ -106,7 +106,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
       setDomains(domainsList);
       onCountChange(data.domains?.length || 0);
     } catch (err) {
-      appLogger.warn('Failed to load domains', { error: err });
+      appLogger.api.warn('Failed to load domains', { error: err });
       toast.error('加载域名白名单失败');
     } finally {
       setLoading(false);
@@ -169,7 +169,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
         toast.error(data.error || '操作失败');
       }
     } catch (err) {
-      appLogger.warn('Failed to save domain', { error: err });
+      appLogger.api.warn('Failed to save domain', { error: err });
       toast.error('保存域名失败');
     }
   };
@@ -189,7 +189,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
         toast.error('删除失败');
       }
     } catch (err) {
-      appLogger.warn('Failed to delete domain', { error: err });
+      appLogger.api.warn('Failed to delete domain', { error: err });
       toast.error('删除域名失败');
     }
   };
@@ -207,7 +207,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
         toast.error('无权限执行此操作');
       }
     } catch (err) {
-      appLogger.warn('Failed to toggle domain', { error: err });
+      appLogger.api.warn('Failed to toggle domain', { error: err });
     }
   };
 
@@ -234,7 +234,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
         toast.error(data.error || '添加失败');
       }
     } catch (err) {
-      appLogger.warn('Failed to quick add domain', { error: err });
+      appLogger.api.warn('Failed to quick add domain', { error: err });
       toast.error('添加域名失败');
     }
   };
@@ -262,7 +262,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
       setSelectedIds(new Set());
       loadDomains();
     } catch (err) {
-      appLogger.warn('Failed to batch delete', { error: err });
+      appLogger.api.warn('Failed to batch delete', { error: err });
       toast.error('批量删除失败');
     }
   };
@@ -293,7 +293,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
       setSelectedIds(new Set());
       loadDomains();
     } catch (err) {
-      appLogger.warn('Failed to batch toggle', { error: err });
+      appLogger.api.warn('Failed to batch toggle', { error: err });
       toast.error('批量操作失败');
     }
   };

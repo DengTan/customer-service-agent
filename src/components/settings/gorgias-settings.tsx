@@ -75,8 +75,9 @@ export default function GorgiasSettings() {
         const data = await res.json();
         setWebhookDiagnostics((data.webhook as WebhookDiagnostics) || null);
       }
-    } catch {
-      // Silently fail
+    } catch (err) {
+      console.error('Failed to fetch webhook diagnostics:', err);
+      // Diagnostics is non-critical, continue silently but log for debugging
     } finally {
       setDiagnosing(false);
     }

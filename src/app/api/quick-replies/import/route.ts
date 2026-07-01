@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { QuickReplyService } from '@/server/services/quick-reply-service';
 import { getAuthenticatedUserId, checkRateLimit } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 import * as XLSX from 'xlsx';
 
 const service = new QuickReplyService();
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
       ...result,
     });
   } catch (error) {
-    console.error('Import failed:', error);
+    logger.api.error('Import failed', { error });
     return NextResponse.json({ error: '导入失败' }, { status: 500 });
   }
 }

@@ -14,6 +14,7 @@ import { ProductDetailService } from '@/server/services/product-detail-service';
 import { SizeChartService } from '@/server/services/size-chart-service';
 import { AlertRepository } from '@/server/repositories/alert-repository';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
+import { BotConfigRepository } from '@/server/repositories/bot-config-repository';
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { HTTP } from '@/lib/constants';
 import { z } from 'zod';
@@ -43,7 +44,7 @@ export const POST = withErrorHandler(async (
   // Validate input with Zod schema
   const validationResult = MessageSchema.safeParse(body);
   if (!validationResult.success) {
-    return apiError(validationResult.error.errors[0]?.message || '输入格式不正确', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+    return apiError(validationResult.error.issues[0]?.message || '输入格式不正确', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
   }
 
   const { content: userMessage, role: messageRole, image_url: imageUrl, enable_sub_agent: enableSubAgent } = validationResult.data;
@@ -131,6 +132,35 @@ export const POST = withErrorHandler(async (
     }
   }
 
+  // 1.5.1 Load extended LLM provider settings (if configured)
+  let llmProviderConfig: {
+    providerId?: string;
+    providerBaseUrl?: string;
+    providerApiKey?: string;
+    providerType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom';
+  } = {};
+  
+  // Try to load from LLM providers table
+  const llmProviderId = appSettings.llm_provider_id;
+  if (llmProviderId && llmProviderId !== 'coze') {
+    try {
+      const { LlmProviderService } = await import('@/server/services/llm-provider-service');
+      const llmService = new LlmProviderService();
+      const provider = await llmService.getProvider(llmProviderId);
+      if (provider && provider.is_enabled) {
+        llmProviderConfig = {
+          providerId: provider.id,
+          providerBaseUrl: provider.base_url,
+          // API Key 不暴露到客户端，仅传 mask 值供调试用途
+          providerApiKey: provider.api_key ? '********' : '',
+          providerType: provider.api_type as 'openai_compatible' | 'anthropic' | 'custom',
+        };
+      }
+    } catch (error) {
+      logger.api.warn('Failed to load LLM provider config, falling back to default', { error, providerId: llmProviderId });
+    }
+  }
+
   // 1.6 Check session timeout and max turns from settings
 
   const sessionInfo = await conversationService.getSessionInfo(conversationId);
@@ -176,23 +206,32 @@ export const POST = withErrorHandler(async (
   // 3. Update conversation message count and title
   await conversationService.updateMessageCountAfterUserMessage(conversationId, userMessage);
 
-  // 3.5 Check unhandled conversations reminder (fire-and-forget)
+  // 3.5 Check unhandled conversations reminder (fire-and-forget, with 1-hour dedup)
   try {
     const unhandledMinutes = parseInt(appSettings.unhandled_remind || '0', 10);
     if (unhandledMinutes > 0) {
       const convRepo = new ConversationRepository();
       const alertRepo = new AlertRepository();
       // Run in background — don't block message processing
-      convRepo.findUnhandledConversations(unhandledMinutes).then(unhandled => {
-        unhandled.forEach(conv => {
-          alertRepo.create({
-            conversation_id: conv.id,
-            type: 'unhandled_remind',
-            severity: 'warning',
-            message: `对话 "${conv.title || '无标题'}" 已超过 ${unhandledMinutes} 分钟未处理`,
-          }).catch(() => {});
-        });
-      }).catch(() => {});
+      (async () => {
+        try {
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const unhandled = await convRepo.findUnhandledConversations(unhandledMinutes);
+          for (const conv of unhandled) {
+            const existing = await alertRepo.findRecentUnresolved(conv.id, 'unhandled_remind', oneHourAgo);
+            if (!existing) {
+              await alertRepo.create({
+                conversation_id: conv.id,
+                type: 'unhandled_remind',
+                severity: 'warning',
+                message: `对话 "${conv.title || '无标题'}" 已超过 ${unhandledMinutes} 分钟未处理`,
+              });
+            }
+          }
+        } catch {
+          // Non-critical background task
+        }
+      })();
     }
   } catch {
     // Unhandled reminder check is non-critical
@@ -241,23 +280,37 @@ export const POST = withErrorHandler(async (
   // 8. Extract custom headers for LLM
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
 
-  // 9. Determine parent bot for sub-agent delegation
-  let parentBotId: string | undefined;
-  if (enableSubAgent) {
-    // Find the default bot or first main bot to use as parent
-    try {
-      const mainBots = await subAgentService.listMainBotsWithSubAgents();
-      const defaultBot = mainBots.find(b => b.is_default);
-      if (defaultBot && defaultBot.sub_agent_count > 0) {
-        parentBotId = defaultBot.id;
+  // 9. Get conversation's shop (platform_connection_id) to determine which Bot to use
+  const botConfigRepo = new BotConfigRepository();
+  let shopBotSystemPrompt: string | undefined;
+  let shopBotId: string | undefined;
+  let shopBotName: string | undefined;
+
+  try {
+    // Get conversation's shop ID
+    const conversation = await conversationService.getConversationBasic(conversationId);
+    const shopId = conversation?.platform_connection_id;
+
+    if (shopId) {
+      // Find the Bot bound to this shop
+      const shopBot = await botConfigRepo.findByShopId(shopId);
+      if (shopBot && shopBot.status === 'active') {
+        shopBotSystemPrompt = shopBot.system_prompt;
+        shopBotId = shopBot.id;
+        shopBotName = shopBot.name;
+        logger.api.info('Using shop-bound bot', { shopId, botId: shopBotId, botName: shopBotName });
+      } else {
+        logger.api.info('No active bot bound to shop', { shopId });
       }
-    } catch {
-      // If bot lookup fails, proceed without sub-agent delegation
+    } else {
+      logger.api.debug('Conversation has no shop association, using default/system prompt');
     }
+  } catch (botLookupError) {
+    logger.api.error('Failed to lookup shop bot, falling back to default', { error: botLookupError, conversationId });
   }
 
   // 9.5 Evaluate routing rules — if a rule matches, use the target bot's system_prompt
-  // Routing system_prompt takes priority: routing rule > settings system_prompt > default SYSTEM_PROMPT
+  // Routing system_prompt takes priority over shop-bound bot (for global keyword routing)
   const routingService = new RoutingService();
   let routingSystemPrompt: string | undefined;
   try {
@@ -265,10 +318,11 @@ export const POST = withErrorHandler(async (
     if (routingMatch) {
       if (routingMatch.bot.system_prompt) {
         routingSystemPrompt = routingMatch.bot.system_prompt;
-      }
-      // If matched bot has sub-agents, use it as parent for delegation
-      if (enableSubAgent && !routingMatch.bot.is_sub_agent) {
-        parentBotId = routingMatch.bot.id;
+        // Update parentBotId for sub-agent delegation
+        if (enableSubAgent && !routingMatch.bot.is_sub_agent) {
+          shopBotId = routingMatch.bot.id;
+        }
+        logger.api.info('Routing rule matched', { ruleId: routingMatch.rule.id, botId: routingMatch.bot.id });
       }
     }
   } catch {
@@ -277,6 +331,7 @@ export const POST = withErrorHandler(async (
 
   // 9.7 Proactive sub-agent intent detection — if a sub-agent matches with high confidence,
   // delegate directly instead of going through the general LLM flow
+  const parentBotId = shopBotId;
   let subAgentDelegationResult: { childBotName: string; responseContent: string; confidence: number; delegationId: string } | null = null;
   if (enableSubAgent && parentBotId) {
     try {
@@ -357,15 +412,21 @@ export const POST = withErrorHandler(async (
       customHeaders,
       knowledgeMinScore: await knowledgeSearchService.getMinScore(),
       parentBotId,
+      parentBotName: shopBotName,
       enableSubAgentDelegation: !!parentBotId,
       aiModel: appSettings.ai_model,
       multimodalModel: appSettings.multimodal_model,
       multimodalEnabled: appSettings.multimodal_enabled !== 'false',
       multimodalDisabledAction: (appSettings.multimodal_disabled_action === 'handoff' ? 'handoff' : 'fixed_message') as 'fixed_message' | 'handoff',
       multimodalFixedMessage: appSettings.multimodal_fixed_message || undefined,
-      systemPrompt: routingSystemPrompt || appSettings.system_prompt || undefined,
+      systemPrompt: routingSystemPrompt || shopBotSystemPrompt || appSettings.system_prompt || undefined,
       temperature: appSettings.ai_temperature ? parseFloat(appSettings.ai_temperature) : undefined,
       maxTokens: appSettings.ai_max_tokens ? parseInt(appSettings.ai_max_tokens, 10) : undefined,
+      // Extended LLM Provider configuration
+      llmProviderId: llmProviderConfig.providerId,
+      llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
+      llmProviderApiKey: llmProviderConfig.providerApiKey,
+      llmProviderType: llmProviderConfig.providerType,
     });
   } catch (streamInitError) {
     logger.api.error('Failed to create LLM stream', { error: streamInitError, conversationId });

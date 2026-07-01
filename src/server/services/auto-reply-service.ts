@@ -72,9 +72,16 @@ export class AutoReplyService {
   async matchReply(message: string): Promise<MatchedAutoReply | null> {
     try {
       const rules = await this.autoReplies.listEnabled();
-      for (const rule of rules) {
+      // Sort by priority descending (higher priority first)
+      const sortedRules = rules.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+      const lowerMessage = message.toLowerCase();
+
+      for (const rule of sortedRules) {
+        const lowerKeyword = rule.keyword.toLowerCase();
         const matched =
-          rule.match_mode === 'exact' ? message.trim() === rule.keyword : message.includes(rule.keyword);
+          rule.match_mode === 'exact'
+            ? message.trim().toLowerCase() === lowerKeyword
+            : lowerMessage.includes(lowerKeyword);
 
         if (matched) {
           return { content: rule.reply_content, rule };

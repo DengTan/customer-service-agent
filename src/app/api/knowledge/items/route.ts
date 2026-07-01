@@ -1,11 +1,14 @@
 import { NextRequest } from 'next/server';
 import { KnowledgeClient, Config, KnowledgeDocument, DataSourceType } from 'coze-coding-dev-sdk';
-import { withErrorHandlerSimple, apiSuccess } from '@/lib/api-utils';
+import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requirePermission } from '@/lib/api-utils';
 import { KnowledgeService } from '@/server/services/knowledge-service';
 
 const knowledgeService = new KnowledgeService();
 
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'knowledge', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const includeArchived = searchParams.get('include_archived') === 'true';
   const includeExpired = searchParams.get('include_expired') === 'true';
@@ -14,12 +17,20 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const body = await request.json();
+  const denied = await requirePermission(request, 'knowledge', 'write');
+  if (denied) return denied;
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return apiError('请求体格式无效', { status: HttpStatus.BAD_REQUEST, code: 'INVALID_JSON' });
+  }
   const urlId = request.nextUrl.searchParams.get('id');
   const { id = urlId, name, content, category, parent_category, image_url, expires_at } = body ?? {};
 
   if (!id) {
-    return apiSuccess({ error: '请提供条目ID' }, 400);
+    return apiError('请提供条目ID', { status: HttpStatus.BAD_REQUEST, code: 'MISSING_ID' });
   }
 
   if (content !== undefined) {
@@ -36,7 +47,7 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     });
 
     if (addResult.code !== 0) {
-      return apiSuccess({ error: addResult.msg }, 500);
+      return apiError(addResult.msg, { status: HttpStatus.INTERNAL_SERVER_ERROR, code: 'COZE_API_ERROR' });
     }
 
     const newDocIds = addResult.doc_ids || [];
@@ -55,18 +66,22 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
-    await knowledgeService.updateItem({
-      id: id as string,
-      name,
-      category,
-      parent_category,
-      image_url,
-      expires_at: expires_at === undefined ? undefined : expires_at,
-    });
-    return apiSuccess({});
+  await knowledgeService.updateItem({
+    id: id as string,
+    name,
+    category,
+    parent_category,
+    image_url,
+    expires_at: expires_at === undefined ? undefined : expires_at,
+  });
+  return apiSuccess({});
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  // Fine-grained permission check
+  const denied = await requirePermission(request, 'knowledge', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
