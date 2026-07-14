@@ -8,6 +8,7 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import { DEMO_ARRAY_MAX_SIZE } from '@/lib/constants';
 import { escapeLikePattern } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export interface NormalizedSizeChart {
   image_url: string | null;
   doc_ids: string[];
   content_hash: string | null;
+  embedding?: number[];
   status: SizeChartStatus;
   hit_count: number;
   last_hit_at: string | null;
@@ -80,6 +82,7 @@ export interface CreateSizeChartInput {
   image_url?: string | null;
   doc_ids?: string[];
   content_hash?: string | null;
+  embedding?: number[];
   platform_connection_id?: string | null;
 }
 
@@ -99,6 +102,7 @@ export interface UpdateSizeChartInput {
   image_url?: string | null;
   doc_ids?: string[];
   content_hash?: string | null;
+  embedding?: number[];
   status?: SizeChartStatus;
   platform_connection_id?: string | null;
 }
@@ -432,6 +436,10 @@ export class SizeChartRepository {
       platform_connection_id: input.platform_connection_id ?? null,
     };
 
+    if (input.embedding !== undefined) {
+      insertData.embedding = input.embedding ? JSON.stringify(input.embedding) : null;
+    }
+
     const { data, error } = await this.client
       .from('size_charts')
       .insert(insertData)
@@ -465,6 +473,7 @@ export class SizeChartRepository {
     if (input.image_url !== undefined) updateData.image_url = input.image_url;
     if (input.doc_ids !== undefined) updateData.doc_ids = input.doc_ids;
     if (input.content_hash !== undefined) updateData.content_hash = input.content_hash;
+    if (input.embedding !== undefined) updateData.embedding = input.embedding ? JSON.stringify(input.embedding) : null;
     if (input.status !== undefined) updateData.status = input.status;
     if (input.platform_connection_id !== undefined) updateData.platform_connection_id = input.platform_connection_id;
 
@@ -509,7 +518,18 @@ export class SizeChartRepository {
       .update({ hit_count: newCount, last_hit_at: new Date().toISOString() })
       .eq('id', id);
     if (error) {
-      console.error(`[SizeChartRepo] incrementHitCount failed for ${id}:`, error.message);
+      logger.error(`[SizeChartRepo] incrementHitCount failed for ${id}`, { message: error.message });
+    }
+  }
+
+  async updateEmbedding(id: string, embedding: number[]): Promise<void> {
+    if (isDemoMode()) return;
+    const { error } = await this.client
+      .from('size_charts')
+      .update({ embedding: JSON.stringify(embedding), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      logger.error(`[SizeChartRepo] updateEmbedding failed for ${id}`, { message: error.message });
     }
   }
 }

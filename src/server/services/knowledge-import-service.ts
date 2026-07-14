@@ -1,17 +1,19 @@
+import { getEmbeddingService } from './embedding-service';
 import { KnowledgeImportJobRepository, type ChunkPreview } from '@/server/repositories/knowledge-import-job-repository';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
-  chunkText,
   extractRawTextPreview,
   extractChunkPreview,
   extractTextFromBuffer,
   getFileType,
   computeContentHash,
+  normalizeToMarkdown,
 } from './text-extractor';
-import { S3Storage } from 'coze-coding-dev-sdk';
-import { KnowledgeClient, Config, KnowledgeDocument, DataSourceType } from 'coze-coding-dev-sdk';
+import { smartChunkText } from './smart-chunking-service';
 import { logger } from '@/lib/logger';
+import * as nodeFs from 'node:fs';
+import nodePath from 'node:path';
 
 const MimeTypeMap: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -39,6 +41,9 @@ const AllowedExtensions = [
 ];
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'smartassist';
+const STORAGE_URL_EXPIRY_SECONDS = 365 * 24 * 60 * 60; // 365 days for knowledge images
 
 export class KnowledgeImportService {
   private jobRepository: KnowledgeImportJobRepository;
@@ -107,7 +112,7 @@ export class KnowledgeImportService {
           status: 'failed',
           error_message: error instanceof Error ? error.message : '处理失败',
           progress: 0,
-          current_stage: 'failed',
+          stage: 'failed',
         });
       }
     });
@@ -118,17 +123,17 @@ export class KnowledgeImportService {
    */
   private async processJob(jobId: string, file: File): Promise<void> {
     let fileBuffer: Buffer | null = null;
-    let storageKey: string | null = null;
+    let storagePath: string | null = null;
 
     try {
       const ext = this.getExtension(file.name);
       const isImage = IMAGE_EXTENSIONS.has(ext);
 
-      // Stage 1: 上传文件到 S3 (0-20%)
+      // Stage 1: 上传文件到 Storage (0-20%)
       await this.jobRepository.update(jobId, {
         status: 'processing',
         progress: 5,
-        current_stage: 'uploading',
+        stage: 'uploading',
       });
 
       fileBuffer = Buffer.from(await file.arrayBuffer());
@@ -140,57 +145,68 @@ export class KnowledgeImportService {
         throw new Error(`内容重复：已存在相同内容的条目「${existingItem}」，请勿重复导入`);
       }
 
-      const storage = this.initS3Storage();
-      storageKey = await storage.uploadFile({
-        fileContent: fileBuffer,
-        fileName: `knowledge/${file.name}`,
-        contentType: MimeTypeMap[ext] || 'application/octet-stream',
-      });
+      // Upload to Supabase Storage (sanitize filename to avoid invalid key errors)
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      storagePath = `knowledge/${jobId}_${safeName}`;
+      const { data: uploadData, error: uploadError } = await this.supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, fileBuffer, {
+          contentType: MimeTypeMap[ext] || 'application/octet-stream',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw new Error(`文件上传失败: ${uploadError.message}`);
+      }
+
+      // Supabase Storage upload returns the path as the data
+      const uploadedPath = typeof uploadData === 'string' ? uploadData : (uploadData as { path?: string }).path;
+      storagePath = uploadedPath || null;
 
       // === Image simplified pipeline ===
       if (isImage) {
-        // Generate long-lived presigned URL for the image
-        const presignedUrl = await storage.generatePresignedUrl({
-          key: storageKey,
-          expireTime: 86400 * 365, // 365 days for knowledge images
-        });
+        if (!storagePath) {
+          throw new Error('storagePath is null, file upload failed');
+        }
+        // Generate long-lived signed URL for the image
+        const { data: signedUrlData, error: signedUrlError } = await this.supabase.storage
+          .from(STORAGE_BUCKET)
+          .createSignedUrl(storagePath, STORAGE_URL_EXPIRY_SECONDS);
+
+        if (signedUrlError) {
+          logger.api.warn('knowledge-storage-signed-url-failed', {
+            jobId,
+            path: storagePath,
+            error: signedUrlError.message,
+          });
+          // Fallback to public URL if signed URL fails
+        }
+
+        const presignedUrl = signedUrlData?.signedUrl || null;
 
         await this.jobRepository.update(jobId, {
           progress: 50,
-          current_stage: 'vectorizing',
+          stage: 'vectorizing',
         });
 
         // Optionally vectorize description text
         const job = await this.jobRepository.findById(jobId);
-        // N1: 在赋值时统一 trim，后续使用不再重复调用
-        const description = ((job?.raw_text_preview) || '').trim();
-        let docIds: string[] = [];
+        const description = ((job?.description) || '').trim();
+        let embedding: number[] | null = null;
         if (description) {
           try {
-            const config = new Config();
-            const client = new KnowledgeClient(config);
-            const documents: KnowledgeDocument[] = [
-              { source: DataSourceType.TEXT, raw_data: description },
-            ];
-            const result = await client.addDocuments(documents, 'coze_doc_knowledge', {
-              separator: '\n\n',
-              max_tokens: 2000,
-            });
-            if (result.code !== 0) {
-              throw new Error(`图片描述向量化失败: ${result.msg}`);
-            }
-            docIds = result.doc_ids || [];
+            const embeddingService = getEmbeddingService();
+            embedding = await embeddingService.embed(description);
           } catch (vectorError) {
-            // Item 1: 向量化失败时清理已上传的 S3 文件，防止存储泄漏
-            await this.safeDeleteS3(storageKey);
+            // Item 1: 向量化失败时清理已上传的 Storage 文件，防止存储泄漏
+            if (storagePath) await this.safeDeleteStorage(storagePath);
             throw vectorError;
           }
         }
 
         await this.jobRepository.update(jobId, {
           progress: 85,
-          current_stage: 'syncing',
-          doc_ids: docIds,
+          stage: 'syncing',
         });
 
         // Save knowledge item as image type
@@ -200,29 +216,28 @@ export class KnowledgeImportService {
           .insert({
             name: finalJob?.file_name || '导入图片',
             type: 'image',
-            // N1: description 已在上面统一 trim，这里直接使用
-            content: description.slice(0, 500) || file.name,
+            content: description || file.name,
             content_hash: contentHash,
-            doc_ids: docIds,
-            category: finalJob?.category || '未分类',
-            parent_category: finalJob?.parent_category,
-            status: 'active',
-            chunk_count: docIds.length,
-            image_url: presignedUrl,
-          })
+            chunk_count: 1,
+          image_url: presignedUrl,
+          embedding: embedding ? JSON.stringify(embedding) : null,
+          category: finalJob?.category || '未分类',
+          parent_category: finalJob?.parent_category,
+          status: 'active',
+        })
           .select('id')
           .single();
 
         if (dbError) {
-          // Item 1: DB 写入失败时清理已上传的 S3 文件，防止存储泄漏
-          await this.safeDeleteS3(storageKey);
+          // Item 1: DB 写入失败时清理已上传的 Storage 文件，防止存储泄漏
+          if (storagePath) await this.safeDeleteStorage(storagePath);
           throw new Error(`保存知识条目失败: ${dbError.message}`);
         }
 
         await this.jobRepository.update(jobId, {
           status: 'completed',
           progress: 100,
-          current_stage: 'completed',
+          stage: 'completed',
           knowledge_item_id: newItem.id,
         });
 
@@ -238,15 +253,17 @@ export class KnowledgeImportService {
       // === Non-image: full pipeline ===
       await this.jobRepository.update(jobId, {
         progress: 20,
-        current_stage: 'parsing',
+        stage: 'parsing',
       });
 
-      // Stage 2: 解析文档提取文本 (20-40%)
+      // Stage 2: 解析文档提取文本并规范化为 Markdown 格式 (20-40%)
       const fileType = getFileType(file.name);
       let extractedText: string;
 
       try {
         extractedText = await extractTextFromBuffer(fileBuffer, fileType);
+        // Normalize to clean Markdown format
+        extractedText = normalizeToMarkdown(extractedText);
       } catch {
         logger.api.warn('text-extraction-failed', { jobId, fileType });
         extractedText = '[文档解析失败，内容可能无法被检索]';
@@ -255,12 +272,22 @@ export class KnowledgeImportService {
       // 保存原始文本预览
       await this.jobRepository.update(jobId, {
         progress: 40,
-        current_stage: 'chunking',
-        raw_text_preview: extractRawTextPreview(extractedText),
+        stage: 'chunking',
+        description: extractRawTextPreview(extractedText),
       });
 
-      // Stage 3: 本地切分文本 (40-60%)
-      const chunks = chunkText(extractedText, 500); // 与 Coze 一致的 chunk size
+      // Stage 3: 智能分段（LLM 自动分段，回退到规则分段）
+      const chunks = await smartChunkText(extractedText, {
+        chunkSize: 500,
+        overlap: 50,
+        enableLLMChunking: true,
+      });
+
+      // 分段失败时抛出错误
+      if (chunks.length === 0) {
+        throw new Error('文档分段失败，无法继续导入');
+      }
+
       const chunkPreview: ChunkPreview[] = extractChunkPreview(chunks).map(c => ({
         index: c.index,
         content: c.content,
@@ -269,38 +296,60 @@ export class KnowledgeImportService {
 
       await this.jobRepository.update(jobId, {
         progress: 55,
-        current_stage: 'chunking',
-        chunk_preview: chunkPreview,
+        stage: 'chunking',
+        chunks_preview: chunkPreview,
         total_chunks: chunks.length,
       });
 
-      // Stage 4: 发送到 Coze 向量化 (60-90%)
+      // Stage 4: 本地向量化 (60-90%)
       await this.jobRepository.update(jobId, {
         progress: 65,
-        current_stage: 'vectorizing',
+        stage: 'vectorizing',
       });
 
-      const config = new Config();
-      const client = new KnowledgeClient(config);
+      const embeddingService = getEmbeddingService();
+      const chunkTexts = chunks.map(c => c.content);
 
-      const documents: KnowledgeDocument[] = [
-        { source: DataSourceType.URI, uri: storageKey },
-      ];
-
-      const result = await client.addDocuments(documents, 'coze_doc_knowledge', {
-        separator: '\n\n',
-        max_tokens: 2000,
-      });
-
-      if (result.code !== 0) {
-        throw new Error(`Coze向量化失败: ${result.msg}`);
+      let embeddings: number[][] = [];
+      try {
+        embeddings = await embeddingService.embedBatch(chunkTexts);
+      } catch (embedError) {
+        // #region DEBUG: Log embedding error
+        fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
+          body: JSON.stringify({
+            sessionId: '04a2b6',
+            location: 'knowledge-import-service.ts:processJob:embedBatch:error',
+            message: 'embedBatch threw error',
+            data: { jobId, error: embedError instanceof Error ? embedError.message : String(embedError) },
+            timestamp: Date.now(),
+            hypothesisId: 'embed-debug'
+          })
+        }).catch(() => {});
+        // #endregion
+        throw embedError;
       }
-
-      await this.jobRepository.update(jobId, {
-        progress: 85,
-        current_stage: 'syncing',
-        doc_ids: result.doc_ids || [],
+      
+      // #region DEBUG: Log embedding results
+      console.log('[DEBUG] Embeddings result:', {
+        type: typeof embeddings,
+        isArray: Array.isArray(embeddings),
+        length: embeddings?.length,
+        firstEmbedType: typeof embeddings[0],
+        isFirstEmbedArray: Array.isArray(embeddings[0]),
+        firstEmbedLength: embeddings[0]?.length,
+        allLengths: embeddings?.map((e: unknown) => Array.isArray(e) ? e.length : 'not-array'),
       });
+
+      // DEBUG: Write to file
+      try {
+        const debugPath = nodePath.join(process.cwd(), 'logs', 'embed-debug.log');
+        nodeFs.appendFileSync(debugPath, `[${new Date().toISOString()}] jobId=${jobId} embeddings.length=${embeddings?.length} firstLength=${embeddings[0]?.length || 0} allLengths=${JSON.stringify(embeddings?.map((e: unknown) => Array.isArray(e) ? (e as number[]).length : 'not-array'))}\n`);
+      } catch (e) {
+        console.log('[DEBUG] Failed to write debug log:', (e as Error)?.message);
+      }
+      // #endregion
 
       // Stage 5: 保存知识条目 (85-100%)
       const job = await this.jobRepository.findById(jobId);
@@ -313,27 +362,80 @@ export class KnowledgeImportService {
         .insert({
           name: job.file_name || '导入文件',
           type: 'file',
-          content: extractedText.slice(0, 500),
+          content: extractedText,
           content_hash: contentHash,
-          doc_ids: result.doc_ids || [],
           category: job.category || '未分类',
           parent_category: job.parent_category,
           status: 'active',
           chunk_count: chunks.length,
           image_url: job.image_url,
+          embedding: embeddings[0] && embeddings[0].length > 0 ? JSON.stringify(embeddings[0]) : null,
         })
         .select('id')
         .single();
+
+      // #region DEBUG: Log embedding insert value
+      // #endregion
 
       if (dbError) {
         throw new Error(`保存知识条目失败: ${dbError.message}`);
       }
 
+      // Insert chunk embeddings
+      const chunkInserts = chunks.map((c, i) => ({
+        id: randomUUID(),
+        knowledge_item_id: newItem.id,
+        chunk_index: c.index,
+        content: c.content,
+        content_hash: c.content_hash,
+        embedding: embeddings[i] && embeddings[i].length > 0 ? JSON.stringify(embeddings[i]) : null,
+      }));
+      
+      // #region DEBUG: Log chunk insertion
+      fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
+        body: JSON.stringify({
+          sessionId: '04a2b6',
+          location: 'knowledge-import-service.ts:processJob',
+          message: 'Inserting chunks',
+          data: { jobId, chunkCount: chunks.length, firstChunkId: chunkInserts[0]?.id },
+          timestamp: Date.now(),
+          hypothesisId: 'chunk-insert'
+        })
+      }).catch(() => {});
+      // #endregion
+      
+      const { error: chunkError } = await this.supabase.from('knowledge_chunks').insert(chunkInserts);
+      
+      // #region DEBUG: Log chunk insertion result
+      fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
+        body: JSON.stringify({
+          sessionId: '04a2b6',
+          location: 'knowledge-import-service.ts:processJob:chunkInsertResult',
+          message: 'Chunk insertion result',
+          data: { jobId, chunkError: chunkError?.message || 'success', chunkErrorDetails: chunkError?.details || null },
+          timestamp: Date.now(),
+          hypothesisId: 'chunk-insert'
+        })
+      }).catch(() => {});
+      // #endregion
+      
+      if (chunkError) {
+        logger.agent.error('Failed to insert knowledge_chunks', { jobId, error: chunkError });
+        throw new Error(`插入chunks失败: ${chunkError.message}`);
+      }
+
+      // Update knowledge_items with first chunk embedding
+      await this.supabase.from('knowledge_items').update({ embedding: embeddings[0] && embeddings[0].length > 0 ? JSON.stringify(embeddings[0]) : null }).eq('id', newItem.id);
+
       // 更新任务状态为完成
       await this.jobRepository.update(jobId, {
         status: 'completed',
         progress: 100,
-        current_stage: 'completed',
+        stage: 'completed',
         knowledge_item_id: newItem.id,
       });
 
@@ -376,10 +478,10 @@ export class KnowledgeImportService {
       id: job.id,
       status: job.status,
       progress: job.progress,
-      currentStage: job.current_stage || '',
-      chunkPreview: job.chunk_preview,
+      currentStage: job.stage || '',
+      chunkPreview: job.chunks_preview,
       totalChunks: job.total_chunks,
-      rawTextPreview: job.raw_text_preview,
+      rawTextPreview: job.description,
       errorMessage: job.error_message,
       knowledgeItemId: job.knowledge_item_id,
       createdAt: job.created_at,
@@ -403,7 +505,7 @@ export class KnowledgeImportService {
       id: job.id,
       status: job.status,
       progress: job.progress,
-      currentStage: job.current_stage || '',
+      currentStage: job.stage || '',
       fileName: job.file_name || '导入文件',
       createdAt: job.created_at,
     }));
@@ -439,26 +541,20 @@ export class KnowledgeImportService {
   }
 
   /**
-   * 初始化 S3 存储
+   * Item 1: 安全删除 Storage 文件（best-effort，不影响主错误）
    */
-  private initS3Storage(): S3Storage {
-    if (!process.env.COZE_BUCKET_ENDPOINT_URL || !process.env.COZE_BUCKET_NAME) {
-      throw new Error('对象存储服务未配置，请检查环境变量 COZE_BUCKET_ENDPOINT_URL 和 COZE_BUCKET_NAME');
-    }
-    return new S3Storage({
-      endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
-      bucketName: process.env.COZE_BUCKET_NAME,
-      region: process.env.COZE_BUCKET_REGION || 'cn-beijing',
-    });
-  }
-
-  /**
-   * Item 1: 安全删除 S3 文件（best-effort，不影响主错误）
-   */
-  private async safeDeleteS3(storageKey: string): Promise<void> {
+  private async safeDeleteStorage(path: string): Promise<void> {
     try {
-      const storage = this.initS3Storage();
-      await storage.deleteFile({ fileKey: storageKey });
+      const { error } = await this.supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove([path]);
+
+      if (error) {
+        logger.api.warn('knowledge-storage-delete-failed', {
+          path,
+          error: error.message,
+        });
+      }
     } catch {
       // best-effort，删除失败不影响主错误
     }

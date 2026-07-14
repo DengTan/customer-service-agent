@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import {
   MessageSquare,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   StickyNote,
 } from 'lucide-react';
+import { useVisibilityAwarePoll } from '@/hooks/use-visibility-aware-poll';
 import { cn } from '@/lib/utils';
 import type {
   AgentQueueItem,
@@ -25,7 +28,6 @@ import {
 } from '@/lib/types';
 import {
   type ChatMessage,
-  POLL_INTERVAL_MS,
   StatCard,
 } from './workspace-shared';
 import { QueuePanel } from './queue-panel';
@@ -122,7 +124,7 @@ export function WorkspacePage() {
       }
     } catch (err) {
       setError('数据加载失败');
-      console.error('Failed to fetch data:', err);
+      logger.error('Failed to fetch data', { error: err });
     }
     return [];
   }, [user?.id]);
@@ -199,9 +201,15 @@ export function WorkspacePage() {
     };
     doFetch();
     fetchAgentsRef.current();
-    const interval = setInterval(() => fetchDataRef.current('refresh'), POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, []);
+
+  // Visibility-aware polling for queue data
+  useVisibilityAwarePoll(() => {
+    // Only refresh if not currently loading and not in initial load
+    if (!loading && !isInitialLoading) {
+      fetchData('refresh');
+    }
+  }, 5000, true);
 
   useEffect(() => {
     if (selectedConversation) {
@@ -311,7 +319,7 @@ export function WorkspacePage() {
       {!isInitialLoading && (
       <>
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
+      <div className="h-14 border-b border-border px-4 flex items-center justify-between bg-card shrink-0">
         <h1 className="text-base font-semibold text-foreground">坐席工作台</h1>
         {/* Stats */}
         <div className="flex items-center gap-4">
@@ -319,21 +327,25 @@ export function WorkspacePage() {
             icon={<Clock className="w-4 h-4 text-amber-500" />}
             label="排队中"
             value={queuedTotal.toString()}
+            accentColor="text-amber-500"
           />
           <StatCard
             icon={<MessageSquare className="w-4 h-4 text-primary" />}
             label="服务中"
             value={assignedTotal.toString()}
+            accentColor="text-primary"
           />
           <StatCard
-            icon={<CheckCircle className="w-4 h-4 text-emerald-500" />}
+            icon={<CheckCircle className="w-4 h-4 text-emerald-600" />}
             label="今日已解决"
             value={performance?.total_resolved?.toString() || '0'}
+            accentColor="text-emerald-600"
           />
           <StatCard
             icon={<UserCheck className="w-4 h-4 text-muted-foreground" />}
             label="平均响应"
             value={performance?.avg_response_time_seconds ? formatResponseTime(performance.avg_response_time_seconds) : '--'}
+            accentColor="text-muted-foreground"
           />
         </div>
         {/* Current Agent & Status */}
@@ -383,20 +395,53 @@ export function WorkspacePage() {
       {/* Main Content - 3 columns */}
       <div className="flex flex-1 min-h-0">
         {/* Left Column - Queue */}
-        <QueuePanel
-          queuedItems={queuedItems}
-          assignedItems={assignedItems}
-          queuedTotal={queuedTotal}
-          assignedTotal={assignedTotal}
-          isLoadingMoreQueued={isLoadingMoreQueued}
-          isLoadingMoreAssigned={isLoadingMoreAssigned}
-          onLoadMoreQueued={() => fetchData('load-queued')}
-          onLoadMoreAssigned={() => fetchData('load-assigned')}
-          selectedConversation={selectedConversation}
-          loading={loading}
-          onSelectConversation={setSelectedConversation}
-          onClaim={handleClaim}
-        />
+        {isInitialLoading ? (
+          <div className="w-[280px] border-r border-border/50 bg-card p-4 space-y-3 overflow-auto">
+            <div className="flex items-center gap-2 mb-4">
+              <Skeleton className="h-5 w-20" />
+              <Skeleton className="h-5 w-12" />
+            </div>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex gap-3 p-3 rounded-lg border bg-background">
+                <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2 min-w-0">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+                <Skeleton className="w-16 h-6 shrink-0" />
+              </div>
+            ))}
+            <div className="flex items-center gap-2 mt-6 pt-4 border-t">
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-5 w-12" />
+            </div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={`assigned-${i}`} className="flex gap-3 p-3 rounded-lg border bg-background">
+                <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+                <div className="flex-1 space-y-2 min-w-0">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                </div>
+                <Skeleton className="w-16 h-6 shrink-0" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <QueuePanel
+            queuedItems={queuedItems}
+            assignedItems={assignedItems}
+            queuedTotal={queuedTotal}
+            assignedTotal={assignedTotal}
+            isLoadingMoreQueued={isLoadingMoreQueued}
+            isLoadingMoreAssigned={isLoadingMoreAssigned}
+            onLoadMoreQueued={() => fetchData('load-queued')}
+            onLoadMoreAssigned={() => fetchData('load-assigned')}
+            selectedConversation={selectedConversation}
+            loading={loading}
+            onSelectConversation={setSelectedConversation}
+            onClaim={handleClaim}
+          />
+        )}
 
         {/* Middle Column - Chat */}
         <ChatPanel

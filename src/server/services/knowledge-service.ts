@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import {
   KnowledgeRepository,
   type UpdateKnowledgeItemInput,
@@ -8,24 +9,103 @@ import {
 import { knowledgeChunkRepository } from '@/server/repositories/knowledge-chunk-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
-import { chunkText, diffChunks, summarizeDiff } from './text-chunker';
+import { diffChunks, summarizeDiff } from './text-chunker';
+import { smartChunkText } from './smart-chunking-service';
 import { createHash } from 'node:crypto';
+import { deleteStorageFile, deleteStorageFiles } from '@/lib/storage-cleanup';
+import { HTTP } from '@/lib/constants';
 
 export interface KnowledgeItemsResult {
   items: unknown[];
   categories: Record<string, number>;
   categoryTree: Record<string, { count: number; children: Record<string, number> }>;
   total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
 export class KnowledgeService {
   constructor(private readonly knowledge = new KnowledgeRepository()) {}
 
-  async listItems(options: { includeArchived?: boolean; includeExpired?: boolean } = {}): Promise<KnowledgeItemsResult> {
+  async listItems(options: {
+    includeArchived?: boolean;
+    onlyArchived?: boolean;
+    includeExpired?: boolean;
+    search?: string;
+    status?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<KnowledgeItemsResult> {
+    const page = Math.max(1, options.page ?? 1);
+    const rawLimit = options.limit ?? 20;
+    const limit = Math.min(100, Math.max(1, rawLimit));
+    const offset = (page - 1) * limit;
+
+    const filters = {
+      ...(options.search ? { search: options.search } : {}),
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.category ? { category: options.category } : {}),
+    };
+    const repoOptions = {
+      includeArchived: options.includeArchived,
+      onlyArchived: options.onlyArchived,
+      includeExpired: options.includeExpired,
+    };
+
     try {
-      return await this.knowledge.listItems({}, options);
+      const [items, total, aggregation] = await Promise.all([
+        this.knowledge.listItemsPage(filters, repoOptions, offset, limit),
+        this.knowledge.countItems(filters, repoOptions),
+        this.knowledge.aggregateCategories(filters, repoOptions),
+      ]);
+      const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+      return {
+        items,
+        categories: aggregation.categories,
+        categoryTree: aggregation.categoryTree,
+        total,
+        page,
+        limit,
+        totalPages,
+      };
     } catch (error) {
       throw toServiceError(error, '获取知识条目失败', 'DB_QUERY_ERROR');
+    }
+  }
+
+  async listAllIds(options: {
+    includeArchived?: boolean;
+    onlyArchived?: boolean;
+    includeExpired?: boolean;
+    search?: string;
+    status?: string;
+    category?: string;
+  } = {}): Promise<{ ids: string[] }> {
+    const filters = {
+      ...(options.search ? { search: options.search } : {}),
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.category ? { category: options.category } : {}),
+    };
+    const repoOptions = {
+      includeArchived: options.includeArchived,
+      onlyArchived: options.onlyArchived,
+      includeExpired: options.includeExpired,
+    };
+
+    try {
+      const ids = await this.knowledge.listAllIds(filters, repoOptions);
+      // P0-3: 硬上限保护，避免大批量选取撑爆响应
+      if (ids.length > HTTP.KNOWLEDGE_ALL_IDS_MAX) {
+        throw new ServiceError(
+          `筛选结果过多（>${HTTP.KNOWLEDGE_ALL_IDS_MAX}条），请缩小筛选范围后重试`,
+          { status: 400, code: 'SELECT_LIMIT_EXCEEDED' },
+        );
+      }
+      return { ids };
+    } catch (error) {
+      throw toServiceError(error, '获取知识条目ID失败', 'DB_QUERY_ERROR');
     }
   }
 
@@ -95,6 +175,17 @@ export class KnowledgeService {
       throw new ServiceError('请选择要删除的条目', { status: 400, code: 'VALIDATION_ERROR' });
     }
     try {
+      // Batch fetch items to collect image_urls before deletion
+      const items = await this.knowledge.findItemsByIds(ids);
+      const imageUrls = items
+        .map(item => (item as { image_url?: string | null }).image_url)
+        .filter((url): url is string => !!url);
+
+      // Fire-and-forget: delete storage files without blocking
+      if (imageUrls.length > 0) {
+        deleteStorageFiles(imageUrls);
+      }
+
       const count = await this.knowledge.bulkDelete(ids);
       return { count };
     } catch (error) {
@@ -126,7 +217,7 @@ export class KnowledgeService {
     }
   }
 
-  async updateItem(input: UpdateKnowledgeItemInput & { existingItem?: { doc_ids?: string[]; chunk_count?: number } }): Promise<{ message: string; new_doc_ids?: string[] }> {
+  async updateItem(input: UpdateKnowledgeItemInput & { existingItem?: { doc_ids?: string[]; chunk_count?: number } }): Promise<{ message: string }> {
     if (!input.id) {
       throw new ServiceError('请提供条目ID', {
         status: 400,
@@ -144,10 +235,7 @@ export class KnowledgeService {
       }
 
       if (input.content !== undefined && existingItem.type === 'text') {
-        return {
-          message: '内容已更新（向量更新由Coze SDK在路由层处理）',
-          new_doc_ids: input.doc_ids,
-        };
+        return { message: '内容已更新（向量更新由路由层处理）' };
       }
 
       const updateData: UpdateKnowledgeItemInput = { id: input.id };
@@ -172,10 +260,7 @@ export class KnowledgeService {
     name?: string;
     content: string;
     category?: string;
-    existingDocIds?: string[];
-    existingChunkCount?: number;
-    new_doc_ids?: string[];
-  }): Promise<{ new_doc_ids: string[] }> {
+  }): Promise<{ message: string }> {
     const existingItem = await this.knowledge.findItemById(input.id);
     if (!existingItem) {
       throw new ServiceError('条目不存在', {
@@ -184,19 +269,49 @@ export class KnowledgeService {
       });
     }
 
-    const newDocIds = input.new_doc_ids || [];
-    const allDocIds = [...(input.existingDocIds || []), ...newDocIds];
+    // 使用智能分段（LLM 自动分段，回退到规则分段）
+    const newChunks = await smartChunkText(input.content, {
+      chunkSize: 500,
+      overlap: 50,
+      enableLLMChunking: true,
+    });
 
+    // 获取当前版本号（用于 chunk version_added）
+    const currentVersion = await this.knowledge.getLatestVersion(input.id);
+    const nextVersion = currentVersion + 1;
+
+    // 更新 knowledge_items 放在最前，先确保 item 更新成功，再写 chunks
     await this.knowledge.updateItem({
       id: input.id,
       name: input.name,
-      content: (input.content as string).slice(0, 500),
+      content: input.content,
       category: input.category,
-      doc_ids: allDocIds,
-      chunk_count: (input.existingChunkCount || 0) + newDocIds.length,
+      chunk_count: newChunks.length,
     });
 
-    return { new_doc_ids: newDocIds };
+    // item 更新成功后，操作 chunks（即使失败，item 数据已是正确的）
+    try {
+      const oldChunks = await knowledgeChunkRepository.getActiveChunks(input.id);
+      if (oldChunks.length > 0) {
+        await knowledgeChunkRepository.markActiveChunksRemoved(input.id, nextVersion);
+      }
+      if (newChunks.length > 0) {
+        await knowledgeChunkRepository.insertChunks(
+          newChunks.map(c => ({
+            knowledge_item_id: input.id,
+            chunk_index: c.index,
+            content: c.content,
+            content_hash: c.content_hash,
+            version_added: nextVersion,
+          })),
+        );
+      }
+    } catch (chunkError) {
+      // chunks 写入失败不影响 item 已是正确的状态，仅记录日志
+      logger.error('updateItemWithVector chunks 写入失败', { itemId: input.id, error: chunkError });
+    }
+
+    return { message: '内容已更新，向量索引已重建' };
   }
 
   async deleteItem(id: string): Promise<void> {
@@ -208,6 +323,13 @@ export class KnowledgeService {
     }
 
     try {
+      // Fetch item to get image_url before deletion
+      const item = await this.knowledge.findItemById(id);
+      if (item?.image_url) {
+        // Fire-and-forget: delete storage file without blocking
+        deleteStorageFile(item.image_url);
+      }
+
       await this.knowledge.deleteItem(id);
     } catch (error) {
       throw toServiceError(error, '删除知识条目失败', 'DB_ERROR');
@@ -239,8 +361,12 @@ export class KnowledgeService {
     }
 
     try {
-      // 1) 切分新旧内容为 chunks
-      const newChunks = chunkText(input.content);
+      // 1) 使用智能分段切分新旧内容为 chunks
+      const newChunks = await smartChunkText(input.content, {
+        chunkSize: 500,
+        overlap: 50,
+        enableLLMChunking: true,
+      });
       const oldChunks = await knowledgeChunkRepository.getActiveChunks(input.item_id);
 
       // 2) 计算 chunk diff（在版本号确定前）
@@ -255,7 +381,8 @@ export class KnowledgeService {
         chunk_diff: diff,
         chunk_count: summary.total_after,
       } as CreateVersionInput);
-      const nextVersion = (version as { version_number: number }).version_number;
+      // P0-2: repository .select() 字段是 version，不是 version_number
+      const nextVersion = (version as { version: number }).version;
 
       // 4) 把旧 chunks 标为已移除
       if (oldChunks.length > 0) {
@@ -270,17 +397,17 @@ export class KnowledgeService {
             chunk_index: c.index,
             content: c.content,
             content_hash: c.content_hash,
-            doc_id: null,
             version_added: nextVersion,
           })),
         );
       }
 
-      // 6) 更新 knowledge_items.content
+      // 6) 更新 knowledge_items.content 和 chunk_count
       await this.knowledge.updateKnowledgeItemContent(
         input.item_id,
         input.title,
         input.content,
+        summary.total_after,
       );
 
       return version;

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
 import { trimDemoArray } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 
 // Demo mode mock data
 const DEMO_TAGS = [
@@ -60,7 +61,7 @@ export class ConversationTagRepository {
       if (error) throw new RepositoryError('list conversation tag definitions', error.message, error.code);
       return data ?? [];
     } catch (error) {
-      console.error('Database query failed for listDefinitions, falling back to demo data:', error);
+      logger.error('Database query failed for listDefinitions, falling back to demo data', { error });
       let tags = DEMO_TAGS;
       if (filters.category) {
         tags = tags.filter(t => t.category === filters.category);

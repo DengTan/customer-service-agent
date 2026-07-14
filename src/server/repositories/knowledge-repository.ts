@@ -3,7 +3,11 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import { DEMO_ITEMS } from './demo-data/demo-knowledge';
 import { escapeLikePattern } from '@/lib/api-utils';
+
 export interface KnowledgeItemFilters {
+  status?: string;
+  category?: string;
+  search?: string;
   [key: string]: unknown;
 }
 
@@ -60,6 +64,7 @@ export interface UpdateKnowledgeItemInput {
 
 export interface ListItemsOptions {
   includeArchived?: boolean;
+  onlyArchived?: boolean;
   includeExpired?: boolean;
 }
 
@@ -99,36 +104,136 @@ export interface VersionWithCreator {
 export class KnowledgeRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
+  /**
+   * P1-6: 返回仅含 1 条 stub item。仅作为向后兼容的旧接口保留
+   * @deprecated 返回仅含 1 条 stub item。新调用方应使用 listItemsPage+countItems+aggregateCategories 或 service.listItems。
+   */
   async listItems(_filters: KnowledgeItemFilters = {}, options: ListItemsOptions = {}): Promise<{ items: KnowledgeItemWithNormalized[]; categories: Record<string, number>; categoryTree: Record<string, { count: number; children: Record<string, number> }>; total: number }> {
+    // Backwards-compatible thin wrapper. Returns the first 1 row only when no filters applied.
+    // Callers needing pagination should use listItemsPage + countItems + aggregateCategories directly via service.listItems().
+    const page = await this.listItemsPage(_filters, options, 0, 1);
+    const total = await this.countItems(_filters, options);
+    const { categories, categoryTree } = await this.aggregateCategories(_filters, options);
+    return { items: page, categories, categoryTree, total };
+  }
+
+  async listItemsPage(filters: KnowledgeItemFilters = {}, options: ListItemsOptions = {}, offset = 0, limit = 20): Promise<KnowledgeItemWithNormalized[]> {
     if (isDemoMode()) {
-      const filtered = options.includeArchived
-        ? DEMO_ITEMS
-        : DEMO_ITEMS.filter(i => i.status === 'active' && !i.archived_at);
-      const categories: Record<string, number> = {};
-      filtered.forEach(item => { categories[item.category] = (categories[item.category] || 0) + 1; });
-      const categoryTree: Record<string, { count: number; children: Record<string, number> }> = {};
-      Object.entries(categories).forEach(([cat, count]) => {
-        categoryTree[cat] = { count, children: {} };
-      });
-      return { items: filtered, categories, categoryTree, total: filtered.length };
+      return this.demoListItemsPage(filters, options, offset, limit);
     }
 
-    // 真实模式：根据 options 拼接过滤条件
-    // 1) 默认仅查询 status != 'deleted' 的条目
-    // 2) 默认排除已归档（archived_at 非空）；includeArchived=true 时返回全部
-    // 3) 默认排除已过期（expires_at 已过）；includeExpired=true 时返回全部（包含未到期）
-    // 4) 支持 _filters 参数过滤（status / category / search）
     let query = this.client
       .from('knowledge_items')
       .select('*')
       .neq('status', 'deleted');
 
-    if (!options.includeArchived) {
+    query = this.applyFilters(query, filters, options);
+    query = query.order('archived_at', { ascending: true }).order('created_at', { ascending: false });
+    query = query.range(offset, offset + limit - 1);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new RepositoryError('list knowledge items page', error.message, error.code);
+    }
+
+    // P1-4: expired 过滤已由 applyFilters 推到 SQL，JS 层不再重复过滤
+    return (data || []).map((item: Record<string, unknown>) => this.normalizeItem(item));
+  }
+
+  async countItems(filters: KnowledgeItemFilters = {}, options: ListItemsOptions = {}): Promise<number> {
+    if (isDemoMode()) {
+      return this.demoFilteredItems(filters, options).length;
+    }
+
+    let query = this.client
+      .from('knowledge_items')
+      .select('id', { count: 'exact', head: true })
+      .neq('status', 'deleted');
+
+    query = this.applyFilters(query, filters, options);
+
+    const { count, error } = await query;
+    if (error) {
+      throw new RepositoryError('count knowledge items', error.message, error.code);
+    }
+    return count ?? 0;
+  }
+
+  async aggregateCategories(filters: KnowledgeItemFilters = {}, options: ListItemsOptions = {}): Promise<{
+    categories: Record<string, number>;
+    categoryTree: Record<string, { count: number; children: Record<string, number> }>;
+  }> {
+    if (isDemoMode()) {
+      return this.demoAggregateCategories(filters, options);
+    }
+
+    let query = this.client
+      .from('knowledge_items')
+      .select('category, parent_category')
+      .neq('status', 'deleted');
+
+    query = this.applyFilters(query, filters, options);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new RepositoryError('aggregate categories', error.message, error.code);
+    }
+
+    const categories: Record<string, number> = {};
+    const categoryTree: Record<string, { count: number; children: Record<string, number> }> = {};
+    (data || []).forEach((row: Record<string, unknown>) => {
+      const cat = ((row.category as string) || '未分类') as string;
+      const parentCat = (row.parent_category as string) || null;
+      categories[cat] = (categories[cat] || 0) + 1;
+
+      if (parentCat) {
+        if (!categoryTree[parentCat]) categoryTree[parentCat] = { count: 0, children: {} };
+        categoryTree[parentCat].children[cat] = (categoryTree[parentCat].children[cat] || 0) + 1;
+        categoryTree[parentCat].count += 1;
+      } else {
+        if (!categoryTree[cat]) categoryTree[cat] = { count: 0, children: {} };
+        categoryTree[cat].count += 1;
+      }
+    });
+
+    return { categories, categoryTree };
+  }
+
+  async listAllIds(filters: KnowledgeItemFilters = {}, options: ListItemsOptions = {}): Promise<string[]> {
+    if (isDemoMode()) {
+      return this.demoFilteredItems(filters, options).map(i => i.id);
+    }
+
+    let query = this.client
+      .from('knowledge_items')
+      .select('id')
+      .neq('status', 'deleted');
+
+    query = this.applyFilters(query, filters, options);
+
+    const { data, error } = await query;
+    if (error) {
+      throw new RepositoryError('list all knowledge ids', error.message, error.code);
+    }
+    return (data || []).map((row: Record<string, unknown>) => row.id as string);
+  }
+
+  /**
+   * Shared filter applier used by listItemsPage / countItems / aggregateCategories / listAllIds.
+   * Keeps status / category / search / includeArchived / includeExpired in one place.
+   */
+  private applyFilters(query: any, filters: KnowledgeItemFilters, options: ListItemsOptions): any {
+    if (options.onlyArchived) {
+      query = query.not('archived_at', 'is', null);
+    } else if (!options.includeArchived) {
       query = query.is('archived_at', null);
     }
 
-    // Apply _filters (status, category, search) — mirrors real-mode pattern used in other repositories
-    const filters = _filters as { status?: string; category?: string; search?: string };
+    // P1-4: expired 过滤推到 SQL（expires_at 为 null 或大于当前时间视为有效）
+    if (!options.includeExpired) {
+      query = query.or('expires_at.is.null,expires_at.gt.now()');
+    }
+
     if (filters.status) {
       query = query.eq('status', filters.status);
     }
@@ -137,43 +242,78 @@ export class KnowledgeRepository {
     }
     if (filters.search) {
       const escaped = escapeLikePattern(filters.search);
-      query = query.or(`title.ilike.%${escaped}%,name.ilike.%${escaped}%`);
+      // P1-5: 搜索扩展到 name + title + content（content.ilike 可能慢，已知）
+      query = query.or(`name.ilike.%${escaped}%,title.ilike.%${escaped}%,content.ilike.%${escaped}%`);
     }
 
-    query = query.order('archived_at', { ascending: true }).order('created_at', { ascending: false });
+    return query;
+  }
 
-    const { data, error } = await query;
+  private normalizeItem(item: Record<string, unknown>): KnowledgeItemWithNormalized {
+    return {
+      ...item,
+      name: (item.name || item.title || '未命名') as string,
+      type: (item.type || 'text') as string,
+      category: ((item.category as string) || '未分类') as string,
+      parent_category: (item.parent_category as string) || null,
+      content_hash: (item.content_hash as string) || null,
+      hit_count: (item.hit_count as number) || 0,
+      last_hit_at: (item.last_hit_at as string) || null,
+      adopted_count: (item.adopted_count as number) || 0,
+      rejected_count: (item.rejected_count as number) || 0,
+      archived_at: (item.archived_at as string) || null,
+      expires_at: (item.expires_at as string) || null,
+    } as KnowledgeItemWithNormalized;
+  }
 
-    if (error) {
-      throw new RepositoryError('list knowledge items', error.message, error.code);
-    }
-
+  private demoApplyFilters(filters: KnowledgeItemFilters, options: ListItemsOptions): KnowledgeItemWithNormalized[] {
     const now = Date.now();
-    const items = (data || [])
-      .filter((item: Record<string, unknown>) => {
-        if (!options.includeExpired && item.expires_at && new Date(item.expires_at as string).getTime() < now) {
-          return false;
-        }
-        return true;
-      })
-      .map((item: Record<string, unknown>) => ({
-        ...item,
-        name: (item.name || item.title || '未命名') as string,
-        type: (item.type || 'text') as string,
-        category: ((item.category as string) || '未分类') as string,
-        parent_category: (item.parent_category as string) || null,
-        content_hash: (item.content_hash as string) || null,
-        hit_count: (item.hit_count as number) || 0,
-        last_hit_at: (item.last_hit_at as string) || null,
-        adopted_count: (item.adopted_count as number) || 0,
-        rejected_count: (item.rejected_count as number) || 0,
-        archived_at: (item.archived_at as string) || null,
-        expires_at: (item.expires_at as string) || null,
-      })) as KnowledgeItemWithNormalized[];
+    return DEMO_ITEMS.filter((item) => {
+      if (item.status === 'deleted') return false;
+      if (options.onlyArchived) {
+        if (!item.archived_at) return false;
+      } else if (!options.includeArchived) {
+        if (item.archived_at) return false;
+      }
+      if (!options.includeExpired && item.expires_at && new Date(item.expires_at).getTime() < now) return false;
+      if (filters.status && item.status !== filters.status) return false;
+      if (filters.category && item.category !== filters.category) return false;
+      if (filters.search) {
+        const lowered = filters.search.toLowerCase();
+        const hit = (item.name || item.title || '').toLowerCase().includes(lowered);
+        if (!hit) return false;
+      }
+      return true;
+    }) as KnowledgeItemWithNormalized[];
+  }
 
+  private demoFilteredItems(filters: KnowledgeItemFilters, options: ListItemsOptions): KnowledgeItemWithNormalized[] {
+    return this.demoApplyFilters(filters, options);
+  }
+
+  private demoListItemsPage(filters: KnowledgeItemFilters, options: ListItemsOptions, offset: number, limit: number): KnowledgeItemWithNormalized[] {
+    const filtered = this.demoFilteredItems(filters, options);
+    return filtered
+      .slice()
+      .sort((a, b) => {
+        const aArchived = a.archived_at ? 1 : 0;
+        const bArchived = b.archived_at ? 1 : 0;
+        if (aArchived !== bArchived) return aArchived - bArchived;
+        const aCreated = a.created_at || '';
+        const bCreated = b.created_at || '';
+        return bCreated.localeCompare(aCreated);
+      })
+      .slice(offset, offset + limit);
+  }
+
+  private demoAggregateCategories(filters: KnowledgeItemFilters, options: ListItemsOptions): {
+    categories: Record<string, number>;
+    categoryTree: Record<string, { count: number; children: Record<string, number> }>;
+  } {
+    const filtered = this.demoFilteredItems(filters, options);
     const categories: Record<string, number> = {};
     const categoryTree: Record<string, { count: number; children: Record<string, number> }> = {};
-    items.forEach((item) => {
+    filtered.forEach((item) => {
       const cat = item.category || '未分类';
       const parentCat = item.parent_category || null;
       categories[cat] = (categories[cat] || 0) + 1;
@@ -183,18 +323,16 @@ export class KnowledgeRepository {
         categoryTree[parentCat].children[cat] = (categoryTree[parentCat].children[cat] || 0) + 1;
         categoryTree[parentCat].count += 1;
       } else {
-        // Top-level category with no parent
         if (!categoryTree[cat]) categoryTree[cat] = { count: 0, children: {} };
         categoryTree[cat].count += 1;
       }
     });
-
-    return { items, categories, categoryTree, total: items.length };
+    return { categories, categoryTree };
   }
 
   async findItemById(id: string): Promise<KnowledgeItem | null> {
     if (isDemoMode()) {
-      const items = (await this.listItems()).items;
+      const items = await this.listItemsPage({}, { includeArchived: false, includeExpired: false }, 0, 10000);
       return items.find(i => i.id === id) ?? null;
     }
     const { data, error } = await this.client
@@ -210,11 +348,29 @@ export class KnowledgeRepository {
     return data as KnowledgeItem | null;
   }
 
+  async findItemsByIds(ids: string[]): Promise<KnowledgeItem[]> {
+    if (ids.length === 0) return [];
+    if (isDemoMode()) {
+      const items = await this.listItemsPage({}, { includeArchived: false, includeExpired: false }, 0, 10000);
+      return items.filter(i => ids.includes(i.id));
+    }
+    const { data, error } = await this.client
+      .from('knowledge_items')
+      .select('*')
+      .in('id', ids);
+
+    if (error) {
+      throw new RepositoryError('find items by ids', error.message, error.code);
+    }
+
+    return (data || []) as KnowledgeItem[];
+  }
+
   async updateItem(input: UpdateKnowledgeItemInput): Promise<void> {
     if (isDemoMode()) return;
     const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (input.name !== undefined) updateData.name = input.name;
-    if (input.content !== undefined) updateData.content = (input.content as string).slice(0, 500);
+    if (input.content !== undefined) updateData.content = input.content;
     if (input.category !== undefined) updateData.category = input.category;
     if (input.parent_category !== undefined) updateData.parent_category = input.parent_category;
     if (input.doc_ids !== undefined) updateData.doc_ids = input.doc_ids;
@@ -235,11 +391,9 @@ export class KnowledgeRepository {
 
   async deleteItem(id: string): Promise<void> {
     if (isDemoMode()) return;
-    const { error } = await this.client
-      .from('knowledge_items')
-      .update({ status: 'deleted', updated_at: new Date().toISOString() })
-      .eq('id', id);
-
+    // 物理删除：先删关联 chunks，再删条目
+    await this.client.from('knowledge_chunks').delete().eq('knowledge_item_id', id);
+    const { error } = await this.client.from('knowledge_items').delete().eq('id', id);
     if (error) {
       throw new RepositoryError('delete knowledge item', error.message, error.code);
     }
@@ -268,16 +422,17 @@ export class KnowledgeRepository {
     }
 
     // Fix N+1 query: batch fetch all creators instead of one query per version
-    const versionsList = (versions as Array<Record<string, unknown>>) || [];
-    const creatorIds = [...new Set(versionsList.map(v => v.created_by).filter(Boolean))] as string[];
-    
+    type VersionRow = Omit<VersionWithCreator, 'creator_name'>;
+    const versionsList = (versions as VersionRow[] | null) ?? [];
+    const creatorIds = [...new Set(versionsList.map(v => v.created_by).filter((id): id is string => Boolean(id)))];
+
     let userMap: Map<string, string> = new Map();
     if (creatorIds.length > 0) {
       const { data: users } = await this.client
         .from('users')
         .select('id, name')
         .in('id', creatorIds);
-      
+
       if (users) {
         userMap = new Map((users as Array<{ id: string; name: string }>).map(u => [u.id, u.name]));
       }
@@ -285,8 +440,8 @@ export class KnowledgeRepository {
 
     const enrichedVersions: VersionWithCreator[] = versionsList.map((v) => ({
       ...v,
-      creator_name: v.created_by ? (userMap.get(v.created_by as string) || null) : null,
-    } as VersionWithCreator));
+      creator_name: v.created_by ? userMap.get(v.created_by) ?? null : null,
+    }));
 
     return enrichedVersions;
   }
@@ -354,7 +509,6 @@ export class KnowledgeRepository {
       version: number;
       title: string;
       content: string;
-      category: string | null;
     } | null;
   }
 
@@ -396,15 +550,19 @@ export class KnowledgeRepository {
     return newVersion;
   }
 
-  async updateKnowledgeItemContent(itemId: string, title: string, content: string): Promise<void> {
+  async updateKnowledgeItemContent(itemId: string, title: string, content: string, chunkCount?: number): Promise<void> {
     if (isDemoMode()) return;
+    const updateData: Record<string, unknown> = {
+      title,
+      content,
+      updated_at: new Date().toISOString(),
+    };
+    if (chunkCount !== undefined) {
+      updateData.chunk_count = chunkCount;
+    }
     await this.client
       .from('knowledge_items')
-      .update({
-        title,
-        content,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', itemId);
   }
 
@@ -473,9 +631,11 @@ export class KnowledgeRepository {
   async bulkDelete(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     if (isDemoMode()) return ids.length;
+    // 物理删除：先删关联 chunks，再删条目
+    await this.client.from('knowledge_chunks').delete().in('knowledge_item_id', ids);
     const { data, error } = await this.client
       .from('knowledge_items')
-      .update({ status: 'deleted', archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .delete()
       .in('id', ids)
       .select('id');
     if (error) throw new RepositoryError('bulk delete', error.message, error.code);

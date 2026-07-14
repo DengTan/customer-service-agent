@@ -77,7 +77,19 @@ export interface Message {
   role: 'user' | 'assistant' | 'system' | 'internal_note' | 'agent';
   content: string;
   image_url?: string | null;
-  sources: Array<{ type: string; content?: string; score?: number; keyword?: string; knowledge_item_id?: string; name?: string; category?: string }> | null;
+  sources: Array<{
+    type: string;
+    content?: string;
+    score?: number;
+    keyword?: string;
+    knowledge_item_id?: string;
+    name?: string;
+    category?: string;
+    // P2: stable chunk identity for citation precision
+    chunk_id?: string | null;
+    chunk_index?: number;
+    content_hash?: string | null;
+  }> | null;
   confidence?: number | null;
   confidence_breakdown?: ConfidenceBreakdown | null;
   tool_calls?: unknown[] | null;
@@ -711,6 +723,8 @@ export interface SimulationConversation {
   title: string;
   scenario_id?: string | null;
   scenario_name: string;
+  bot_id?: string | null;
+  bot_name?: string | null;
   message_count: number;
   status: 'active' | 'completed';
   created_by?: string | null;
@@ -725,7 +739,19 @@ export interface SimulationMessage {
   conversation_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  sources?: Array<{ type: string; content?: string; score?: number; keyword?: string; knowledge_item_id?: string; name?: string; category?: string }> | null;
+  sources?: Array<{
+    type: string;
+    content?: string;
+    score?: number;
+    keyword?: string;
+    knowledge_item_id?: string;
+    name?: string;
+    category?: string;
+    // P2: stable chunk identity for citation precision
+    chunk_id?: string | null;
+    chunk_index?: number;
+    content_hash?: string | null;
+  }> | null;
   confidence?: number | null;
   confidence_breakdown?: ConfidenceBreakdown | null;
   tool_calls?: unknown | null;

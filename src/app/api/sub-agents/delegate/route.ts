@@ -1,36 +1,35 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, requirePermission } from '@/lib/api-utils';
 
 const service = new SubAgentService();
 
-interface DelegateBody {
-  conversation_id: string;
-  parent_bot_id: string;
-  child_bot_id: string;
-  input_message: string;
-  trigger_intent?: string;
-}
+const DelegateBodySchema = z.object({
+  conversation_id: z.string().uuid({ message: 'conversation_id 必须是合法 UUID' }),
+  parent_bot_id: z.string().uuid({ message: 'parent_bot_id 必须是合法 UUID' }),
+  child_bot_id: z.string().uuid({ message: 'child_bot_id 必须是合法 UUID' }),
+  input_message: z.string().min(1).max(10000),
+  trigger_intent: z.string().max(200).optional(),
+});
 
 // POST /api/sub-agents/delegate - Delegate a task to a sub-agent
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const { data: body, error: parseError } = await parseJsonBody<DelegateBody>(request);
+  const denied = await requirePermission(request, 'sub_agents', 'write');
+  if (denied) return denied;
+
+  const { data: rawBody, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  if (!body?.conversation_id || !body?.parent_bot_id || !body?.child_bot_id || !body?.input_message) {
-    return apiError('conversation_id、parent_bot_id、child_bot_id 和 input_message 为必填项', {
+  const parsed = DelegateBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '参数校验失败', {
       status: HttpStatus.BAD_REQUEST,
       code: 'VALIDATION_ERROR',
     });
   }
 
-  const result = await service.delegateTask({
-    conversation_id: body.conversation_id,
-    parent_bot_id: body.parent_bot_id,
-    child_bot_id: body.child_bot_id,
-    trigger_intent: body.trigger_intent,
-    input_message: body.input_message,
-  });
+  const result = await service.delegateTask(parsed.data);
 
   return Response.json({
     success: true,

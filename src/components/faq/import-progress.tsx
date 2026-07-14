@@ -50,18 +50,28 @@ export function ImportProgress({ jobId, onComplete, onClose }: ImportProgressPro
     try {
       const res = await fetch(`/api/knowledge/import-jobs/${jobId}`);
       const data = await res.json();
-      
-      if (data.code !== 0) {
-        throw new Error(data.message || '获取任务状态失败');
+
+      // 支持 apiSuccess 格式: { success: true, ...jobData }
+      // 和旧格式: { code: 0, data: { ...jobData } }
+      let jobData: ImportJobStatus | null = null;
+
+      if (data.success && !data.code) {
+        // apiSuccess format: job data is spread at root level
+        jobData = data as unknown as ImportJobStatus;
+      } else if (data.code === 0 && data.data) {
+        // Old format: { code: 0, data: { ...jobData } }
+        jobData = data.data;
+      } else {
+        throw new Error(data.message || data.error || '获取任务状态失败');
       }
 
-      setJob(data.data);
+      setJob(jobData);
       setError(null);
 
       // 如果完成或有错误，停止轮询
-      if (data.data.status === 'completed' || data.data.status === 'failed') {
-        if (data.data.status === 'completed' && data.data.knowledgeItemId && onComplete) {
-          onComplete(data.data.knowledgeItemId);
+      if (jobData && (jobData.status === 'completed' || jobData.status === 'failed')) {
+        if (jobData.status === 'completed' && jobData.knowledgeItemId && onComplete) {
+          onComplete(jobData.knowledgeItemId);
         }
       }
     } catch (err) {
@@ -197,7 +207,6 @@ export function ImportProgress({ jobId, onComplete, onClose }: ImportProgressPro
                 <h4 className="font-medium text-sm">
                   切分预览 {job.totalChunks > 0 && `（共 ${job.totalChunks} 个片段）`}
                 </h4>
-                <span className="text-xs text-muted-foreground">预览效果（Coze 实际切分可能略有差异）</span>
               </div>
               
               <div className="space-y-3">

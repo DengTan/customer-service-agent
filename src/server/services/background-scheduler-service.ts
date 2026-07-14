@@ -6,6 +6,7 @@ import { AlertRepository } from '@/server/repositories/alert-repository';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { logger } from '@/lib/logger';
 import { isDemoMode } from '@/storage/database/supabase-client';
+import { clearChunkCache, getCacheStats } from './smart-chunking-service';
 
 export interface SchedulerResult {
   ok: boolean;
@@ -27,15 +28,21 @@ export interface KnowledgeLearningScanResult extends SchedulerResult {
   extracted: number;
 }
 
+export interface CacheCleanupResult extends SchedulerResult {
+  cacheSize: number;
+}
+
 export interface RunAllResult {
   sla_check: SchedulerResult;
   unassigned_check: SchedulerResult;
   unhandled_check: UnhandledCheckResult;
   scheduled_campaigns: ScheduledCampaignsResult;
   knowledge_learning_scan: KnowledgeLearningScanResult;
+  cache_cleanup: CacheCleanupResult;
 }
 
 export class BackgroundSchedulerService {
+  private unhandledReminderRun: Promise<UnhandledCheckResult> | null = null;
   /**
    * Run SLA overdue check for all active tickets.
    */
@@ -75,8 +82,24 @@ export class BackgroundSchedulerService {
   /**
    * Scan active conversations where the last message is from the user and older than
    * the configured threshold, then create alerts for unhandled ones (with 1-hour dedup).
+   *
+   * Settings semantics (fixed 2026-07-13):
+   *   - `unhandled_remind_enabled`:  'true'/'false' boolean toggle (default true)
+   *   - `unhandled_remind_minutes`:  integer minutes (default 30)
+   * The legacy `unhandled_remind` boolean is ignored; it was being
+   * `parseInt`-ed as minutes and produced 0 minutes when set to 'true',
+   * silently disabling the reminder.
    */
-  async runUnhandledReminder(): Promise<UnhandledCheckResult> {
+  runUnhandledReminder(): Promise<UnhandledCheckResult> {
+    if (!this.unhandledReminderRun) {
+      this.unhandledReminderRun = this.executeUnhandledReminder().finally(() => {
+        this.unhandledReminderRun = null;
+      });
+    }
+    return this.unhandledReminderRun;
+  }
+
+  private async executeUnhandledReminder(): Promise<UnhandledCheckResult> {
     try {
       if (isDemoMode()) {
         return { ok: true, checked: 0, created: 0 };
@@ -88,9 +111,11 @@ export class BackgroundSchedulerService {
         acc[item.key] = item.value;
         return acc;
       }, {});
-      const unhandledMinutes = parseInt(map.unhandled_remind || '0', 10);
 
-      if (unhandledMinutes <= 0) {
+      const enabled = (map.unhandled_remind_enabled ?? 'true') === 'true';
+      const unhandledMinutes = parseInt(map.unhandled_remind_minutes ?? '30', 10);
+
+      if (!enabled || !Number.isFinite(unhandledMinutes) || unhandledMinutes <= 0) {
         return { ok: true, checked: 0, created: 0 };
       }
 
@@ -142,12 +167,24 @@ export class BackgroundSchedulerService {
 
   /**
    * Scan recent conversations and extract low-confidence AI replies as candidate knowledge.
+   *
+   * Honors the `knowledge_learning_auto_scan_enabled` setting. When the toggle is
+   * disabled (default in FACTORY_DEFAULTS), the scan is a no-op so cron-driven runs
+   * don't generate noise that admins haven't opted in to.
    */
   async runKnowledgeLearningScan(): Promise<KnowledgeLearningScanResult> {
     try {
       if (isDemoMode()) {
         return { ok: true, scanned: 0, extracted: 0 };
       }
+
+      // Gate on the auto-scan toggle before doing any work
+      const settingsRepo = new SettingsRepository();
+      const enabledValue = await settingsRepo.get('knowledge_learning_auto_scan_enabled');
+      if (enabledValue !== 'true') {
+        return { ok: true, scanned: 0, extracted: 0 };
+      }
+
       const service = new KnowledgeLearningService();
       const result = await service.scanConversations();
       return { ok: true, scanned: result.scanned, extracted: result.extracted };
@@ -159,17 +196,35 @@ export class BackgroundSchedulerService {
   }
 
   /**
+   * Clear the smart chunking cache to free up memory.
+   * Should be called periodically (e.g., every hour).
+   */
+  async runCacheCleanup(): Promise<CacheCleanupResult> {
+    try {
+      const stats = getCacheStats();
+      clearChunkCache();
+      logger.agent.debug('[BackgroundSchedulerService] Cache cleanup completed', { previousSize: stats.size });
+      return { ok: true, cacheSize: stats.size };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.agent.error('[BackgroundSchedulerService] runCacheCleanup failed', { error: msg });
+      return { ok: false, cacheSize: 0, error: msg };
+    }
+  }
+
+  /**
    * Run all background tasks in parallel.
    */
   async runAll(): Promise<RunAllResult> {
-    const [sla_check, unassigned_check, unhandled_check, scheduled_campaigns, knowledge_learning_scan] =
+    const [sla_check, unassigned_check, unhandled_check, scheduled_campaigns, knowledge_learning_scan, cache_cleanup] =
       await Promise.all([
         this.runSLACheck(),
         this.runUnassignedCheck(),
         this.runUnhandledReminder(),
         this.runScheduledCampaigns(),
         this.runKnowledgeLearningScan(),
+        this.runCacheCleanup(),
       ]);
-    return { sla_check, unassigned_check, unhandled_check, scheduled_campaigns, knowledge_learning_scan };
+    return { sla_check, unassigned_check, unhandled_check, scheduled_campaigns, knowledge_learning_scan, cache_cleanup };
   }
 }

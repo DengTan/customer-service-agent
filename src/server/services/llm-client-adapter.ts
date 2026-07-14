@@ -54,6 +54,7 @@ export interface LLMChatResponse {
     message: {
       role: string;
       content: string;
+      reasoning?: string;
     };
     finish_reason: string;
   }>;
@@ -87,12 +88,16 @@ export class LLMClientAdapter {
     options: LLMChatOptions
   ): AsyncGenerator<LLMStreamChunk> {
     const url = `${this.baseUrl}/v1/chat/completions`;
+    console.log('[LLMClient] stream() called with url:', url, 'model:', options.model);
+    console.log('[LLMClient] messages count:', messages.length);
+    console.log('[LLMClient] messages[0]:', JSON.stringify(messages[0]).substring(0, 200));
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.apiKey}`,
       ...this.customHeaders,
     };
+    console.log('[LLMClient] headers:', JSON.stringify(headers).replace(/Bearer [^"]+/, 'Bearer ***'));
 
     const body: Record<string, unknown> = {
       model: options.model,
@@ -116,8 +121,13 @@ export class LLMClientAdapter {
         signal: AbortSignal.timeout(this.timeout),
       });
 
+      console.log('[LLMClient] response status:', response.status);
+      console.log('[LLMClient] response ok:', response.ok);
+      console.log('[LLMClient] response body type:', typeof response.body, response.body ? 'exists' : 'null');
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.log('[LLMClient] error response:', errorText);
         logger.error('LLM stream request failed', {
           status: response.status,
           error: errorText,
@@ -127,19 +137,29 @@ export class LLMClientAdapter {
       }
 
       if (!response.body) {
+        console.log('[LLMClient] response body is null!');
         throw new Error('Response body is null');
       }
 
+      console.log('[LLMClient] starting to read stream...');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
       try {
+        const readCount = 0;
         while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+          const result = await reader.read();
+          console.log('[LLMClient] read() result:', JSON.stringify({ done: result.done, valueLen: result.value?.length, valueFirstBytes: result.value ? Array.from(result.value.slice(0, 20)) : null }));
+          const { done, value } = result;
+          if (done) {
+            console.log('[LLMClient] stream done, buffer remaining:', buffer.length, 'chars');
+            break;
+          }
 
-          buffer += decoder.decode(value, { stream: true });
+          const decoded = decoder.decode(value, { stream: true });
+          console.log('[LLMClient] decoded chunk length:', decoded.length, 'preview:', decoded.substring(0, 100));
+          buffer += decoded;
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
@@ -226,8 +246,14 @@ export class LLMClientAdapter {
       }
 
       const choice = data.choices[0];
+      // Only use the standard content field; reasoning/thinking content is intentionally
+      // not exposed to prevent internal thought processes from appearing in user-facing responses
+      const messageContent = choice.message.content ?? '';
+      if (!messageContent && choice.message.reasoning) {
+        logger.warn('[LLMClient] Model returned only reasoning content with no content field; response may be incomplete');
+      }
       return {
-        content: choice.message.content,
+        content: messageContent,
         role: choice.message.role,
         finishReason: choice.finish_reason,
         usage: data.usage ? {
@@ -270,16 +296,52 @@ export class LLMClientAdapter {
    * Parse SSE stream chunk to LLMStreamChunk
    */
   private parseStreamChunk(data: Record<string, unknown>): LLMStreamChunk | null {
-    const delta = data.delta as Record<string, unknown> | undefined;
-    if (!delta) return null;
+    // Extract delta from choices[0] (standard OpenAI streaming format)
+    const choices = data.choices as Array<Record<string, unknown>> | undefined;
+    const choice = choices?.[0];
+    const delta = choice?.delta as Record<string, unknown> | undefined;
+    const message = choice?.message as Record<string, unknown> | undefined;
+
+    // DEBUG
+    console.log('[LLMClient DEBUG] parsed:', JSON.stringify(data).substring(0, 300));
+
+    if (!delta && !message) return null;
 
     const chunk: LLMStreamChunk = {};
 
-    if (typeof delta.content === 'string') {
+    // Handle delta.content (standard OpenAI format) — this is the visible response
+    if (delta && typeof delta.content === 'string') {
       chunk.content = delta.content;
     }
 
-    if (typeof delta.role === 'string') {
+    // NOTE: delta.reasoning is intentionally NOT forwarded to the client.
+    // Reasoning/thinking content from models like Sensenova contains internal thought
+    // processes that should never be shown to end users. This is handled separately
+    // in the streaming service for internal logging purposes only.
+    // if (delta && typeof delta.reasoning === 'string') { ... }
+
+    // Handle message.content (non-streaming response shape — fallback for some providers)
+    if (message && typeof message.content === 'string') {
+      chunk.content = (chunk.content || '') + message.content;
+    }
+
+    // Handle message.reasoning only when there is no message.content (non-streaming fallback)
+    // Never expose reasoning content to users even in non-streaming path
+    if (message && typeof message.reasoning === 'string') {
+      // Only use reasoning as fallback if content is empty — but do NOT expose reasoning
+      if (!chunk.content) {
+        logger.warn('[LLMClient] Model returned only reasoning content with no content field; response may be incomplete');
+      }
+      // Deliberately NOT appending reasoning to chunk.content to prevent exposing it
+    }
+
+    // Only yield if there's actual content to return
+    if (chunk.content !== undefined && chunk.content !== '') {
+      console.log('[LLMClient DEBUG] parsed chunk content:', chunk.content.substring(0, 50));
+      return chunk;
+    }
+
+    if (delta && typeof delta.role === 'string') {
       chunk.role = delta.role;
     }
 
@@ -296,6 +358,7 @@ export class LLMClientAdapter {
       };
     }
 
+    console.log('[LLMClient DEBUG] parsed chunk:', JSON.stringify(chunk));
     return chunk;
   }
 }

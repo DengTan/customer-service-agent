@@ -6,6 +6,7 @@
 
 import { BaseToolProvider, ToolResult, ToolParams, ValidationResult, RefundResult } from './types';
 import { generateMockOrder } from './mock-data';
+import { logger } from '@/lib/logger';
 
 export class RefundProvider extends BaseToolProvider {
   readonly type = 'refund' as const;
@@ -83,13 +84,13 @@ export class RefundProvider extends BaseToolProvider {
             isMockData: false,
           };
         }
-        console.log(`[RefundProvider] Real API returned no data for ${orderId}, falling back to mock`);
+        logger.debug(`[RefundProvider] Real API returned no data for ${orderId}, falling back to mock`);
       }
 
       // Use mock confirmation (default behavior)
       return this.getMockConfirmation(orderId, reason, amount);
     } catch (error) {
-      console.error(`[RefundProvider] Error submitting refund for ${orderId}:`, error);
+      logger.error(`[RefundProvider] Error submitting refund for ${orderId}:`, { error });
       return this.getMockConfirmation(orderId, reason, amount, true);
     }
   }
@@ -103,7 +104,7 @@ export class RefundProvider extends BaseToolProvider {
     const apiKey = process.env.REFUND_API_KEY;
 
     if (!apiUrl || !apiKey) {
-      console.log('[RefundProvider] Real API not configured, using mock confirmation');
+      logger.debug('[RefundProvider] Real API not configured, using mock confirmation');
       return null;
     }
 

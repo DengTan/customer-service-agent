@@ -36,7 +36,10 @@ import { useAuth } from '@/lib/auth';
 import type { Conversation, Message, CardAction } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { RichMessageCard } from '@/components/chat/rich-message-card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { formatMessageTime, shouldShowTimeDivider } from '@/lib/chat-utils';
+import { useThemeSettings } from '@/lib/theme-settings-context';
+import { logger } from '@/lib/logger';
 
 interface Attachment {
   id: string;
@@ -44,6 +47,32 @@ interface Attachment {
   url: string;
   type: string;
   size: number;
+}
+
+/** Skeleton for message loading state */
+function MessageSkeletonList() {
+  return (
+    <div className="space-y-5 max-w-3xl mx-auto px-6">
+      {Array.from({ length: 4 }).map((_, i) => {
+        const isUser = i % 2 === 0;
+        return (
+          <div key={i} className="flex gap-2 animate-skeleton-pulse" style={{ animationDelay: `${i * 80}ms` }}>
+            {!isUser && <Skeleton className="w-7 h-7 rounded-full shrink-0 mt-0.5" />}
+            <div className="space-y-1.5 flex-1">
+              <Skeleton className="h-3 w-20 rounded" />
+              <div className={`space-y-1 ${isUser ? 'ml-auto' : ''}`}>
+                <Skeleton className={`h-9 rounded-lg ${isUser ? 'w-2/3 ml-auto' : 'w-3/4'}`} />
+                {(i === 1 || i === 3) && (
+                  <Skeleton className={`h-9 rounded-lg ${isUser ? 'w-1/2 ml-auto' : 'w-5/6'}`} />
+                )}
+              </div>
+            </div>
+            {isUser && <Skeleton className="w-7 h-7 rounded-full shrink-0 mt-0.5" />}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 interface ConversationDetailProps {
@@ -87,6 +116,9 @@ export function ConversationDetail({
 
   // Get current user ID from auth context (fallback for backward compatibility)
   const currentAgentId = currentUser?.id || process.env.NEXT_PUBLIC_CURRENT_AGENT_ID || '';
+
+  // Theme settings for appearance preferences
+  const { settings: themeSettings } = useThemeSettings();
 
   // Handle card action button clicks (refund confirmation, etc.)
   const handleCardAction = useCallback((action: CardAction) => {
@@ -149,7 +181,7 @@ export function ConversationDetail({
     fetch('/api/quick-replies')
       .then(res => res.ok ? res.json() : { replies: [] })
       .then(data => setQuickReplies(data.replies || []))
-      .catch((err) => console.error('[ConversationDetail] Failed to fetch quick replies:', err));
+      .catch((err) => logger.error('[ConversationDetail] Failed to fetch quick replies', { error: err }));
   }, []);
 
   // Auto scroll
@@ -286,7 +318,7 @@ export function ConversationDetail({
           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
             isEnded ? 'bg-muted text-muted-foreground'
               : isHandoff ? 'bg-amber-500/15 text-amber-600'
-              : 'bg-emerald-500/10 text-emerald-600'
+              : 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
           }`}>
             {convTitle.charAt(0)}
           </div>
@@ -295,7 +327,7 @@ export function ConversationDetail({
               <span className="text-sm font-medium text-foreground">{convTitle}</span>
               {convSource && (
                 <span className={`text-[10px] font-medium ${
-                  convSource === '千牛' ? 'text-blue-600' : convSource === '抖店' ? 'text-emerald-600' : 'text-gray-500'
+                  convSource === '千牛' ? 'text-blue-600' : convSource === '抖店' ? 'text-emerald-700' : 'text-gray-600'
                 }`}>
                   {convSource}
                 </span>
@@ -308,7 +340,7 @@ export function ConversationDetail({
             </div>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               {isActive && (
-                <span className="flex items-center gap-1 text-emerald-600">
+                <span className="flex items-center gap-1 text-emerald-700">
                   <Bot className="w-3 h-3" />AI处理中
                 </span>
               )}
@@ -401,8 +433,8 @@ export function ConversationDetail({
       {/* Messages - read only view */}
       <div className="flex-1 overflow-y-auto py-4 min-h-0">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            加载中...
+          <div className="flex flex-col items-center justify-center h-full gap-3">
+            <MessageSkeletonList />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
@@ -410,7 +442,7 @@ export function ConversationDetail({
             暂无消息
           </div>
         ) : (
-          <div className="space-y-3 max-w-3xl mx-auto">
+          <div className={`space-y-${themeSettings.compactMode ? '1' : '3'} max-w-3xl mx-auto`}>
             {messages.map((msg, idx) => {
               const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
               const showTimeDivider = shouldShowTimeDivider(msg, prevMsg);
@@ -421,7 +453,7 @@ export function ConversationDetail({
 
               return (
                 <div key={msg.id}>
-                  {showTimeDivider && (
+                  {showTimeDivider && themeSettings.showTimestamps && (
                     <div className="flex items-center justify-center my-4 animate-fade-in">
                       <span className="text-xs text-muted-foreground/60 bg-muted/50 px-3 py-1 rounded-full">
                         {formatMessageTime(msg.created_at)}
@@ -452,9 +484,11 @@ export function ConversationDetail({
                             </div>
                           )}
                         </div>
-                        <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                          {formatMessageTime(msg.created_at)}
-                        </span>
+                        {themeSettings.showTimestamps && (
+                          <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                            {formatMessageTime(msg.created_at)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -462,13 +496,13 @@ export function ConversationDetail({
                     <div className={`flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
                       {!isUser && (
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 mt-0.5 ${
-                          isAssistant ? 'bg-primary/15 text-primary' : isAgent ? 'bg-emerald-500/15 text-emerald-600' : 'bg-muted text-muted-foreground'
+                          isAssistant ? 'bg-primary/15 text-primary' : isAgent ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
                         }`}>
                           {isAssistant ? 'AI' : isAgent ? '坐' : 'S'}
                         </div>
                       )}
                       <div className={isUser ? 'text-right' : ''}>
-                        <div className={`${isUser ? 'bg-blue-100 text-foreground' : 'bg-card text-foreground'} rounded-lg px-3 py-2 text-left`}>
+                        <div className={`${isUser ? 'bg-blue-100 dark:bg-blue-900 text-foreground' : 'bg-card text-foreground'} rounded-lg px-3 py-2 text-left`}>
                           {/* Image */}
                           {msg.image_url && (
                             <div className="mb-2">
@@ -517,7 +551,7 @@ export function ConversationDetail({
                                     {s.type === 'knowledge' ? '知识库' : s.type === 'auto_reply' ? '自动回复' : '引用'}
                                   </span>
                                   {s.score !== undefined && s.score > 0 && (
-                                    <span className={`ml-1 ${s.score >= 0.75 ? 'text-emerald-500' : s.score >= 0.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                                    <span className={`ml-1 ${s.score >= 0.75 ? 'text-emerald-600' : s.score >= 0.5 ? 'text-amber-600' : 'text-red-600'}`}>
                                       {Math.round(s.score * 100)}%
                                     </span>
                                   )}
@@ -541,11 +575,11 @@ export function ConversationDetail({
                           {msg.delegations && msg.delegations.length > 0 && (
                             <div className="mt-2 pt-1.5 border-t border-border/30">
                               {msg.delegations.map((d, i) => (
-                                <div key={i} className="flex items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+                                <div key={i} className="flex items-center gap-1.5 text-[10px] text-blue-600">
                                   <Network className="w-3 h-3" />
                                   <span>由 {d.child_bot_name} 处理</span>
-                                  {d.intent && <span className="text-blue-400">· {d.intent}</span>}
-                                  {d.confidence > 0 && <span className="text-blue-400">· {Math.round(d.confidence * 100)}%</span>}
+                                  {d.intent && <span className="text-blue-500">· {d.intent}</span>}
+                                  {d.confidence > 0 && <span className="text-blue-500">· {Math.round(d.confidence * 100)}%</span>}
                                 </div>
                               ))}
                             </div>
@@ -555,7 +589,7 @@ export function ConversationDetail({
                             <div className="mt-1.5">
                               <div
                                 className={`inline-flex items-center gap-1 text-[10px] font-medium cursor-pointer hover:opacity-80 transition-opacity ${
-                                  msg.confidence < 0.4 ? 'text-red-500' : msg.confidence < 0.7 ? 'text-amber-500' : 'text-emerald-500'
+                                  msg.confidence < 0.4 ? 'text-red-600' : msg.confidence < 0.7 ? 'text-amber-600' : 'text-emerald-600'
                                 }`}
                                 title="点击查看置信度详情"
                                 onClick={() => setExpandedConfMsgId(expandedConfMsgId === msg.id ? null : msg.id)}
@@ -573,8 +607,13 @@ export function ConversationDetail({
                                     <div className="flex justify-between"><span>工具调用</span><span>{bd.tool_score > 0 ? `${Math.round(bd.tool_score * 100)}%` : '-'}</span></div>
                                     <div className="flex justify-between"><span>LLM自评</span><span>{bd.llm_self_score > 0 ? `${Math.round(bd.llm_self_score * 100)}%` : '-'}</span></div>
                                     <div className="flex justify-between"><span>子Agent</span><span>{bd.sub_agent_score > 0 ? `${Math.round(bd.sub_agent_score * 100)}%` : '-'}</span></div>
-                                    {bd.handoff_intent && <div className="text-red-500">检测到转人工意图</div>}
-                                    {bd.no_support && <div className="text-amber-500">无知识库/工具支撑</div>}
+                                    {bd.handoff_intent && (
+                                      <div className="text-red-500 flex items-center gap-1">
+                                        <span>⚠️</span>
+                                        <span>检测到转人工意图，已降低置信度</span>
+                                      </div>
+                                    )}
+                                    {bd.no_support && <div className="text-amber-500">⚠️ 无知识库/工具支撑，综合评分降低</div>}
                                   </div>
                                 );
                               })()}
@@ -588,10 +627,12 @@ export function ConversationDetail({
                               className="text-muted-foreground/50 hover:text-foreground transition-colors"
                               title="复制"
                             >
-                              {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                              {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                             </button>
                           )}
-                          <span className="text-[10px] text-muted-foreground">{formatMessageTime(msg.created_at)}</span>
+                          {themeSettings.showTimestamps && (
+                            <span className="text-[10px] text-muted-foreground">{formatMessageTime(msg.created_at)}</span>
+                          )}
                         </div>
                       </div>
                       {isUser && (

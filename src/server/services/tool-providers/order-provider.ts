@@ -5,6 +5,7 @@
 
 import { BaseToolProvider, ToolResult, ToolParams, ValidationResult, OrderInfo } from './types';
 import { generateMockOrder, getMockOrderStatusText } from './mock-data';
+import { logger } from '@/lib/logger';
 
 export class OrderProvider extends BaseToolProvider {
   readonly type = 'order' as const;
@@ -72,14 +73,14 @@ export class OrderProvider extends BaseToolProvider {
           };
         }
         // Real API returned null, fall through to mock
-        console.log(`[OrderProvider] Real API returned no data for ${orderId}, falling back to mock`);
+        logger.debug(`[OrderProvider] Real API returned no data for ${orderId}, falling back to mock`);
       }
 
       // Use mock data
       return this.getMockResult(orderId);
     } catch (error) {
       // On any error, fall back to mock with degraded confidence
-      console.error(`[OrderProvider] Error querying order ${orderId}:`, error);
+      logger.error(`[OrderProvider] Error querying order ${orderId}:`, { error });
       return this.getMockResult(orderId, true);
     }
   }
@@ -93,7 +94,7 @@ export class OrderProvider extends BaseToolProvider {
     const apiKey = process.env.ORDER_API_KEY;
 
     if (!apiUrl || !apiKey) {
-      console.log('[OrderProvider] Real API not configured, using mock data');
+      logger.debug('[OrderProvider] Real API not configured, using mock data');
       return null;
     }
 

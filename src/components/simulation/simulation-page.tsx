@@ -19,7 +19,9 @@ import {
   Layers,
   Copy,
   BarChart3,
-  ChevronDown
+  ChevronDown,
+  BookOpen,
+  X
 } from 'lucide-react';
 import {
   Select,
@@ -28,6 +30,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
 
 import { SimulationConversation, SimulationMessage } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -38,67 +46,17 @@ import { parseSSEStream, SourceItem } from '@/lib/sse-parser';
 import { BotSelector } from './bot-selector';
 import { ABComparisonView, ABResult } from './ab-comparison-view';
 import { BatchTestPanel, BatchResult } from './batch-test-panel';
+import { BatchScriptSelector } from './batch-script-selector';
+import { TEST_SCENARIOS, PRELOADED_SCRIPTS, type TestScenario } from '@/lib/simulation-scenarios';
+
 const simulationLogger = logger.default;
 
 export type { SimulationConversation, SimulationMessage };
 
-// Test scenario definitions
-interface TestScenario {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  preloaded: boolean;
-}
+// TestScenario and PRELOADED_SCRIPTS are now imported from @/lib/simulation-scenarios
 
-const TEST_SCENARIOS: TestScenario[] = [
-  { id: 'order_inquiry', name: '订单查询', description: '测试用户咨询订单状态、发货时间、物流进度等', icon: '📦', preloaded: false },
-  { id: 'refund_request', name: '退款申请', description: '测试用户申请退款、退货的流程', icon: '💰', preloaded: false },
-  { id: 'product_question', name: '产品咨询', description: '测试用户咨询产品规格、使用方法、注意事项', icon: '❓', preloaded: false },
-  { id: 'complaint', name: '投诉处理', description: '测试用户投诉场景，包括情绪安抚和解决', icon: '😤', preloaded: false },
-  { id: 'multi_turn', name: '多轮对话', description: '测试复杂多轮对话场景，包括上下文理解', icon: '🔄', preloaded: false },
-  { id: 'logistics_query', name: '物流查询', description: '测试物流轨迹、快递公司、签收状态等查询', icon: '🚚', preloaded: false },
-  { id: 'address_modify', name: '修改地址', description: '测试修改收货地址、联系人信息等', icon: '📍', preloaded: false },
-  { id: 'invoice_request', name: '发票申请', description: '测试电子发票、纸质发票申请流程', icon: '🧾', preloaded: false },
-  { id: 'partial_refund', name: '部分退款', description: '测试部分退款金额计算和申请', icon: '💵', preloaded: false },
-  { id: 'exchange_goods', name: '换货处理', description: '测试换货申请与处理流程', icon: '🔄', preloaded: false },
-  { id: 'size_recommend', name: '尺码推荐', description: '根据身高体重推荐尺码', icon: '📏', preloaded: false },
-  { id: 'product_compare', name: '商品对比', description: '多个商品规格对比分析', icon: '⚖️', preloaded: false },
-  { id: 'escalation', name: '投诉升级', description: '投诉升级与处理进度查询', icon: '📢', preloaded: false },
-  { id: 'combined', name: '综合场景', description: '先咨询后下单的多步骤复杂场景', icon: '🎯', preloaded: false },
-  { id: 'custom', name: '自定义', description: '创建自定义测试脚本', icon: '✏️', preloaded: false },
-];
-
-// Preloaded test scripts
-const PRELOADED_SCRIPTS: Record<string, string[]> = {
-  'order_inquiry': [
-    '你好，我想查一下我的订单',
-    '订单号是 ORD-2024001',
-    '什么时候能发货？',
-    '谢谢',
-  ],
-  'refund_request': [
-    '我申请了退款，请问什么时候能到账？',
-    '已经3天了还没收到',
-    '我的银行卡账号是...',
-  ],
-  'product_question': [
-    '这个产品怎么使用？',
-    '有使用说明书吗？',
-    '保修期是多久？',
-  ],
-  'complaint': [
-    '我要投诉！上次买的产品有问题',
-    '等了5天了还没发货',
-    '你们的服务太差了',
-  ],
-  'multi_turn': [
-    '你好，我想买一件衣服',
-    '有没有黑色的XL码？',
-    '有现货吗？',
-    '好的，帮我下单',
-  ],
-};
+// 检测 AI 回复状态的轮询间隔（毫秒）
+const AI_REPLY_POLL_INTERVAL_MS = 2000;
 
 interface TabState {
   messages: SimulationMessage[];
@@ -108,6 +66,8 @@ interface TabState {
   scriptIndex: number;
   autoPlay: boolean;
   customScript: string[];
+  // AI 回复轮询状态
+  isAIReplying: boolean;      // AI 是否正在回复（最后一条是 user 消息）
 }
 
 // 默认 TabState
@@ -119,6 +79,7 @@ const DEFAULT_TAB_STATE: TabState = {
   scriptIndex: 0,
   autoPlay: false,
   customScript: [],
+  isAIReplying: false,
 };
 
 export function SimulationPage() {
@@ -127,15 +88,67 @@ export function SimulationPage() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [tabStates, setTabStates] = useState<Record<string, TabState>>({});
   const [showSourcePanel, setShowSourcePanel] = useState(false);
+  // Separate highlight state for button - only toggled by button click, not by message bubble click
+  const [isSourcePanelHighlighted, setIsSourcePanelHighlighted] = useState(false);
   const [currentSources, setCurrentSources] = useState<SourceItem[]>([]);
   const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
+  const [currentConfidenceBreakdown, setCurrentConfidenceBreakdown] = useState<{
+    knowledge_score: number;
+    tool_score: number;
+    llm_self_score: number;
+    sub_agent_score: number;
+    handoff_intent: boolean;
+    no_support: boolean;
+    final: number;
+  } | null>(null);
+  // 所有带引用的消息列表（用于 SourcePanel 消息列表模式）
+  const [messagesWithSources, setMessagesWithSources] = useState<{
+    id: string;
+    content: string;
+    sources: SourceItem[];
+    confidence?: number;
+    confidenceBreakdown?: {
+      knowledge_score: number;
+      tool_score: number;
+      llm_self_score: number;
+      sub_agent_score: number;
+      handoff_intent: boolean;
+      no_support: boolean;
+      final: number;
+    } | null;
+  }[]>([]);
   
   // Phase 5: Multi-bot comparison & batch test state
   const [showBotSelector, setShowBotSelector] = useState(false);
+  const [batchTestMode, setBatchTestMode] = useState(false);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
   const [showABComparison, setShowABComparison] = useState(false);
   const [showBatchTest, setShowBatchTest] = useState(false);
+  const [showBatchScriptSelector, setShowBatchScriptSelector] = useState(false);
   const [batchTestScripts, setBatchTestScripts] = useState<string[]>([]);
+  
+  // Bot selector for conversation creation
+  const [bots, setBots] = useState<Array<{ id: string; name: string; description?: string }>>([]);
+  const [selectedBot, setSelectedBot] = useState<{ id: string; name: string } | null>(null);
+  const [botPopoverOpen, setBotPopoverOpen] = useState(false);
+  const [botsLoading, setBotsLoading] = useState(false);
+
+  // P1: Reload bots function
+  const reloadBots = useCallback(async () => {
+    setBotsLoading(true);
+    try {
+      const res = await fetch('/api/bot-configs?include_sub_agents=false');
+      if (res.ok) {
+        const data = await res.json();
+        const botList = Array.isArray(data.bots) ? data.bots : [];
+        setBots(botList.filter((b: { status: string }) => b.status === 'active'));
+      }
+    } catch (err) {
+      logger.error('Failed to reload bots', { error: err });
+    } finally {
+      setBotsLoading(false);
+    }
+  }, []);
   
   // Phase 3: Evaluation panel
   const [showEvaluationPanel, setShowEvaluationPanel] = useState(false);
@@ -144,6 +157,12 @@ export function SimulationPage() {
   const autoPlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const loadMoreRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  // Tracks the active polling interval for AI replies so stale closures don't leak timers.
+  const pollIntervalRef = useRef<Record<string, NodeJS.Timeout>>({});
+
+  // SSE stream timeout: 60 seconds
+  const SSE_TIMEOUT_MS = 60_000;
 
   // Lazy-loaded conversation list
   const fetchFn = useCallback(async (page: number, pageSize: number) => {
@@ -166,6 +185,7 @@ export function SimulationPage() {
     loadMore,
     refresh,
     updateItems,
+    updateItem,
     setTotal,
     updateItemsLength,
   } = useLazyList<SimulationConversation>({ fetchFn, pageSize: 10 });
@@ -175,10 +195,31 @@ export function SimulationPage() {
     loadInitial();
   }, [loadInitial]);
 
-  // Cleanup AbortControllers on unmount
+  // Load bots for bot selector
+  useEffect(() => {
+    const loadBots = async () => {
+      setBotsLoading(true);
+      try {
+        const res = await fetch('/api/bot-configs?include_sub_agents=false');
+        if (res.ok) {
+          const data = await res.json();
+          const botList = Array.isArray(data.bots) ? data.bots : [];
+          setBots(botList.filter((b: { status: string }) => b.status === 'active'));
+        }
+      } catch (err) {
+        logger.error('Failed to load bots', { error: err });
+      } finally {
+        setBotsLoading(false);
+      }
+    };
+    loadBots();
+  }, []);
+
+  // Cleanup AbortControllers and poll timers on unmount
   useEffect(() => {
     return () => {
       Object.values(abortRef.current).forEach((ctrl) => ctrl.abort());
+      Object.values(pollIntervalRef.current).forEach((id) => clearInterval(id));
     };
   }, []);
 
@@ -217,6 +258,29 @@ export function SimulationPage() {
     }));
   }, []);
 
+  // P0: Helper to refetch the persisted conversation state after a stream error/timeout
+  // so the UI list and message_count match the database. When onlyCount is true, we
+  // skip rewriting the in-memory message array (used for the message_count refresh path
+  // after a timed-out stream where the user is still seeing the assistant bubble).
+  const refreshConversationState = useCallback(async (convId: string, onlyCount = false) => {
+    try {
+      const res = await fetch(`/api/simulations/${convId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const messages = Array.isArray(data.messages) ? (data.messages as SimulationMessage[]) : [];
+      updateItem(convId, { message_count: messages.length });
+      if (!onlyCount) {
+        updateTabState(convId, { messages });
+      }
+    } catch (err) {
+      simulationLogger.warn('[SimulationPage] refreshConversationState failed', {
+        error: err,
+        conversationId: convId,
+        onlyCount,
+      });
+    }
+  }, [updateItem, updateTabState]);
+
   // Select a scenario (only set state, don't create conversation yet)
   const handleSelectScenario = useCallback(async (scenario: TestScenario) => {
     // Only switch scenario, create conversation when first message is sent
@@ -228,12 +292,59 @@ export function SimulationPage() {
   // Load messages for a conversation
   const loadMessages = useCallback(async (convId: string) => {
     updateTabState(convId, { isLoading: true });
+
+    // Stop any existing polling for this convId before starting a new one.
+    const existingInterval = pollIntervalRef.current[convId];
+    if (existingInterval) {
+      clearInterval(existingInterval);
+      delete pollIntervalRef.current[convId];
+    }
+
     try {
       const res = await fetch(`/api/simulations/${convId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data.messages)) {
-        updateTabState(convId, { messages: data.messages, isLoading: false });
+        const messages = data.messages as SimulationMessage[];
+
+        // 检测是否需要轮询等待 AI 回复
+        const lastMsg = messages[messages.length - 1];
+        const isAIReplying = lastMsg?.role === 'user';
+
+        updateTabState(convId, { messages, isLoading: false, isAIReplying });
+
+        // 如果最后一条是 user 消息，启动轮询等待 AI 回复
+        if (isAIReplying) {
+          const poll = () => {
+            // Check the ref to see if polling should stop (stale closure safety).
+            if (!pollIntervalRef.current[convId]) return;
+
+            fetch(`/api/simulations/${convId}`)
+              .then(res => res.json())
+              .then(data => {
+                // Guard: stop if polling was cancelled while this promise was in flight.
+                if (!pollIntervalRef.current[convId]) return;
+                const msgs = data.messages as SimulationMessage[];
+                const last = msgs[msgs.length - 1];
+                if (last?.role === 'assistant') {
+                  clearInterval(pollIntervalRef.current[convId]);
+                  delete pollIntervalRef.current[convId];
+                  updateTabState(convId, {
+                    messages: msgs,
+                    isAIReplying: false,
+                  });
+                }
+              })
+              .catch(() => {
+                // 轮询失败，静默重试
+              });
+          };
+
+          // 立即执行一次，然后定期轮询
+          poll();
+          const intervalId = setInterval(poll, AI_REPLY_POLL_INTERVAL_MS);
+          pollIntervalRef.current[convId] = intervalId;
+        }
       } else {
         updateTabState(convId, { isLoading: false });
       }
@@ -259,7 +370,9 @@ export function SimulationPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             scenario_id: selectedScenario.id,
-            scenario_name: selectedScenario.name
+            scenario_name: selectedScenario.name,
+            bot_id: selectedBot?.id || null,
+            bot_name: selectedBot?.name || null,
           }),
         });
         if (!res.ok) throw new Error('创建模拟会话失败');
@@ -283,7 +396,7 @@ export function SimulationPage() {
     if (tabState.isSending) return;
 
     const tempUserMsg: SimulationMessage = {
-      id: `temp-${Date.now()}`,
+      id: `temp-${crypto.randomUUID()}`,
       conversation_id: actualConvId,
       role: 'user',
       content,
@@ -301,6 +414,29 @@ export function SimulationPage() {
     abortRef.current[actualConvId]?.abort();
     const controller = new AbortController();
     abortRef.current[actualConvId] = controller;
+
+    // SSE stream timeout: 60 seconds
+    const sseTimeoutId = setTimeout(() => {
+      controller.abort();
+      toast.error('SSE 连接超时（60秒），请重试');
+      simulationLogger.warn('[SimulationPage] SSE stream timeout', { conversationId: actualConvId });
+    }, SSE_TIMEOUT_MS);
+
+    // P0: All state below is request-local — do not read from React state inside the abort
+    // handler or callbacks, because closures capture stale tabStates when a user sends multiple
+    // messages in quick succession (race condition that drops assistant messages and skips
+    // message_count refresh). Declarations live in the outer scope so the catch block can
+    // observe them when the AbortError fires.
+    let fullContent = '';
+    let lastConfidence: number | null = null;
+    let lastConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null = null;
+    let lastSources: SourceItem[] = [];
+    let lastMessageCount: number | null = null;
+    let timedOutDone = false;
+    // P0: Track server-side stream errors (e.g. catch-all in route.ts emits {error: ...})
+    // so we don't silently create an empty assistant message when the backend reported failure.
+    let streamErrored = false;
+    let streamErrorMessage: string | null = null;
 
     try {
       const res = await fetch(`/api/simulations/${actualConvId}/messages`, {
@@ -322,15 +458,18 @@ export function SimulationPage() {
       const reader = res.body?.getReader();
       if (!reader) throw new Error('无法读取流');
 
-      let fullContent = '';
-      let lastConfidence: number | null = null;
-      let lastConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null = null;
-      let lastSources: SourceItem[] = [];
-
       await parseSSEStream(reader, (chunk) => {
         if (chunk.content) {
           fullContent += chunk.content;
           updateTabState(actualConvId, { streamingContent: fullContent });
+        }
+        if (chunk.error) {
+          // P0: Backend signalled a stream error. Don't treat as success even if a
+          // later chunk happens to look like content. The final assistant message will
+          // be created from the request-local fullContent (which may be empty).
+          streamErrored = true;
+          streamErrorMessage = chunk.error;
+          return;
         }
         if (chunk.done) {
           if (chunk.confidence !== undefined) lastConfidence = chunk.confidence;
@@ -349,10 +488,10 @@ export function SimulationPage() {
           }
           if (chunk.sources) {
             // Map SSE SourceItem to SimulationMessage SourceItem (type is required)
-            lastSources = chunk.sources.map(s => ({
-              type: s.type || 'knowledge',
-              content: s.content,
-              score: s.score,
+            lastSources = (chunk.sources ?? []).map(s => ({
+              type: s.type ?? 'knowledge',
+              content: s.content ?? '',
+              score: s.score ?? 0,
               keyword: s.keyword,
               name: s.name,
               category: s.category,
@@ -360,11 +499,31 @@ export function SimulationPage() {
               item_id: s.item_id,
             }));
           }
+          // Type-safe chunk reads (no `as Record<string, unknown>` casts)
+          if (chunk.message_count !== undefined) lastMessageCount = chunk.message_count;
+          if (chunk.timed_out === true) timedOutDone = true;
         }
       });
 
+      clearTimeout(sseTimeoutId);
+
+      // P0: If backend reported a stream error, surface it; the persisted user message
+      // remains in the database so do NOT roll it back.
+      if (streamErrored) {
+        const errMsg = streamErrorMessage ?? '后端处理失败';
+        simulationLogger.error('Stream error from backend', {
+          error: errMsg,
+          conversationId: actualConvId,
+        });
+        toast.error(errMsg);
+        // Always refresh server-side messages/count so UI stays consistent with what was persisted.
+        await refreshConversationState(actualConvId);
+        updateTabState(actualConvId, { isSending: false, streamingContent: '' });
+        return;
+      }
+
       const assistantMsg: SimulationMessage = {
-        id: `msg-${Date.now()}`,
+        id: `msg-${crypto.randomUUID()}`,
         conversation_id: actualConvId,
         role: 'assistant',
         content: fullContent,
@@ -386,15 +545,36 @@ export function SimulationPage() {
           },
         };
       });
+
+      // Update message count in conversation list from API response.
+      // If the backend omitted message_count (e.g. count query failed), fall back to
+      // refetching the conversation state to derive an accurate count.
+      if (lastMessageCount !== null) {
+        updateItem(actualConvId, { message_count: lastMessageCount });
+      } else {
+        // Fallback: re-read messages to compute the count rather than fabricating 0.
+        await refreshConversationState(actualConvId, /*onlyCount*/ true);
+      }
+
+      // Auto-play: increment scriptIndex after successful message
+      const currentTabState = tabStates[actualConvId];
+      if (currentTabState?.autoPlay) {
+        updateTabState(actualConvId, { scriptIndex: (currentTabState.scriptIndex ?? 0) + 1 });
+      }
     } catch (err) {
+      clearTimeout(sseTimeoutId);
       if (err instanceof DOMException && err.name === 'AbortError') {
-        const ts = tabStates[actualConvId];
-        if (ts?.streamingContent) {
+        // P0: Use request-local fullContent (captured by closure) instead of reading
+        // tabStates[actualConvId].streamingContent, which can be stale when the user
+        // sends multiple messages in quick succession and races with state updates.
+        const partialText = fullContent;
+
+        if (partialText) {
           const partialMsg: SimulationMessage = {
-            id: `msg-partial-${Date.now()}`,
+            id: `msg-partial-${crypto.randomUUID()}`,
             conversation_id: actualConvId,
             role: 'assistant',
-            content: ts.streamingContent + '\n\n[回复超时，内容可能不完整]',
+            content: partialText,
             sources: null,
             confidence: null,
             created_at: new Date().toISOString(),
@@ -407,15 +587,81 @@ export function SimulationPage() {
             };
           });
         } else {
-          updateTabState(actualConvId, { isSending: false });
+          // P0: Even with no partial content, the backend may have persisted a user message
+          // and an assistant message. Refresh server-side state so the UI doesn't diverge.
+          updateTabState(actualConvId, { isSending: false, streamingContent: '' });
+        }
+
+        // P0: Always refresh message count after an aborted stream, regardless of
+        // whether partial content was received. Without this, the conversation list
+        // can drift from the actual database state (e.g. user message persisted but
+        // count not yet visible because the RPC is async).
+        try {
+          await refreshConversationState(actualConvId, /*onlyCount*/ true);
+        } catch (refreshError) {
+          simulationLogger.warn('[SimulationPage] Failed to refresh message count after timeout', {
+            error: refreshError,
+            conversationId: actualConvId,
+          });
+        }
+
+        // Only toast if we don't already have a backend-streamed timed_out done.
+        // The backend (60s SSE_TIMEOUT_MS) will emit `timed_out: true` in done and save
+        // its own partial content; if that already happened before the browser-level
+        // abort, the message list is already populated and we don't want to show a
+        // second, conflicting timeout toast.
+        if (!timedOutDone) {
+          toast.error('SSE 连接超时（60秒），请重试');
+          simulationLogger.warn('[SimulationPage] SSE stream timeout', { conversationId: actualConvId });
         }
       } else {
-        simulationLogger.error('发送消息失败', { error: err });
-        toast.error(String(err) || '发送失败');
-        updateTabState(actualConvId, { isSending: false });
+        simulationLogger.error('发送消息失败', { error: err, conversationId: actualConvId });
+        const errorMessage = String(err) || '发送失败';
+        if (errorMessage.includes('NO_SYSTEM_PROMPT') || errorMessage.includes('请先在 Bot 配置或系统设置中配置系统提示词')) {
+          toast.error('请先配置系统提示词', {
+            action: {
+              label: '去设置',
+              onClick: () => window.location.href = '/settings?tab=bot',
+            },
+          });
+        } else {
+          toast.error(errorMessage);
+        }
+        // Rollback: remove tempUserMsg and reset isSending.
+        // Note: the user message may have already been persisted on the backend (the
+        // route writes the user message BEFORE streaming). To keep frontend and backend
+        // in sync, refresh server state instead of silently deleting the optimistic user
+        // row when the API actually accepted the message.
+        const looksLikeNetworkError =
+          errorMessage.includes('Failed to fetch') ||
+          errorMessage.includes('NetworkError') ||
+          errorMessage.includes('TypeError');
+        if (looksLikeNetworkError) {
+          // Network-level failure: backend may not have processed the request at all.
+          // Safe to drop the optimistic temp user message.
+          setTabStates((prev) => {
+            const ts = prev[actualConvId];
+            if (ts) {
+              return {
+                ...prev,
+                [actualConvId]: {
+                  ...ts,
+                  messages: ts.messages.filter((m) => !m.id.startsWith('temp-')),
+                  isSending: false,
+                },
+              };
+            }
+            return prev;
+          });
+        } else {
+          // Backend reached: user message is likely persisted. Refresh server state so
+          // the temp user row is replaced with the authoritative row.
+          updateTabState(actualConvId, { isSending: false, streamingContent: '' });
+          await refreshConversationState(actualConvId);
+        }
       }
     }
-  }, [getTabState, updateTabState, tabStates, selectedScenario]);
+  }, [getTabState, updateTabState, tabStates, selectedScenario, refreshConversationState, updateItem]);
 
   // Auto-play next script message
   const autoPlayNext = useCallback((convId: string) => {
@@ -428,8 +674,8 @@ export function SimulationPage() {
     const tabState = getTabState(convId);
     if (tabState.scriptIndex < scripts.length) {
       const nextMessage = scripts[tabState.scriptIndex];
+      // Don't increment scriptIndex here - let handleSendMessage do it on success
       handleSendMessage(nextMessage, convId);
-      updateTabState(convId, { scriptIndex: tabState.scriptIndex + 1, autoPlay: true });
     } else {
       updateTabState(convId, { autoPlay: false });
       toast.success('测试脚本执行完毕');
@@ -468,6 +714,14 @@ export function SimulationPage() {
       // Clean up tab state to prevent memory leak
       abortRef.current[convId]?.abort();
       delete abortRef.current[convId];
+      
+      // 清理 AI 回复轮询定时器
+      const existingInterval = pollIntervalRef.current[convId];
+      if (existingInterval) {
+        clearInterval(existingInterval);
+        delete pollIntervalRef.current[convId];
+      }
+      
       setTabStates(prev => {
         const next = { ...prev };
         delete next[convId];
@@ -478,7 +732,7 @@ export function SimulationPage() {
       simulationLogger.error('清除失败', { error: err });
       toast.error('清除失败');
     }
-  }, [activeConvId, updateItems, setTotal, updateItemsLength]);
+  }, [activeConvId, tabStates, updateItems, setTotal, updateItemsLength]);
 
   // Duplicate conversation
   const handleDuplicateConversation = useCallback(async (convId: string) => {
@@ -497,12 +751,20 @@ export function SimulationPage() {
         // Auto-select the new duplicate
         setActiveConvId(data.conversation.id);
         updateTabState(data.conversation.id, { ...DEFAULT_TAB_STATE });
+        // Reset source/evaluation panels when switching conversations
+        setShowSourcePanel(false);
+        setIsSourcePanelHighlighted(false);
+        setShowEvaluationPanel(false);
+        setCurrentSources([]);
+        setCurrentConfidence(null);
+        setCurrentConfidenceBreakdown(null);
+        setMessagesWithSources([]);
       }
     } catch (err) {
       simulationLogger.error('复制会话失败', { error: err });
       toast.error(String(err) || '复制失败');
     }
-  }, [updateItems, setTotal, updateItemsLength, updateTabState]);
+  }, [updateItems, setTotal, updateItemsLength, updateTabState, setShowSourcePanel, setShowEvaluationPanel, setCurrentSources, setCurrentConfidence, setCurrentConfidenceBreakdown, setMessagesWithSources]);
 
   // Effect to trigger auto-play after message is sent
   useEffect(() => {
@@ -523,8 +785,25 @@ export function SimulationPage() {
     };
   }, [tabStates, activeConvId, autoPlayNext]);
 
+  // Auto-scroll to bottom when messages or streaming content changes
+  useEffect(() => {
+    const container = messagesScrollRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [tabStates, activeConvId]);
+
   const activeTabState = activeConvId ? getTabState(activeConvId) : null;
   const activeConversation = conversations.find((c) => c.id === activeConvId);
+
+  // Get display title for active conversation
+  const getConversationTitle = () => {
+    if (activeConversation?.scenario_name) return activeConversation.scenario_name;
+    if (activeConversation?.title) return activeConversation.title;
+    if (selectedScenario) return selectedScenario.name;
+    if (selectedBot) return selectedBot.name;
+    return '模拟会话';
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -532,6 +811,85 @@ export function SimulationPage() {
       <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
         <h1 className="text-base font-semibold text-foreground">模拟测试</h1>
         <div className="flex items-center gap-2">
+          {/* Bot selector - Left of scenario selector */}
+          <Popover open={botPopoverOpen} onOpenChange={setBotPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={botPopoverOpen}
+                className="w-[180px] h-9 text-xs gap-2 justify-start bg-muted/50 border border-transparent hover:border-border hover:bg-muted transition-all"
+              >
+                {selectedBot ? (
+                  <>
+                    <Bot className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-medium truncate">{selectedBot.name}</span>
+                    <ChevronDown className="ml-auto w-3 h-3 text-muted-foreground" />
+                  </>
+                ) : (
+                  <>
+                    <Bot className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">选择Bot</span>
+                    <ChevronDown className="ml-auto w-3 h-3 text-muted-foreground" />
+                  </>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-0" align="start">
+              <div className="flex flex-col max-h-[300px]">
+                <div className="px-3 py-2 border-b border-border">
+                  {botsLoading ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                      <span>加载中...</span>
+                    </div>
+                  ) : (
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {bots.length > 0 ? `${bots.length} 个Bot` : '暂无Bot'}
+                    </div>
+                  )}
+                </div>
+                {!botsLoading && (
+                <div className="overflow-y-auto flex-1">
+                  {/* None option */}
+                  <div
+                    onClick={() => {
+                      setSelectedBot(null);
+                      setBotPopoverOpen(false);
+                    }}
+                    className={`relative flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${
+                      !selectedBot ? 'bg-primary/5' : ''
+                    }`}
+                  >
+                    <Bot className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm text-muted-foreground">不使用Bot（通用模式）</span>
+                  </div>
+                  {bots.map((bot) => (
+                    <div
+                      key={bot.id}
+                      onClick={() => {
+                        setSelectedBot({ id: bot.id, name: bot.name });
+                        setBotPopoverOpen(false);
+                      }}
+                      className={`relative flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${
+                        selectedBot?.id === bot.id ? 'bg-primary/5' : ''
+                      }`}
+                    >
+                      <Bot className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{bot.name}</div>
+                        {bot.description && (
+                          <div className="text-xs text-muted-foreground line-clamp-1">{bot.description}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           {/* Scenario selector in header */}
           <Select
             value={selectedScenario?.id || ''}
@@ -540,20 +898,27 @@ export function SimulationPage() {
               if (scenario) handleSelectScenario(scenario);
             }}
           >
-            <SelectTrigger className="w-[160px] h-8 text-xs bg-muted border-0">
-              <SelectValue placeholder="选择场景" />
+            <SelectTrigger className="w-[180px] h-9 text-xs gap-2 bg-muted/50 border border-transparent hover:border-border hover:bg-muted transition-all">
+              <SelectValue placeholder="选择场景">
+                {selectedScenario && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{selectedScenario.icon}</span>
+                    <span className="font-medium truncate">{selectedScenario.name}</span>
+                  </div>
+                )}
+              </SelectValue>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="w-[260px]" position="popper" showScrollButtons={false}>
               <div className="grid grid-cols-2 gap-1 p-1">
                 {scenarios.map((scenario) => (
                   <SelectItem 
                     key={scenario.id} 
                     value={scenario.id} 
-                    className="text-xs py-2 px-2 cursor-pointer"
+                    className="text-xs py-2 px-2 cursor-pointer rounded-lg mb-0.5 last:mb-0 data-[state=checked]:bg-primary/10 data-[state=checked]:text-primary"
                   >
                     <div className="flex items-center gap-2">
-                      <span>{scenario.icon}</span>
-                      <span>{scenario.name}</span>
+                      <span className="text-base">{scenario.icon}</span>
+                      <span className="font-medium">{scenario.name}</span>
                     </div>
                   </SelectItem>
                 ))}
@@ -564,9 +929,11 @@ export function SimulationPage() {
             onClick={async () => {
               try {
                 const res = await fetch('/api/simulations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 
-                  title: selectedScenario ? `${selectedScenario.name} - ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}` : `模拟会话 ${total + 1}`, 
+                  title: `${getConversationTitle()} - ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
                   scenario_id: selectedScenario?.id || null,
-                  scenario_name: selectedScenario?.name || null
+                  scenario_name: selectedScenario?.name || null,
+                  bot_id: selectedBot?.id || null,
+                  bot_name: selectedBot?.name || null
                 }) });
                 const data = await res.json();
                 if (data.conversation) {
@@ -575,6 +942,14 @@ export function SimulationPage() {
                   updateItemsLength(1); // P2-1: sync itemsLengthRef after prepend
                   setActiveConvId(data.conversation.id);
                   updateTabState(data.conversation.id, { ...DEFAULT_TAB_STATE });
+                  // Reset source/evaluation panels when switching conversations
+                  setShowSourcePanel(false);
+                  setIsSourcePanelHighlighted(false);
+                  setShowEvaluationPanel(false);
+                  setCurrentSources([]);
+                  setCurrentConfidence(null);
+                  setCurrentConfidenceBreakdown(null);
+                  setMessagesWithSources([]);
                 }
               } catch (err) {
                 simulationLogger.error('创建模拟会话失败', { error: err });
@@ -598,16 +973,8 @@ export function SimulationPage() {
           {/* Phase 5: Batch test button */}
           <button
             onClick={() => {
-              // Get current scripts based on selected scenario
-              const scripts = selectedScenario && PRELOADED_SCRIPTS[selectedScenario.id]
-                ? PRELOADED_SCRIPTS[selectedScenario.id]
-                : activeTabState?.customScript || [];
-              if (scripts.length === 0) {
-                toast.error('当前场景没有测试脚本，请先选择有脚本的场景');
-                return;
-              }
-              setBatchTestScripts(scripts);
-              setShowBatchTest(true);
+              setBatchTestMode(true);
+              setShowBotSelector(true);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all duration-200"
           >
@@ -622,7 +989,7 @@ export function SimulationPage() {
         {/* Left sidebar - History list */}
         <div className="w-[300px] border-r border-border flex flex-col shrink-0 bg-card">
           {/* History Header */}
-          <div className="px-4 py-2.5 border-b border-border/50">
+          <div className="px-4 py-2.5 border-b border-border/50 mb-1">
             <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
               <Clock className="w-3 h-3" />
               模拟记录
@@ -650,11 +1017,25 @@ export function SimulationPage() {
                   onClick={() => {
                     setActiveConvId(conv.id);
                     setSelectedScenario(scenarios.find(s => s.id === conv.scenario_id) || null);
+                    // Sync bot selection from conversation
+                    if (conv.bot_id && conv.bot_name) {
+                      setSelectedBot({ id: conv.bot_id, name: conv.bot_name });
+                    } else {
+                      setSelectedBot(null);
+                    }
+                    // Reset source/evaluation panels when switching conversations
+                    setShowSourcePanel(false);
+                    setIsSourcePanelHighlighted(false);
+                    setShowEvaluationPanel(false);
+                    setCurrentSources([]);
+                    setCurrentConfidence(null);
+                    setCurrentConfidenceBreakdown(null);
+                    setMessagesWithSources([]);
                     if (!tabStates[conv.id]?.messages?.length) {
                       loadMessages(conv.id);
                     }
                   }}
-                  className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all duration-150 cursor-pointer list-item-slide ${
+                  className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all duration-150 cursor-pointer list-item-slide conv-item-enter ${
                     activeConvId === conv.id
                       ? 'bg-primary/10 text-primary'
                       : 'hover:bg-muted/50 text-foreground'
@@ -665,8 +1046,21 @@ export function SimulationPage() {
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{conv.title}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {conv.message_count} 轮对话
+                    <div className="text-xs text-muted-foreground flex items-center gap-1 min-w-0">
+                      {conv.bot_name ? (
+                        <>
+                          <Bot className="w-3 h-3 shrink-0" />
+                          <span className="truncate min-w-0">{conv.bot_name}</span>
+                          <span className="text-muted-foreground/50 shrink-0">·</span>
+                        </>
+                      ) : null}
+                      <span className="shrink-0">{conv.message_count} 条消息</span>
+                      {tabStates[conv.id]?.isAIReplying && (
+                        <span className="shrink-0 flex items-center gap-0.5 text-primary">
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          <span className="text-[10px]">回复中</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -720,13 +1114,13 @@ export function SimulationPage() {
           {activeConvId ? (
             <>
               {/* Chat Header */}
-              <div className="flex items-center justify-between px-4 h-12 border-b border-border shrink-0 bg-card/50">
+              <div className="flex items-center justify-between px-4 h-12 border-b-0 shrink-0 bg-card/50">
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-sm">
                     {selectedScenario?.icon || '💬'}
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-foreground">{activeConversation?.title || selectedScenario?.name || '自由对话'}</div>
+                    <div className="text-sm font-medium text-foreground">{activeConversation?.bot_name || activeConversation?.title || selectedScenario?.name || '自由对话'}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -760,10 +1154,53 @@ export function SimulationPage() {
                       </span>
                     </>
                   ) : null}
+                  {/* Source panel toggle */}
+                  <button
+                    onClick={() => {
+                      if (isSourcePanelHighlighted) {
+                        setIsSourcePanelHighlighted(false);
+                        setShowSourcePanel(false);
+                      } else {
+                        // Get all assistant messages with sources
+                        const msgsWithSources = activeTabState?.messages
+                          ?.filter(m => m.role === 'assistant' && m.sources && m.sources.length > 0)
+                          .map(m => ({
+                            id: m.id,
+                            content: m.content?.slice(0, 100) || '',
+                            sources: (m.sources as SourceItem[]) || [],
+                            confidence: m.confidence ?? undefined,
+                            confidenceBreakdown: m.confidence_breakdown ?? null,
+                          })) || [];
+                        setMessagesWithSources(msgsWithSources);
+                        setShowSourcePanel(true);
+                        setIsSourcePanelHighlighted(true);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                      isSourcePanelHighlighted
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                    }`}
+                    title="引用溯源"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    引用溯源
+                  </button>
                   {/* Evaluation button */}
                   <button
-                    onClick={() => setShowEvaluationPanel(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground transition-colors"
+                    onClick={() => {
+                      if (showEvaluationPanel) {
+                        setShowEvaluationPanel(false);
+                      } else {
+                        setShowEvaluationPanel(true);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                      showEvaluationPanel
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                    }`}
+                    title="评估"
                   >
                     <BarChart3 className="w-3.5 h-3.5" />
                     评估
@@ -782,13 +1219,14 @@ export function SimulationPage() {
                     {PRELOADED_SCRIPTS[selectedScenario.id].map((script, idx) => (
                       <div
                         key={idx}
-                        className={`shrink-0 px-2.5 py-1.5 rounded-md text-xs transition-all duration-200 ${
+                        className={`shrink-0 px-2.5 py-1.5 rounded-md text-xs transition-all duration-200 script-tag-enter ${
                           idx < (activeTabState?.scriptIndex || 0)
                             ? 'bg-success/10 text-success'
                             : idx === (activeTabState?.scriptIndex || 0)
                             ? 'bg-primary/10 text-primary border border-primary/30'
                             : 'bg-muted text-muted-foreground'
                         }`}
+                        style={{ animationDelay: `${idx * 40}ms` }}
                       >
                         <span className="font-medium mr-1">{idx + 1}.</span>
                         {script}
@@ -813,7 +1251,8 @@ export function SimulationPage() {
               )}
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex flex-1 min-h-0">
+                <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                 {activeTabState?.messages.length === 0 && !activeTabState?.isLoading && (
                   <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
                     <Bot className="w-12 h-12 text-muted-foreground/30 mb-3" />
@@ -844,9 +1283,9 @@ export function SimulationPage() {
                         <Bot className="w-3.5 h-3.5" />
                       )}
                     </div>
-                    <div className={`max-w-[70%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <div 
-                        className={`rounded-2xl px-3.5 py-2.5 cursor-pointer hover:opacity-90 ${
+                        className={`inline-block rounded-2xl px-3.5 py-2.5 cursor-pointer hover:opacity-90 max-w-[70ch] ${
                           msg.role === 'user'
                             ? 'bg-primary text-primary-foreground rounded-tr-md'
                             : 'bg-muted text-foreground rounded-tl-md'
@@ -855,11 +1294,34 @@ export function SimulationPage() {
                           if (msg.role === 'assistant' && (msg.sources as SourceItem[])?.length) {
                             setCurrentSources((msg.sources as SourceItem[]) || []);
                             setCurrentConfidence(msg.confidence ?? null);
-                            setShowSourcePanel(true);
+                            setCurrentConfidenceBreakdown(msg.confidence_breakdown ?? null);
+                            // Clear messagesWithSources to show single message mode
+                            setMessagesWithSources([]);
+                            // Cancel button highlight but keep panel open
+                            setIsSourcePanelHighlighted(false);
+                            if (!showSourcePanel) {
+                              setShowSourcePanel(true);
+                            }
                           }
                         }}
                       >
                         <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        {/* Sources hint */}
+                        {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+                          <div className="mt-1.5 pt-1.5 border-t border-border/30 flex items-center gap-1 flex-wrap">
+                            <BookOpen className="w-2.5 h-2.5 text-primary/80" />
+                            <span className="text-[10px] text-primary/80">该消息引用溯源 ({msg.sources.length}条)</span>
+                            <span className="text-[10px] text-muted-foreground/60 ml-auto">点击查看详情</span>
+                          </div>
+                        )}
+                        {/* Confidence badge */}
+                        {msg.role === 'assistant' && msg.confidence !== null && msg.confidence !== undefined && (
+                          <div className={`text-[10px] font-medium ${
+                            msg.confidence < 0.4 ? 'text-red-500' : msg.confidence < 0.7 ? 'text-amber-500' : 'text-emerald-500'
+                          }`}>
+                            置信度 {Math.round(msg.confidence * 100)}%
+                          </div>
+                        )}
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1 px-1">
                         {new Date(msg.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
@@ -875,7 +1337,7 @@ export function SimulationPage() {
                       <Bot className="w-3.5 h-3.5" />
                     </div>
                     <div className="max-w-[70%]">
-                      <div className="bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5">
+                      <div className="inline-block bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5" style={{ maxWidth: '100%' }}>
                         <p className="text-sm whitespace-pre-wrap">{activeTabState.streamingContent}</p>
                         <span className="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-1" />
                       </div>
@@ -890,7 +1352,7 @@ export function SimulationPage() {
                       <Bot className="w-3.5 h-3.5" />
                     </div>
                     <div className="max-w-[70%]">
-                      <div className="bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5">
+                      <div className="inline-block bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           AI 正在思考...
@@ -899,20 +1361,41 @@ export function SimulationPage() {
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Source Panel */}
-              {showSourcePanel && (
-                <SourcePanel
-                  sources={currentSources}
-                  confidence={currentConfidence}
-                  onClose={() => setShowSourcePanel(false)}
-                />
-              )}
+                {/* AI 回复中状态（页面重新加载时检测到 user 消息后显示） */}
+                {activeTabState?.isAIReplying && !activeTabState?.isSending && !activeTabState?.streamingContent && (
+                  <div className="flex gap-3 msg-enter-assistant">
+                    <div className="w-7 h-7 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0">
+                      <Bot className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="max-w-[70%]">
+                      <div className="inline-block bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          AI 正在回复...
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                </div>
 
-              {/* Evaluation Panel */}
-              {showEvaluationPanel && (
-                <div className="w-[380px] border-l border-border bg-card flex flex-col shrink-0">
+                {/* Source Panel - Fixed Sidebar */}
+                {showSourcePanel && (
+                  <SourcePanel
+                    sources={currentSources}
+                    confidence={currentConfidence}
+                    confidenceBreakdown={currentConfidenceBreakdown}
+                    messagesWithSources={messagesWithSources}
+                    onClose={() => {
+                      setShowSourcePanel(false);
+                      setIsSourcePanelHighlighted(false);
+                    }}
+                  />
+                )}
+
+                {/* Evaluation Panel - Fixed Sidebar */}
+                {showEvaluationPanel && (
                   <SimulationEvaluationPanel
                     simulationId={activeConvId!}
                     onSubmit={async (data) => {
@@ -928,8 +1411,8 @@ export function SimulationPage() {
                     }}
                     onClose={() => setShowEvaluationPanel(false)}
                   />
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Input */}
               <div className="p-4 border-t border-border bg-card/50 shrink-0">
@@ -983,15 +1466,18 @@ export function SimulationPage() {
         </div>
       </div>
       
-      {/* Phase 5: Bot Selector Modal */}
+      {/* Phase 5: Bot Selector Modal (Multi-bot A/B comparison or single-bot batch test) */}
       {showBotSelector && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background rounded-xl shadow-xl w-[500px] max-h-[80vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bot-modal-overlay">
+          <div className="bg-background rounded-xl shadow-xl w-[500px] max-h-[80vh] flex flex-col overflow-hidden bot-modal-content">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-lg font-semibold text-foreground">选择Bot进行对比</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                {batchTestMode ? '选择Bot进行批量测试' : '选择Bot进行对比'}
+              </h2>
               <button
                 onClick={() => {
                   setShowBotSelector(false);
+                  setBatchTestMode(false);
                   setSelectedBotIds([]);
                 }}
                 className="p-1 rounded hover:bg-muted transition-colors"
@@ -1003,13 +1489,14 @@ export function SimulationPage() {
               <BotSelector
                 selectedBotIds={selectedBotIds}
                 onChange={setSelectedBotIds}
-                maxSelection={2}
+                maxSelection={batchTestMode ? 1 : 2}
               />
             </div>
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border bg-card">
               <button
                 onClick={() => {
                   setShowBotSelector(false);
+                  setBatchTestMode(false);
                   setSelectedBotIds([]);
                 }}
                 className="px-4 py-2 rounded-lg text-sm bg-muted text-muted-foreground hover:bg-muted/80 transition-colors"
@@ -1018,6 +1505,16 @@ export function SimulationPage() {
               </button>
               <button
                 onClick={() => {
+                  if (batchTestMode) {
+                    if (selectedBotIds.length < 1) {
+                      toast.error('请至少选择 1 个 Bot');
+                      return;
+                    }
+                    setShowBotSelector(false);
+                    setBatchTestMode(false);
+                    setShowBatchScriptSelector(true);
+                    return;
+                  }
                   if (selectedBotIds.length < 2) {
                     toast.error('请选择至少2个Bot进行对比');
                     return;
@@ -1033,10 +1530,10 @@ export function SimulationPage() {
                   setShowBotSelector(false);
                   setShowABComparison(true);
                 }}
-                disabled={selectedBotIds.length < 2}
+                disabled={selectedBotIds.length < (batchTestMode ? 1 : 2)}
                 className="px-4 py-2 rounded-lg text-sm bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                开始对比
+                {batchTestMode ? '选择脚本' : '开始对比'}
               </button>
             </div>
           </div>
@@ -1053,7 +1550,6 @@ export function SimulationPage() {
               : activeTabState?.customScript || []
           }
           onComplete={(results) => {
-            console.log('A/B Test completed:', results);
             toast.success('A/B测试完成');
           }}
           onClose={() => {
@@ -1062,19 +1558,33 @@ export function SimulationPage() {
         />
       )}
       
+      {/* Phase 5: Batch Script Selector */}
+      {showBatchScriptSelector && (
+        <BatchScriptSelector
+          onConfirm={(scripts) => {
+            setBatchTestScripts(scripts);
+            setShowBatchScriptSelector(false);
+            setShowBatchTest(true);
+          }}
+          onClose={() => {
+            setShowBatchScriptSelector(false);
+          }}
+        />
+      )}
+      
       {/* Phase 5: Batch Test Panel */}
       {showBatchTest && (
         <BatchTestPanel
           scripts={batchTestScripts}
-          onProgress={(progress) => {
-            console.log('Batch test progress:', progress);
-          }}
+          botId={selectedBotIds[0]}
+          onProgress={() => {}}
           onComplete={(results) => {
-            console.log('Batch test completed:', results);
             toast.success(`批量测试完成: ${results.filter(r => r.success).length}/${results.length} 成功`);
+            setSelectedBotIds([]);
           }}
           onClose={() => {
             setShowBatchTest(false);
+            setSelectedBotIds([]);
           }}
         />
       )}
@@ -1188,6 +1698,8 @@ function CustomScriptEditor({
 function MessageInput({ onSend, disabled }: { onSend: (content: string) => void; disabled: boolean }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  const MAX_LENGTH = 2000;
 
   const handleSend = () => {
     const trimmed = input.trim();
@@ -1207,30 +1719,40 @@ function MessageInput({ onSend, disabled }: { onSend: (content: string) => void;
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    const target = e.target;
-    target.style.height = 'auto';
-    target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+    const value = e.target.value;
+    if (value.length <= MAX_LENGTH) {
+      setInput(value);
+      const target = e.target;
+      target.style.height = 'auto';
+      target.style.height = Math.min(target.scrollHeight, 150) + 'px';
+    }
   };
 
+  const canSend = input.trim().length > 0 && !disabled;
+  const isNearLimit = input.length > MAX_LENGTH * 0.8;
+
   return (
-    <div className="flex items-end gap-2">
-      <div className="flex-1 relative">
+    <div className="flex items-center gap-2">
+      <div className="flex-1 relative h-12">
         <textarea
           ref={textareaRef}
           value={input}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="输入测试消息..."
+          placeholder="输入测试消息...（Shift+Enter换行）"
           rows={1}
           disabled={disabled}
-          className="w-full bg-muted rounded-xl px-4 py-3 pr-12 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-50"
-          style={{ minHeight: '48px', maxHeight: '120px' }}
+          className="absolute inset-0 w-full h-full bg-muted rounded-xl px-4 py-3 pr-12 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 resize-none disabled:opacity-50 transition-all border border-transparent focus:border-primary/30"
         />
+        {input.length > 0 && (
+          <span className={`absolute right-10 top-1/2 -translate-y-1/2 text-[10px] z-10 ${isNearLimit ? 'text-amber-500' : 'text-muted-foreground/50'}`}>
+            {input.length}/{MAX_LENGTH}
+          </span>
+        )}
         <button
           onClick={handleSend}
-          disabled={!input.trim() || disabled}
-          className="absolute right-2 bottom-2 w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          disabled={!canSend}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 z-20"
         >
           {disabled ? (
             <Loader2 className="w-4 h-4 animate-spin" />

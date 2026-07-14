@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Bot, Check, Loader2, AlertCircle } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 export interface BotConfig {
   id: string;
@@ -38,7 +39,7 @@ export function BotSelector({ selectedBotIds, onChange, maxSelection = 2 }: BotS
       setBots(botList.filter((b: BotConfig) => b.status === 'active'));
     } catch (err) {
       setError('加载Bot列表失败');
-      console.error('Failed to fetch bots:', err);
+      logger.error('Failed to fetch bots', { error: err });
     } finally {
       setIsLoading(false);
     }

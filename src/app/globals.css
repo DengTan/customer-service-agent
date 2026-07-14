@@ -52,8 +52,10 @@
   --radius-2xl: 1.5rem;
   --radius-full: 9999px;
   --shadow-card: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-card-hover: 0 4px 16px rgba(0,0,0,0.12);
   --shadow-float: 0 10px 25px rgba(0,0,0,0.10);
   --shadow-dialog: 0 25px 50px rgba(0,0,0,0.15);
+  --color-shadow-card-hover: #rgba(0,0,0,0.12);
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
@@ -74,17 +76,17 @@
   --secondary: #EDF1F7;
   --secondary-foreground: #152033;
   --muted: #EDF0F7;
-  --muted-foreground: #637089;
+  --muted-foreground: #4A5568;
   --accent: #E8F0FF;
   --accent-foreground: #2F6BFF;
   --destructive: #ef4444;
   --error: #DC2626;
   --success: #16A37B;
   --warning: #f59e0b;
-  --border: #E6EAF2;
-  --input: #E6EAF2;
+  --border: #CBD2E0;
+  --input: #CBD2E0;
   --ring: #2F6BFF;
-  --outline: #CBD2E0;
+  --outline: #A0AEC0;
   --outline-variant: #E6EAF2;
   --chart-1: #2F6BFF;
   --chart-2: #16A37B;
@@ -97,7 +99,7 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #E8F0FF;
   --sidebar-accent-foreground: #2F6BFF;
-  --sidebar-border: #E6EAF2;
+  --sidebar-border: #CBD2E0;
   --sidebar-ring: #2F6BFF;
 }
 
@@ -246,4 +248,173 @@
 }
 .btn-press:active {
   transform: scale(0.97);
+}
+
+/* ===== Simulation Module Animations ===== */
+
+/* Full-screen overlay panels (AB Comparison, Batch Test) */
+@keyframes panelOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes panelOverlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Panel content: slide up + fade in */
+@keyframes panelContentIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Result item: slide up on enter */
+@keyframes resultSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Batch test panel overlay */
+.batch-panel-overlay {
+  animation: panelOverlayIn 0.2s ease-out both;
+}
+.batch-panel-overlay-exit {
+  animation: panelOverlayOut 0.15s ease-in both;
+}
+
+/* AB comparison overlay */
+.ab-panel-overlay {
+  animation: panelOverlayIn 0.2s ease-out both;
+}
+.ab-panel-overlay-exit {
+  animation: panelOverlayOut 0.15s ease-in both;
+}
+
+/* Bot selector modal */
+.bot-modal-overlay {
+  animation: panelOverlayIn 0.2s ease-out both;
+}
+.bot-modal-overlay-exit {
+  animation: panelOverlayOut 0.15s ease-in both;
+}
+.bot-modal-content {
+  animation: panelContentIn 0.25s ease-out 0.05s both;
+}
+
+/* Result list item */
+.result-item-enter {
+  animation: resultSlideIn 0.2s ease-out both;
+}
+
+/* Running item pulse */
+@keyframes runningPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(47, 107, 255, 0.15); }
+  50% { box-shadow: 0 0 0 4px rgba(47, 107, 255, 0); }
+}
+.result-item-running {
+  animation: runningPulse 2s ease-in-out infinite;
+}
+
+/* Count-up animation for summary numbers */
+@keyframes countUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stat-value-enter {
+  animation: countUp 0.3s ease-out both;
+}
+
+/* Shimmer animation for progress bar */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Refined skeleton pulse — subtle, professional for enterprise aesthetic */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-skeleton-pulse {
+  animation: skeletonPulse 1.6s ease-in-out infinite;
+}
+
+/* Staggered skeleton rows for richer loading effect */
+.skeleton-row-enter {
+  animation: skeletonRowIn 0.3s ease-out both;
+}
+@keyframes skeletonRowIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Conversation list item slide in */
+@keyframes convSlideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.conv-item-enter {
+  animation: convSlideIn 0.2s ease-out both;
+}
+
+/* Script tag stagger */
+@keyframes scriptTagIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+.script-tag-enter {
+  animation: scriptTagIn 0.15s ease-out both;
+}
+
+/* ===== Drawer Animations ===== */
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-in {
+  animation-duration: 300ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+.slide-in-from-right {
+  animation-name: slideInFromRight;
+}
+.duration-300 {
+  animation-duration: 300ms;
+}
+
+/* ===== Appearance Settings Variables ===== */
+
+:root {
+  --chat-font-size: 14px;
+  --chat-message-gap: 12px;
+}
+
+body.compact-mode {
+  --chat-message-gap: 4px;
+}
+
+/* ===== Sonner Toast Close Button Position ===== */
+[data-sonner-toaster] {
+  --toast-close-button-start: unset !important;
+  --toast-close-button-end: 0 !important;
+  --toast-close-button-transform: translateY(-50%) !important;
+}
+
+/* Direct override for close button - remove circle, simple X style */
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  left: unset !important;
+  right: 5px !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translateY(-50%) !important;
+  background: transparent !important;
+  border: none !important;
+  color: currentColor !important;
+  font-size: 18px !important;
+  width: 26px !important;
+  height: 26px !important;
 }

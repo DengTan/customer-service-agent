@@ -1,8 +1,31 @@
 import type { Metadata } from 'next';
-import { Inspector } from 'react-dev-inspector';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/lib/auth';
+import { ThemeSettingsProvider } from '@/lib/theme-settings-context';
+import { ConfirmDialogProvider } from '@/components/common/confirm-dialog';
 import './globals.css';
+
+/**
+ * Inline blocking script: applies the saved theme BEFORE React hydration,
+ * eliminating the flash from next-themes defaulting to system preference.
+ * Must stay in sync with ThemeSettingsProvider's STORAGE_KEY.
+ */
+const THEME_SCRIPT = `
+(function() {
+  try {
+    var s = localStorage.getItem('appearance_settings');
+    if (!s) return;
+    var cfg = JSON.parse(s);
+    var theme = cfg.theme;
+    if (theme === 'system') {
+      theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  } catch(e) {}
+})();
+`;
 
 export const metadata: Metadata = {
   title: {
@@ -62,15 +85,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-
   return (
     <html lang="zh" suppressHydrationWarning>
       <body className={`antialiased`}>
         <AuthProvider>
-        {isDev && <Inspector />}
-        {children}
-        <Toaster richColors position="top-center" />
+          <ThemeSettingsProvider>
+            <ConfirmDialogProvider>
+              {children}
+              <Toaster richColors position="top-center" />
+            </ConfirmDialogProvider>
+          </ThemeSettingsProvider>
         </AuthProvider>
       </body>
     </html>

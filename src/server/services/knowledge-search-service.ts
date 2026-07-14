@@ -1,4 +1,4 @@
-import { KnowledgeClient, Config } from 'coze-coding-dev-sdk';
+import { getEmbeddingService } from './embedding-service';
 import { toServiceError } from './service-utils';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
@@ -24,8 +24,17 @@ export interface KnowledgeSourceItem {
   content: string;       // Full original chunk text
   score: number;         // Relevance score
   knowledge_item_id?: string; // Knowledge item UUID (for citation feedback)
-  name?: string;         // Knowledge item name
+  name?: string;         // Knowledge item name (human-readable label)
   category?: string;     // Knowledge item category
+  // P2: stable chunk identity (from RPC match_knowledge_items)
+  chunk_id?: string | null;  // Chunk UUID (null when parent item matched)
+  chunk_index?: number;     // Chunk position within parent (0 when parent matched)
+  content_hash?: string | null; // SHA-256 content hash for citation stability
+  // Friendly aliases used by the public /api/knowledge response.
+  // They mirror knowledge_item_id/name so we don't break the existing API contract.
+  id?: string;
+  title?: string;
+  image_url?: string | null;
 }
 
 export interface KnowledgeSearchResult {
@@ -41,12 +50,16 @@ export interface KnowledgeSearchResultExt extends KnowledgeSearchResult {
     vectorResults: number;
     bm25Results: number;
     rerankApplied: boolean;
+    rerankBackend?: 'bge' | 'cohere' | 'generic' | 'mock' | 'none';
+    rerankDegraded?: boolean;
     executionTimeMs: number;
   };
 }
 
 // Knowledge relevance threshold defaults (overridable via settings table)
 // Keys: knowledge_min_score, knowledge_search_limit, knowledge_image_search_limit
+// P0: Align to HTTP.KNOWLEDGE_MIN_SCORE (0.75) — cosine similarity is model/corpus-dependent,
+//     this is a calibrated emergency guard; full precision requires reranker + claim attribution.
 const DEFAULT_KNOWLEDGE_MIN_SCORE = 0.75;
 const DEFAULT_KNOWLEDGE_SEARCH_LIMIT = 5;
 const DEFAULT_KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3;
@@ -121,9 +134,6 @@ export class KnowledgeSearchService {
     limit?: number,
   ): Promise<KnowledgeSearchResult> {
     try {
-      const knowledgeConfig = new Config();
-      const knowledgeClient = new KnowledgeClient(knowledgeConfig);
-
       // Strip tool call patterns from user input to prevent prompt injection
       const cleanQuery = this.stripToolCallPatterns(query);
 
@@ -132,40 +142,60 @@ export class KnowledgeSearchService {
       const effectiveMinScore = minScore ?? settings.minScore;
       const effectiveLimit = limit ?? settings.searchLimit;
 
-      const searchResult = await knowledgeClient.search(cleanQuery, undefined, effectiveLimit, effectiveMinScore);
+      const embeddingService = getEmbeddingService();
+      const queryEmbedding = await embeddingService.embed(cleanQuery);
 
-      if (searchResult.code === 0 && searchResult.chunks && searchResult.chunks.length > 0) {
-        // Filter by min_score threshold - only include high-relevance results
-        const relevantChunks = searchResult.chunks.filter(chunk => chunk.score >= effectiveMinScore);
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.rpc('match_knowledge_items', {
+        p_query_embedding: queryEmbedding,
+        p_match_threshold: effectiveMinScore,
+        p_match_count: effectiveLimit,
+      });
 
-        if (relevantChunks.length > 0) {
-          const context = relevantChunks
-            .map((chunk, i) => `[资料${i + 1}] ${chunk.content}`)
-            .join('\n\n');
-
-          const sources: KnowledgeSourceItem[] = relevantChunks.map((chunk) => ({
-            type: 'knowledge',
-            content: chunk.content,
-            score: chunk.score,
-          }));
-
-          // Average score of relevant results as confidence indicator
-          const confidence = relevantChunks.reduce((sum, c) => sum + c.score, 0) / relevantChunks.length;
-
-          // Fire-and-forget: enrich metadata and search images asynchronously
-          // These are non-critical operations that should not block the search response
-          this.enrichSourcesWithMetadata(sources, query).catch((err) => {
-            logger.agent.debug('[KnowledgeSearch] Metadata enrichment failed', { error: err });
-          });
-          this.searchRelatedImages(query).catch((err) => {
-            logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
-          });
-
-          return { context, sources, confidence, images: [] };
-        }
+      if (error || !data || data.length === 0) {
+        return { context: '', sources: [], confidence: 0, images: [] };
       }
 
-      return { context: '', sources: [], confidence: 0, images: [] };
+      const results = data as Array<{
+        knowledge_item_id: string;
+        chunk_id: string | null;
+        chunk_index: number;
+        content_hash: string | null;
+        content: string;
+        name: string;
+        category: string;
+        similarity: number;
+      }>;
+
+      const context = results
+        .map((r, i) => `[资料${i + 1}] ${r.content}`)
+        .join('\n\n');
+
+      const sources: KnowledgeSourceItem[] = results.map((r) => ({
+        type: 'knowledge',
+        content: r.content,
+        score: r.similarity,
+        knowledge_item_id: r.knowledge_item_id,
+        chunk_id: r.chunk_id,
+        chunk_index: r.chunk_index,
+        content_hash: r.content_hash,
+        name: r.name,
+        category: r.category,
+        id: r.knowledge_item_id,
+        title: r.name,
+      }));
+
+      const confidence = results.reduce((sum, r) => sum + r.similarity, 0) / results.length;
+
+      // Fire-and-forget: enrich metadata and search images asynchronously
+      // These are non-critical operations that should not block the search response
+      const matchedIds = results.map(r => r.knowledge_item_id).filter(Boolean);
+      this.incrementHitCounts(matchedIds).catch(() => {});
+      this.searchRelatedImages(query).catch((err) => {
+        logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
+      });
+
+      return { context, sources, confidence, images: [] };
     } catch (error) {
       // Knowledge base search failure should not block the main flow
       logger.agent.error('Knowledge search failed', { error });
@@ -209,17 +239,27 @@ export class KnowledgeSearchService {
           type: 'knowledge',
           content: r.content,
           score: r.score,
+          knowledge_item_id: r.id,
+          // P2: propagate stable chunk identity from hybrid search
+          chunk_id: r.chunkId ?? null,
+          chunk_index: r.chunkIndex ?? 0,
+          content_hash: r.contentHash ?? null,
           name: r.name,
           category: r.category,
+          id: r.id,
+          title: r.name,
         }));
 
         const confidence = hybridResult.results.reduce((sum, r) => sum + r.score, 0) / hybridResult.results.length;
 
-        // Fire-and-forget: enrich metadata and search images asynchronously
+        // Fire-and-forget: enrich metadata, hit count, and search images asynchronously
         // These are non-critical operations that should not block the search response
         this.enrichSourcesWithMetadata(sources, query).catch((err) => {
           logger.agent.debug('[KnowledgeSearch] Metadata enrichment failed', { error: err });
         });
+        // P2: also fire-and-forget hit count increment (uses knowledge_item_id which is set above)
+        const matchedIds = hybridResult.results.map(r => r.id).filter(Boolean);
+        this.incrementHitCounts(matchedIds).catch(() => {});
         this.searchRelatedImages(query).catch((err) => {
           logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
         });
@@ -233,6 +273,8 @@ export class KnowledgeSearchService {
             vectorResults: hybridResult.vectorResults,
             bm25Results: hybridResult.bm25Results,
             rerankApplied: hybridResult.rerankApplied,
+            rerankBackend: hybridResult.rerankBackend,
+            rerankDegraded: hybridResult.rerankDegraded,
             executionTimeMs: hybridResult.executionTimeMs,
           },
         };
@@ -322,21 +364,21 @@ export class KnowledgeSearchService {
 
       const { data, error } = await client
         .from('knowledge_items')
-        .select('id, name, category, content')
+        .select('id, name, category, content, image_url')
         .eq('status', 'active')
         .or(orConditions)
         .limit(sources.length);
 
       if (error || !data || data.length === 0) return sources;
 
-      const items = data as Array<{ id: string; name: string; category: string; content: string }>;
+      const items = data as Array<{ id: string; name: string; category: string; content: string; image_url: string | null }>;
 
       // Track matched item IDs for hit_count update
       const matchedItemIds: Set<string> = new Set();
 
       // Match each source to the best knowledge item by content overlap
       const enrichedSources = sources.map(source => {
-        let bestMatch: { id: string; name: string; category: string } | null = null;
+        let bestMatch: { id: string; name: string; category: string; image_url: string | null } | null = null;
         let bestOverlap = 0;
 
         for (const item of items) {
@@ -350,13 +392,21 @@ export class KnowledgeSearchService {
           }
           if (overlap > bestOverlap) {
             bestOverlap = overlap;
-            bestMatch = { id: item.id, name: item.name, category: item.category };
+            bestMatch = { id: item.id, name: item.name, category: item.category, image_url: item.image_url };
           }
         }
 
         if (bestMatch) {
           matchedItemIds.add(bestMatch.id);
-          return { ...source, knowledge_item_id: bestMatch.id, name: bestMatch.name, category: bestMatch.category };
+          return {
+            ...source,
+            knowledge_item_id: bestMatch.id,
+            name: bestMatch.name,
+            category: bestMatch.category,
+            id: bestMatch.id,
+            title: bestMatch.name,
+            image_url: bestMatch.image_url,
+          };
         }
         return source;
       });

@@ -6,7 +6,7 @@ import { trimDemoArray } from '@/lib/api-utils';
 import { logger } from '@/lib/logger';
 const simulationRepoLogger = logger.database;
 
-const CONVERSATION_SELECT = 'id, title, scenario_id, scenario_name, status, message_count, created_by, created_at, updated_at';
+const CONVERSATION_SELECT = 'id, title, scenario_id, scenario_name, bot_id, bot_name, status, message_count, created_by, created_at, updated_at';
 const MESSAGE_SELECT = 'id, conversation_id, role, content, sources, confidence, confidence_breakdown, tool_calls, tool_results, image_url, message_type, rich_content, created_at';
 
 // Demo mode in-memory storage
@@ -18,6 +18,8 @@ export interface CreateSimulationInput {
   title: string;
   scenario_id?: string | null;
   scenario_name: string;
+  bot_id?: string | null;
+  bot_name?: string | null;
   created_by: string;
 }
 
@@ -72,7 +74,12 @@ export class SimulationRepository {
       if (error) throw new RepositoryError('list simulations', error.message, error.code);
       return (data ?? []) as SimulationConversation[];
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database query failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] List simulations failed', {
+        error: err,
+        userId: userId ?? null,
+        limit,
+        offset,
+      });
       return [];
     }
   }
@@ -90,12 +97,15 @@ export class SimulationRepository {
         .single();
 
       if (error) {
-        if (error.code === 'PGRST116') return null; // Not found
+        if (error.code === 'PGRST116') return null;
         throw new RepositoryError('get simulation', error.message, error.code);
       }
       return data as SimulationConversation;
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database query failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] Get simulation failed', {
+        error: err,
+        conversationId: id,
+      });
       return null;
     }
   }
@@ -107,6 +117,8 @@ export class SimulationRepository {
       title: input.title,
       scenario_id: input.scenario_id ?? null,
       scenario_name: input.scenario_name,
+      bot_id: input.bot_id ?? null,
+      bot_name: input.bot_name ?? null,
       status: 'active',
       message_count: 0,
       created_by: input.created_by,
@@ -128,6 +140,8 @@ export class SimulationRepository {
           title: newConversation.title,
           scenario_id: newConversation.scenario_id,
           scenario_name: newConversation.scenario_name,
+          bot_id: newConversation.bot_id,
+          bot_name: newConversation.bot_name,
           status: newConversation.status,
           message_count: newConversation.message_count,
           created_by: newConversation.created_by,
@@ -140,7 +154,12 @@ export class SimulationRepository {
       if (error) throw new RepositoryError('create simulation', error.message, error.code);
       return data as SimulationConversation;
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database insert failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] Create simulation failed', {
+        error: err,
+        title: input.title,
+        scenarioId: input.scenario_id ?? null,
+        botId: input.bot_id ?? null,
+      });
       throw err;
     }
   }
@@ -165,7 +184,38 @@ export class SimulationRepository {
       if (error) throw new RepositoryError('delete simulation', error.message, error.code);
       return true;
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database delete failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] Delete simulation failed', {
+        error: err,
+        conversationId: id,
+      });
+      return false;
+    }
+  }
+
+  async updateBotName(conversationId: string, botName: string): Promise<boolean> {
+    if (isDemoMode()) {
+      const conv = demoConversations.find(c => c.id === conversationId);
+      if (conv) {
+        conv.bot_name = botName;
+        return true;
+      }
+      return false;
+    }
+
+    try {
+      const { error } = await this.client
+        .from('simulation_conversations')
+        .update({ bot_name: botName, updated_at: new Date().toISOString() })
+        .eq('id', conversationId);
+
+      if (error) throw new RepositoryError('update bot name', error.message, error.code);
+      return true;
+    } catch (err) {
+      simulationRepoLogger.error('[SimulationRepository] Update bot name failed', {
+        error: err,
+        conversationId,
+        botName,
+      });
       return false;
     }
   }
@@ -185,9 +235,42 @@ export class SimulationRepository {
       if (error) throw new RepositoryError('list messages', error.message, error.code);
       return (data ?? []) as SimulationMessage[];
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database query failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] List messages failed', {
+        error: err,
+        conversationId,
+      });
       return [];
     }
+  }
+
+/**
+ * Safely count messages. Returns the count or throws on database error.
+ * Never returns a misleading 0 when the database query fails.
+ */
+  async safeCountMessages(conversationId: string): Promise<number> {
+    if (isDemoMode()) {
+      return demoMessages.get(conversationId)?.length ?? 0;
+    }
+
+    try {
+      const { count, error } = await this.client
+        .from('simulation_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId);
+
+      if (error) throw new RepositoryError('count messages', error.message, error.code);
+      return count ?? 0;
+    } catch (err) {
+      simulationRepoLogger.error('[SimulationRepository] Count messages failed', {
+        error: err,
+        conversationId,
+      });
+      throw err;
+    }
+  }
+
+  async countMessages(conversationId: string): Promise<number> {
+    return this.safeCountMessages(conversationId);
   }
 
   async createMessage(input: CreateSimulationMessageInput): Promise<SimulationMessage> {
@@ -245,21 +328,33 @@ export class SimulationRepository {
 
       if (error) throw new RepositoryError('create message', error.message, error.code);
 
-      // Update conversation message count (fire-and-forget)
-      // Using async IIFE to avoid blocking the return statement
-      (async () => {
-        try {
-          await this.client.rpc('increment_simulation_message_count', {
-            conv_id: input.conversation_id,
+      // Update conversation message count — await and check for errors so the caller
+      // can rely on the returned count being accurate before it goes out of scope.
+      try {
+        const { error: rpcError } = await this.client.rpc('increment_simulation_message_count', {
+          conv_id: input.conversation_id,
+        });
+        if (rpcError) {
+          simulationRepoLogger.warn('[SimulationRepository] Increment message count RPC returned error', {
+            rpcError,
+            conversationId: input.conversation_id,
           });
-        } catch {
-          // Ignore RPC errors, count will be updated on next query
         }
-      })();
+      } catch (rpcErr) {
+        // Non-fatal: log and continue — the message was already saved.
+        simulationRepoLogger.warn('[SimulationRepository] Increment message count RPC threw', {
+          error: rpcErr,
+          conversationId: input.conversation_id,
+        });
+      }
 
       return data as SimulationMessage;
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Database insert failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] Create message failed', {
+        error: err,
+        conversationId: input.conversation_id,
+        role: input.role,
+      });
       throw err;
     }
   }
@@ -286,7 +381,10 @@ export class SimulationRepository {
       if (error) throw new RepositoryError('count simulations', error.message, error.code);
       return count ?? 0;
     } catch (err) {
-      simulationRepoLogger.error('[SimulationRepository] Count query failed', { error: err });
+      simulationRepoLogger.error('[SimulationRepository] Count simulations failed', {
+        error: err,
+        userId: userId ?? null,
+      });
       return 0;
     }
   }

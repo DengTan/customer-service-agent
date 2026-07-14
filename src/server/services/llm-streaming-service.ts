@@ -1,22 +1,67 @@
-import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { logger } from '@/lib/logger';
 import { ToolExecutionService } from './tool-execution-service';
 import { SummaryService } from './summary-service';
 import { AlertService } from './alert-service';
 import { ConversationService } from './conversation-service';
 import { SubAgentService } from './sub-agent-service';
-import { QualityService } from './quality-service';
+import { QualityService, type QualityCheckContext, type QualityCheckResult } from './quality-service';
 import { KnowledgeGapService } from './knowledge-gap-service';
+import { ClaimSupportVerifier, type ClaimVerificationResult } from './claim-support-verifier';
 import { LLMClientAdapter } from './llm-client-adapter';
+import { RetrievalTraceService } from './retrieval-trace-service';
+import type { CitationItem, EvidenceBundle } from './retrieval-orchestrator';
+import type { RetrievalGateDecision } from './retrieval-gating-service';
 import type { KnowledgeImageRef } from './knowledge-search-service';
 import type { MessageHistoryItem } from '@/server/repositories/conversation-repository';
+import {
+  buildConfidenceFromContent,
+  type ConfidenceBreakdown,
+} from '@/lib/confidence-calculator';
+
+export type PublicCitationItem = {
+  type: string;
+  content?: string;
+  score?: number;
+  knowledge_item_id?: string;
+  name?: string;
+  category?: string;
+  keyword?: string;
+  id?: string;
+  title?: string;
+  image_url?: string | null;
+  childBotName?: string;
+  triggerIntent?: string;
+  delegationId?: string;
+  /** Provenance version stamp; 2 = new orchestrator contract */
+  provenanceVersion?: 1 | 2;
+  /** P2: stable chunk ID (null when parent item matched directly) */
+  chunk_id?: string | null;
+  /** P2: chunk position within parent (0 when parent matched directly) */
+  chunk_index?: number;
+  /** P2: SHA-256 content hash for citation stability */
+  content_hash?: string | null;
+};
 
 export interface LLMStreamOptions {
+  /** LLM-bound retrieval context (passed to the model). Internal — not the public source list. */
   knowledgeContext?: string;
   knowledgeConfidence?: number;
+  /**
+   * CANONICAL public citations — already graded by the RetrievalOrchestrator.
+   * These are the ONLY knowledge/product/size-chart items that may be exposed
+   * in SSE `done.sources` and persisted to `Message.sources`.
+   */
+  evidenceCitations?: PublicCitationItem[];
+  /**
+   * DEPRECATED: kept for backwards compatibility only.
+   * If provided, these candidates are NEVER auto-promoted to public citations.
+   * Callers must migrate to `evidenceCitations`.
+   */
   knowledgeSources?: Array<{ type: string; content: string; score: number; knowledge_item_id?: string; name?: string; category?: string }>;
   knowledgeImages?: KnowledgeImageRef[];
+  /** LLM-bound context (not public). */
   productContext?: string; // 商品详情上下文（搜索结果格式化后）
+  /** LLM-bound context (not public). */
   sizeChartContext?: string; // 尺码表上下文（搜索结果格式化后）
   imageUrl?: string | null;
   customHeaders?: Record<string, string>;
@@ -37,6 +82,31 @@ export interface LLMStreamOptions {
   llmProviderBaseUrl?: string; // Provider API Base URL
   llmProviderApiKey?: string; // Provider API Key
   llmProviderType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom'; // Provider 类型
+  llmProviderDefaultModel?: string; // Provider 默认模型（用于扩展 Provider 时覆盖 aiModel）
+  /** Optional provenance trace from the orchestrator (logged for observability). */
+  retrievalTrace?: {
+    action: string;
+    reasonCode: string;
+    provenanceVersion: number;
+    rerankDegraded: boolean;
+    candidateCount: number;
+    citationCount: number;
+  };
+  /** P3 Phase 1: Retrieval gate decision (used to persist retrieval_traces). */
+  decision?: RetrievalGateDecision;
+  /** P3 Phase 1: Evidence bundle (used to persist retrieval_traces). */
+  evidence?: EvidenceBundle;
+  /** P3 Phase 1: when the orchestrator produced the decision/evidence, in epoch ms.
+   *  Used to compute the trace's execution_time_ms. Defaults to Date.now() at createStream entry. */
+  decisionStartedAtMs?: number;
+  /** P2: Claim verification configuration — when provided, knowledge citations are
+   *  verified by the auxiliary LLM before being sent in done.sources.
+   *  Verification failures result in empty knowledge sources (fail-closed). */
+  claimVerificationConfig?: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+  };
 }
 
 type ImageUrlPart = { type: 'image_url'; image_url: { url: string; detail?: string } };
@@ -160,33 +230,19 @@ const TOOL_CALL_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
 // Image reference pattern: [IMG:url](alt text)
 const IMAGE_REF_PATTERN = /\[IMG:([^\]]+)\]\(([^)]+)\)/g;
 
-// Confidence breakdown for explainability
-export interface ConfidenceBreakdown {
-  knowledge_score: number;    // Knowledge base vector similarity contribution
-  tool_score: number;         // Tool execution confidence contribution
-  llm_self_score: number;     // LLM self-evaluated confidence contribution
-  sub_agent_score: number;    // Sub-agent delegation confidence contribution
-  handoff_intent: boolean;    // Whether handoff intent was detected
-  no_support: boolean;        // Whether no grounding source exists (pure LLM)
-  final: number;              // Final weighted confidence
+/**
+ * Strip internal markers from LLM output before sending to client.
+ * Removes: [TOOL_CALL]...[/TOOL_CALL], [CONF:x.x], [DELEGATE_TO]...[/DELEGATE_TO]
+ * Preserves: [IMG:url](alt) — these are rendered as images on the client side.
+ */
+function stripInternalMarkers(text: string): string {
+  return text
+    .replace(/\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g, '')
+    .replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '')
+    .replace(/\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
-
-// Semantic pattern matching for handoff intent detection
-// Covers various ways LLM might express "transfer to human agent"
-const HANDOFF_INTENT_PATTERNS = [
-  /建议.{0,4}(转|找|联系|接入|转接).{0,4}(人工|真人|客服人员)/,
-  /为您转接人工/,
-  /需要人工客服处理/,
-  /无法.{0,6}解决.{0,4}人工/,
-  /转人工客服/,
-  /人工服务/,
-  /为您转接(专业|专属|人工)客服/,
-  /建议您联系人工/,
-  /帮您转接(真人|人工)/,
-  /由人工客服(为您|来)?处理/,
-  /转接(专业|资深)客服/,
-  /找(真人|人工)帮您/,
-];
 
 export class LLMStreamingService {
   private readonly toolExecution = new ToolExecutionService();
@@ -213,7 +269,7 @@ export class LLMStreamingService {
     let isAborted = false;
     let fullContent = '';
     const toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string }> = [];
-    const sources: Array<{ type: string; content: string; score: number; knowledge_item_id?: string; name?: string; category?: string }> = [];
+    const sources: PublicCitationItem[] = [];
     let knowledgeConfidence = options.knowledgeConfidence || 0;
     const knowledgeMinScore = options.knowledgeMinScore || 0.75;
     const delegationResults: Array<{ childBotName: string; responseContent: string; confidence: number }> = [];
@@ -291,7 +347,17 @@ export class LLMStreamingService {
               return;
             }
           } else {
-            llmModel = options.aiModel || defaultAiModel;
+            // No image present — pick the right model
+            // Priority: extended provider's default model > ai_model setting > multimodal fallback
+            if (options.llmProviderDefaultModel) {
+              llmModel = options.llmProviderDefaultModel;
+            } else if (options.aiModel) {
+              llmModel = options.aiModel;
+            } else if (multimodalEnabled) {
+              llmModel = options.multimodalModel || defaultMultimodalModel;
+            } else {
+              llmModel = defaultAiModel;
+            }
           }
 
           // Determine which LLM client to use based on provider type
@@ -301,7 +367,7 @@ export class LLMStreamingService {
 
           // Check if using extended LLM provider (non-Coze)
           const useExtendedProvider = options.llmProviderType && options.llmProviderType !== 'coze' && options.llmProviderBaseUrl && options.llmProviderApiKey;
-          
+
           let llmStreamIterator: AsyncGenerator<{ content?: string }>;
 
           if (useExtendedProvider) {
@@ -322,29 +388,22 @@ export class LLMStreamingService {
 
             llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
           } else {
-            // Use Coze SDK (default)
-            const llmConfig = new Config();
-            const llmClient = new LLMClient(llmConfig, customHeaders);
+            // Use LLMClientAdapter (OpenAI-compatible API)
+            const adapter = new LLMClientAdapter({
+              baseUrl: process.env.COZE_BASE_URL || 'https://api.coze.cn',
+              apiKey: process.env.COZE_API_KEY || '',
+              customHeaders,
+            });
 
-            const llmStreamOptions: { model: string; temperature: number; max_tokens?: number } = {
+            const streamOptions = {
               model: llmModel,
               temperature: llmTemperature,
             };
             if (llmMaxTokens) {
-              llmStreamOptions.max_tokens = llmMaxTokens;
+              (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
             }
 
-            const cozeStream = llmClient.stream(
-              llmMessages as Parameters<typeof llmClient.stream>[0],
-              llmStreamOptions,
-            );
-
-            // Convert Coze stream to generic iterator
-            llmStreamIterator = (async function* () {
-              for await (const chunk of cozeStream) {
-                yield { content: chunk.content?.toString() };
-              }
-            })();
+            llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
           }
 
           for await (const chunk of llmStreamIterator) {
@@ -352,7 +411,11 @@ export class LLMStreamingService {
             if (chunk.content) {
               const text = chunk.content.toString();
               fullContent += text;
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+              // Strip internal markers before sending to client (never expose TOOL_CALL/CONF/DELEGATE markers)
+              const safeText = stripInternalMarkers(text);
+              if (safeText) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: safeText })}\n\n`));
+              }
             }
           }
 
@@ -403,35 +466,32 @@ export class LLMStreamingService {
 
               continueStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
             } else {
-              const llmConfig = new Config();
-              const customHeaders = options.customHeaders || {};
-              const llmClient = new LLMClient(llmConfig, customHeaders);
+              const adapter = new LLMClientAdapter({
+                baseUrl: process.env.COZE_BASE_URL || 'https://api.coze.cn',
+                apiKey: process.env.COZE_API_KEY || '',
+                customHeaders: options.customHeaders || {},
+              });
 
-              const continueStreamOptions: { model: string; temperature: number; max_tokens?: number } = {
+              const streamOptions = {
                 model: llmModel,
                 temperature: llmTemperature,
               };
               if (llmMaxTokens) {
-                continueStreamOptions.max_tokens = llmMaxTokens;
+                (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
               }
 
-              const cozeContinueStream = llmClient.stream(
-                llmMessages as Parameters<typeof llmClient.stream>[0],
-                continueStreamOptions,
-              );
-
-              continueStreamIterator = (async function* () {
-                for await (const chunk of cozeContinueStream) {
-                  yield { content: chunk.content?.toString() };
-                }
-              })();
+              continueStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
             }
 
             for await (const contChunk of continueStreamIterator) {
               if (contChunk.content) {
                 const text = contChunk.content.toString();
                 fullContent += text;
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`));
+                // Strip internal markers before sending to client
+                const safeText = stripInternalMarkers(text);
+                if (safeText) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: safeText })}\n\n`));
+                }
               }
             }
           }
@@ -473,8 +533,8 @@ export class LLMStreamingService {
                     },
                   })}\n\n`));
 
-                  // Append sub-agent response to the content
-                  const delegationContent = `\n\n---\n**${result.childBot.name}** 处理结果：\n${result.responseContent}`;
+                  // Append sub-agent response to the content (strip internal markers as safety net)
+                  const delegationContent = stripInternalMarkers(`\n\n---\n**${result.childBot.name}** 处理结果：\n${result.responseContent}`);
                   fullContent += delegationContent;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delegationContent })}\n\n`));
                 } catch (delegationError) {
@@ -488,121 +548,129 @@ export class LLMStreamingService {
             }
           }
 
+          // P2: Claim verification — runs BEFORE confidence calculation so that hasKnowledge
+          // reflects verified citations. This ensures SSE done.sources and confidence_breakdown
+          // are always consistent. Verification failures result in empty knowledge sources.
+          let claimVerificationResult: ClaimVerificationResult | null = null;
+          if (options.claimVerificationConfig && options.evidenceCitations && options.evidenceCitations.length > 0) {
+            const verifier = new ClaimSupportVerifier();
+            // Cast PublicCitationItem[] to CitationItem[] — the streaming service is the
+            // canonical producer of PublicCitationItem, so this is safe.
+            claimVerificationResult = await verifier.verify(
+              fullContent,
+              options.evidenceCitations as CitationItem[],
+              options.claimVerificationConfig
+            );
+          }
+
           // Calculate final confidence using weighted fusion
           // Weights: knowledge 40%, tool 30%, LLM self-eval 30%
           // When missing sources, redistribute weights accordingly
-          const hasKnowledge = knowledgeConfidence > 0;
+          const hasKnowledge = claimVerificationResult !== null
+            ? claimVerificationResult.ok && claimVerificationResult.sources.length > 0
+            : (knowledgeConfidence > 0);
           const hasTools = toolCallsData.length > 0;
+          const hasSubAgentDelegation = delegationResults.length > 0;
+          const subAgentDelegationConfidence = hasSubAgentDelegation
+            ? delegationResults.reduce((sum, r) => sum + r.confidence, 0) / delegationResults.length
+            : 0;
 
-          // Extract LLM self-eval confidence tag [CONF:x.x] from content
-          // Use matchAll to find all occurrences, take the last one (most recent)
-          const confMatches = [...fullContent.matchAll(/\[CONF:([0-9]*\.?[0-9]+)\]/g)];
-          let llmSelfConfidence = 0;
-          if (confMatches.length > 0) {
-            const lastMatch = confMatches[confMatches.length - 1];
-            llmSelfConfidence = Math.max(0, Math.min(1, parseFloat(lastMatch[1])));
-            // Strip all self-eval tags from content (not shown to user)
-            fullContent = fullContent.replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '').trim();
-          }
+          // Use shared confidence calculation with content-based extraction
+          const confidenceBreakdown = buildConfidenceFromContent(fullContent, {
+            hasKnowledge,
+            knowledgeConfidence,
+            hasTools,
+            toolExecutions: toolExecutions.map(te => ({ confidence: te.confidence })),
+            llmSelfConfidence: 0, // Extracted from content by buildConfidenceFromContent
+            hasSubAgentDelegation,
+            subAgentDelegationConfidence,
+          });
 
-          // Detect handoff intent via semantic pattern matching
-          const handoffIntentDetected = HANDOFF_INTENT_PATTERNS.some(p => p.test(fullContent));
+          // Strip self-eval tags from content after extraction
+          fullContent = fullContent.replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '').trim();
 
-          let overallConfidence: number;
-          const confidenceBreakdown: ConfidenceBreakdown = {
-            knowledge_score: hasKnowledge ? Math.min(knowledgeConfidence, 0.9) : 0,
-            tool_score: 0,
-            llm_self_score: llmSelfConfidence,
-            sub_agent_score: 0,
-            handoff_intent: handoffIntentDetected,
-            no_support: !hasKnowledge && !hasTools,
-            final: 0,
-          };
+          const overallConfidence = confidenceBreakdown.final;
 
-          if (hasKnowledge || hasTools) {
-            // Weighted fusion when at least one signal exists
-            let totalWeight = 0;
-            let weightedSum = 0;
+          // P0 fix: sources MUST come from the orchestrator-graded evidenceCitations,
+// NEVER from raw knowledgeSources (deprecated) and NEVER parsed from the
+// knowledge context text via regex (which claimed citations without verifying
+// claim support).
+//
+// The orchestrator already returns provenanceVersion=2 citations that have
+// passed evidence grading. Auto-reply / sub-agent / tool sources are still
+// added later by the caller (e.g. simulation route merges non-knowledge types).
+if (options.evidenceCitations && options.evidenceCitations.length > 0) {
+  for (const c of options.evidenceCitations) {
+    sources.push({
+      type: c.type,
+      content: c.content,
+      score: c.score,
+      knowledge_item_id: c.knowledge_item_id,
+      name: c.name,
+      category: c.category,
+      keyword: c.keyword,
+      id: c.id,
+      title: c.title,
+      image_url: c.image_url,
+      provenanceVersion: c.provenanceVersion,
+      // P2: stable chunk identity fields
+      chunk_id: c.chunk_id,
+      chunk_index: c.chunk_index,
+      content_hash: c.content_hash,
+    } as PublicCitationItem);
+  }
+}
 
-            if (hasKnowledge) {
-              const knScore = Math.min(knowledgeConfidence, 0.9);
-              weightedSum += knScore * 0.4;
-              totalWeight += 0.4;
-            }
-            if (hasTools) {
-              // Average tool confidence across all tool calls
-              // toolExecutions are available in scope from parseAndExecuteToolCalls above
-              const avgToolConf = toolExecutions.length > 0
-                ? toolExecutions.reduce((sum, te) => sum + te.confidence, 0) / toolExecutions.length
-                : 0.6;
-              const toolScore = Math.min(avgToolConf, 0.9);
-              confidenceBreakdown.tool_score = toolScore;
-              weightedSum += toolScore * 0.3;
-              totalWeight += 0.3;
-            }
-            if (llmSelfConfidence > 0) {
-              weightedSum += llmSelfConfidence * 0.3;
-              totalWeight += 0.3;
-            } else {
-              // LLM self-eval missing: assign base score 0.5 * 0.3 to prevent
-              // the missing 30% weight from being absorbed by other signals,
-              // which would inflate the overall confidence.
-              weightedSum += 0.5 * 0.3;
-              totalWeight += 0.3;
-            }
+// Backwards-compat warning if a caller still passes raw knowledgeSources.
+// We DO NOT promote them to public sources — the orchestrator contract is the
+// single source of truth. The streaming service only logs the deprecation.
+if (options.knowledgeSources && options.knowledgeSources.length > 0 && (!options.evidenceCitations || options.evidenceCitations.length === 0)) {
+  logger.agent.warn(
+    '[LLMStreamingService] Caller passed raw knowledgeSources without evidenceCitations. ' +
+      'Raw candidates are not promoted to public citations. Migrate the caller to RetrievalOrchestrator.',
+    { caller: conversationId, rawCount: options.knowledgeSources.length }
+  );
+}
 
-            overallConfidence = totalWeight > 0 ? weightedSum / totalWeight : 0.3;
-          } else {
-            // No knowledge and no tools — pure LLM free generation
-            // Base confidence is low (0.3) since there's no grounding
-            if (llmSelfConfidence > 0) {
-              // LLM self-eval gets higher weight (50%) when no other signals exist
-              overallConfidence = 0.2 * 0.5 + llmSelfConfidence * 0.5;
-            } else {
-              overallConfidence = 0.3;
-            }
-          }
+// Provenance trace is logged for observability (and later trace persistence).
+if (options.retrievalTrace) {
+  logger.agent.debug('[LLMStreamingService] Retrieval trace', {
+    caller: conversationId,
+    trace: options.retrievalTrace,
+  });
+}
 
-          // Handoff intent detection overrides confidence to low
-          if (handoffIntentDetected) {
-            overallConfidence = Math.min(overallConfidence, 0.35);
-          }
-
-          // Boost confidence if sub-agent delegation was successful
-          if (delegationResults.length > 0) {
-            const avgDelegationConfidence = delegationResults.reduce((sum, r) => sum + r.confidence, 0) / delegationResults.length;
-            confidenceBreakdown.sub_agent_score = avgDelegationConfidence;
-            overallConfidence = Math.max(overallConfidence, avgDelegationConfidence * 0.9);
-          }
-
-          overallConfidence = Math.max(0, Math.min(1, overallConfidence));
-          confidenceBreakdown.final = overallConfidence;
-
-          // Get sources from knowledge search results if available
-          if (options.knowledgeSources && options.knowledgeSources.length > 0) {
-            // Use the enriched sources directly from KnowledgeSearchService
-            sources.push(...options.knowledgeSources.map(s => ({
-              type: s.type,
-              content: s.content,
-              score: s.score,
-              knowledge_item_id: s.knowledge_item_id,
-              name: s.name,
-              category: s.category,
-            })));
-          } else if (options.knowledgeContext) {
-            // Fallback: parse sources from knowledge context text
-            const sourceRegex = /\[资料(\d+)\]/g;
-            let match;
-            let idx = 1;
-            while ((match = sourceRegex.exec(options.knowledgeContext)) !== null) {
-              sources.push({
-                type: 'knowledge',
-                content: `[source](knowledge) 资料${idx}`,
-                score: knowledgeConfidence,
-              });
-              idx++;
-            }
-          }
+// P2: Apply claim verification results to the sources array.
+// This runs AFTER the initial sources are built from evidenceCitations but BEFORE
+// the done event, ensuring SSE done.sources and DB persistence are consistent.
+// Claim verification NEVER adds sources — it can only remove knowledge sources.
+if (claimVerificationResult !== null) {
+  if (!claimVerificationResult.ok) {
+    // Fail-closed: verification failed → remove all knowledge sources
+    const nonKnowledgeSources = sources.filter(s => s.type !== 'knowledge');
+    sources.length = 0;
+    sources.push(...nonKnowledgeSources);
+    logger.agent.debug('[LLMStreamingService] Claim verification failed, removing knowledge sources', {
+      code: claimVerificationResult.code ?? 'unknown',
+      originalKnowledgeCitations: options.evidenceCitations?.filter(c => c.type === 'knowledge').length ?? 0,
+    });
+  } else if (claimVerificationResult.sources.length > 0) {
+    // Partial success: keep only the verified sources (may be fewer than original)
+    const verifiedChunkIds = new Set(
+      claimVerificationResult.sources.map(s => (s as { chunk_id?: string | null }).chunk_id)
+    );
+    const verifiedSources = sources.filter(
+      s => s.type !== 'knowledge' || verifiedChunkIds.has((s as { chunk_id?: string | null }).chunk_id)
+    );
+    sources.length = 0;
+    sources.push(...verifiedSources);
+    logger.agent.debug('[LLMStreamingService] Claim verification: partial', {
+      originalCitations: options.evidenceCitations?.filter(c => c.type === 'knowledge').length ?? 0,
+      verifiedCitations: claimVerificationResult.sources.length,
+    });
+  }
+  // Full success: no change needed (all knowledge citations remain)
+}
 
           // Extract image references from LLM output: [IMG:url](alt)
           const extractedImages: Array<{ url: string; alt: string }> = [];
@@ -612,9 +680,13 @@ export class LLMStreamingService {
             extractedImages.push({ url: imageMatch[1], alt: imageMatch[2] });
           }
 
-          // Strip image reference markers from content (they are sent as separate structured data)
-          const cleanedContent = fullContent.replace(IMAGE_REF_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim();
-          fullContent = cleanedContent;
+          // Strip all internal markers from final content before storing/sending to client.
+          // Note: TOOL_CALL markers have already been filtered from streamed output above,
+          // but may still be present in fullContent (e.g. from continuation stream).
+          // CONF markers were stripped after conf parsing above.
+          // DELEGATE markers were stripped after delegation processing above.
+          // This is a safety net — remove any remaining internal markers before DB persist and done event.
+          fullContent = stripInternalMarkers(fullContent);
 
           // Send extracted images as separate SSE event before final done
           if (extractedImages.length > 0) {
@@ -676,13 +748,20 @@ export class LLMStreamingService {
     fullContent: string,
     overallConfidence: number,
     toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string }>,
-    sources: Array<{ type: string; content: string; score: number }>,
+    sources: PublicCitationItem[],
     customHeaders: Record<string, string>,
     extractedImages?: Array<{ url: string; alt: string }>,
     confidenceBreakdown?: ConfidenceBreakdown,
   ): Promise<void> {
     try {
       // 1. Insert assistant message with confidence, tool calls, and knowledge images
+      // Skip for in-memory simulation conversations (no DB row → FK violation);
+      // simulation route saves the message via simulationRepository instead.
+      if (conversationId.startsWith('sim-')) {
+        logger.agent.debug('[LLMStreamingService] Skipping DB persistence for simulation', { conversationId });
+        return;
+      }
+
       const knowledgeImages = extractedImages && extractedImages.length > 0 ? extractedImages : undefined;
       await this.conversationService.insertMessage({
         conversation_id: conversationId,
@@ -713,17 +792,53 @@ export class LLMStreamingService {
       });
 
       // 3. Check for anomalies and create alerts
-      const messageCount = await this.conversationService.countMessages(conversationId);
-      await this.alertService.checkAndCreateConversationAlerts(
-        conversationId,
-        overallConfidence,
-        messageCount,
-      );
+      // Skip for in-memory simulation conversations (no DB row → FK violation on alerts insert)
+      if (!conversationId.startsWith('sim-')) {
+        const messageCount = await this.conversationService.countMessages(conversationId);
+        await this.alertService.checkAndCreateConversationAlerts(
+          conversationId,
+          overallConfidence,
+          messageCount,
+        );
+      }
 
-      // 4. Run quality checks against AI reply (fire-and-forget, non-blocking)
-      this.qualityService.runQualityCheck(conversationId, fullContent).catch((err) => {
-        logger.agent.warn('[LLMStreamingService] Failed to run quality check', { error: err, conversationId });
-      });
+      // 4. Run quality checks against AI reply and create alerts for failures (fire-and-forget, non-blocking)
+      // Fetch conversation info to build the complete quality check context
+      const runQualityCheck = async () => {
+        try {
+          // Skip quality checks for in-memory simulation conversations (no DB row → FK violation)
+          if (conversationId.startsWith('sim-')) {
+            return;
+          }
+          const sessionInfo = await this.conversationService.getSessionInfo(conversationId);
+          const messageCount = await this.conversationService.countMessages(conversationId);
+          const firstAssistantReplyAt = await this.conversationService.getFirstAssistantReplyAt(conversationId);
+          const qualityContext: QualityCheckContext = {
+            conversationId,
+            aiReplyContent: fullContent,
+            messageCount: sessionInfo?.message_count ?? messageCount,
+            aiReplyCreatedAt: new Date().toISOString(),
+            conversationCreatedAt: sessionInfo?.created_at ?? new Date().toISOString(),
+            firstAssistantReplyAt,
+          };
+          const qualityResults: QualityCheckResult[] = await this.qualityService.runQualityCheck(qualityContext);
+
+          // Create alerts for failed quality checks
+          for (const result of qualityResults) {
+            if (result.result === 'fail') {
+              await this.alertService.createQualityFailedAlert(
+                conversationId,
+                result.ruleName,
+                result.ruleType,
+                result.detail,
+              );
+            }
+          }
+        } catch (err) {
+          logger.agent.warn('[LLMStreamingService] Failed to run quality check', { error: err, conversationId });
+        }
+      };
+      runQualityCheck();
 
       // 5. Detect & record knowledge gaps (fire-and-forget, non-blocking).
       //    Conditions: no sources, all sources below score floor, or handoff triggered.
@@ -748,9 +863,14 @@ export class LLMStreamingService {
   private async recordKnowledgeGapIfAny(
     conversationId: string,
     userMessage: string,
-    sources: Array<{ type: string; content: string; score: number }>,
+    sources: PublicCitationItem[],
     overallConfidence: number,
   ): Promise<void> {
+    // Skip: in-memory simulation conversations have no DB row → FK violation on insert
+    if (conversationId.startsWith('sim-')) {
+      return;
+    }
+
     // Quick skip: if sources are non-empty and confidence is reasonable, almost certainly not a gap
     if (sources.length > 0 && overallConfidence >= 0.5) {
       // Still possible (e.g. all sources scored < 0.5), let the service decide

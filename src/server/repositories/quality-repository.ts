@@ -4,12 +4,54 @@ import { RepositoryError } from './repository-error';
 import type { QualityRule, QualityCheck, QualityRuleType } from '@/lib/types';
 import { trimDemoArray } from '@/lib/api-utils';
 import { DEMO_QUALITY_RULES } from './demo-data/demo-quality';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('QualityRepository');
 
 export interface QualityFilters {
   is_enabled?: boolean | null;
   result?: string | null;
   rule_type?: string | null;
   limit?: number;
+  offset?: number;
+}
+
+export interface QualityStatsParams {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface QualityStatRow {
+  total: number;
+  pass_count: number;
+  fail_count: number;
+  rule_type: string | null;
+  rule_name: string | null;
+  date: string;
+}
+
+export interface QualityStats {
+  overall: {
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  };
+  by_date: Array<{
+    date: string;
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  }>;
+  by_rule: Array<{
+    rule_type: string | null;
+    rule_name: string | null;
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  }>;
 }
 
 export interface FlatQualityCheckRecord {
@@ -63,7 +105,7 @@ export class QualityRepository {
       if (error) throw new RepositoryError('list quality rules', error.message, error.code);
       return (data ?? []) as QualityRule[];
     } catch (error) {
-      console.error('Database query failed for listRules, falling back to demo data:', error);
+      logger.error('Database query failed for listRules, falling back to demo data', { error });
       let rules = DEMO_QUALITY_RULES;
       if (filters.is_enabled !== null && filters.is_enabled !== undefined) {
         rules = rules.filter(r => r.is_enabled === filters.is_enabled);
@@ -72,17 +114,33 @@ export class QualityRepository {
     }
   }
 
-  async listCheckRecords(filters: QualityFilters): Promise<FlatQualityCheckRecord[]> {
+  async listCheckRecords(filters: QualityFilters): Promise<{ records: FlatQualityCheckRecord[]; total: number }> {
     if (isDemoMode()) {
-      return [];
+      return { records: [], total: 0 };
     }
-    
+
     try {
+      const limit = filters.limit ?? 50;
+      const offset = filters.offset ?? 0;
+
+      // Count query for total
+      let countQuery = this.client
+        .from('quality_checks')
+        .select('id', { count: 'exact', head: true });
+
+      if (filters.result) {
+        countQuery = countQuery.eq('result', filters.result);
+      }
+
+      const { count, error: countError } = await countQuery;
+      if (countError) throw new RepositoryError('count quality check records', countError.message, countError.code);
+      const total = count ?? 0;
+
       let query = this.client
         .from('quality_checks')
         .select('*, quality_rules(name, type)')
         .order('created_at', { ascending: false })
-        .limit(filters.limit ?? 100);
+        .range(offset, offset + limit - 1);
 
       if (filters.result) {
         query = query.eq('result', filters.result);
@@ -99,7 +157,7 @@ export class QualityRepository {
         });
       }
 
-      return (records as Record<string, unknown>[]).map((r) => ({
+      const mapped = (records as Record<string, unknown>[]).map((r) => ({
         id: r.id as string,
         conversation_id: r.conversation_id as string,
         rule_id: r.rule_id as string,
@@ -109,9 +167,11 @@ export class QualityRepository {
         rule_name: ((r.quality_rules as Record<string, unknown>)?.name as string) ?? null,
         rule_type: ((r.quality_rules as Record<string, unknown>)?.type as QualityRuleType) ?? null,
       }));
+
+      return { records: mapped, total };
     } catch (error) {
-      console.error('Database query failed for listCheckRecords, falling back to demo data:', error);
-      return [];
+      logger.error('Database query failed for listCheckRecords, falling back to empty', { error });
+      return { records: [], total: 0 };
     }
   }
 
@@ -202,5 +262,82 @@ export class QualityRepository {
         detail: input.detail ?? null,
       });
     if (error) throw new RepositoryError('create quality check record', error.message, error.code);
+  }
+
+  async getStats(params: QualityStatsParams): Promise<QualityStatRow[]> {
+    if (isDemoMode()) {
+      return [];
+    }
+
+    try {
+      const { startDate, endDate } = params;
+
+      if (!startDate && !endDate) {
+        const { data, error } = await this.client
+          .from('quality_checks')
+          .select(`
+            result,
+            created_at,
+            quality_rules!inner(type, name)
+          `)
+          .order('created_at', { ascending: false });
+
+        if (error) throw new RepositoryError('get quality stats', error.message, error.code);
+
+        return this.aggregateStatsRows(data || []);
+      }
+
+      const query = this.client
+        .from('quality_checks')
+        .select(`
+          result,
+          created_at,
+          quality_rules!inner(type, name)
+        `)
+        .gte('created_at', startDate || '1970-01-01')
+        .lte('created_at', endDate || new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+      if (error) throw new RepositoryError('get quality stats', error.message, error.code);
+
+      return this.aggregateStatsRows(data || []);
+    } catch (error) {
+      logger.error('Database query failed for getStats', { error });
+      return [];
+    }
+  }
+
+  private aggregateStatsRows(rows: Record<string, unknown>[]): QualityStatRow[] {
+    const grouped = new Map<string, QualityStatRow>();
+
+    for (const row of rows) {
+      const rule = row.quality_rules as Record<string, unknown> | null;
+      const ruleType = (rule?.type as string) || null;
+      const ruleName = (rule?.name as string) || null;
+      const createdAt = row.created_at as string;
+      const date = createdAt ? new Date(createdAt).toISOString().split('T')[0] : '';
+      const result = row.result as string;
+
+      const key = `${date}|${ruleType || ''}|${ruleName || ''}`;
+      const existing = grouped.get(key);
+
+      if (existing) {
+        existing.total += 1;
+        if (result === 'pass') existing.pass_count += 1;
+        if (result === 'fail') existing.fail_count += 1;
+      } else {
+        grouped.set(key, {
+          total: 1,
+          pass_count: result === 'pass' ? 1 : 0,
+          fail_count: result === 'fail' ? 1 : 0,
+          rule_type: ruleType,
+          rule_name: ruleName,
+          date,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date));
   }
 }

@@ -1,31 +1,45 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
 import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('SubAgents');
 
 const service = new SubAgentService();
 
-interface CreateSubAgentBody {
-  parent_bot_id: string;
-  name: string;
-  description?: string;
-  system_prompt: string;
-  tools?: string[];
-  knowledge_ids?: string[];
-  delegation_prompt?: string;
-  collaboration_config?: Record<string, unknown>;
-}
+// Matches any 8-4-4-4-12 hex format (including all-zero UUIDs)
+const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: '必须是合法 UUID' });
 
-interface UpdateSubAgentBody {
-  id: string;
-  name?: string;
-  description?: string;
-  system_prompt?: string;
-  tools?: string[];
-  knowledge_ids?: string[];
-  delegation_prompt?: string;
-  collaboration_config?: Record<string, unknown>;
-  status?: string;
-}
+const CollaborationConfigSchema = z
+  .object({
+    auto_delegate_intents: z.array(z.string().max(100)).max(20).optional(),
+    allow_collaborate_with: z.array(z.string().max(100)).max(10).optional(),
+  })
+  .strict();
+
+const CreateSubAgentSchema = z.object({
+  parent_bot_id: UuidSchema,
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  system_prompt: z.string().min(1).max(16000),
+  tools: z.array(z.string().max(50)).max(20).optional(),
+  knowledge_ids: z.array(UuidSchema).max(20).optional(),
+  delegation_prompt: z.string().max(2000).optional(),
+  collaboration_config: CollaborationConfigSchema.optional(),
+});
+
+const UpdateSubAgentSchema = z.object({
+  id: UuidSchema,
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  system_prompt: z.string().min(1).max(16000).optional(),
+  tools: z.array(z.string().max(50)).max(20).optional(),
+  knowledge_ids: z.array(UuidSchema).max(20).optional(),
+  delegation_prompt: z.string().max(2000).optional(),
+  collaboration_config: CollaborationConfigSchema.optional(),
+  status: z.enum(['active', 'disabled']).optional(),
+});
 
 // GET /api/sub-agents?parent_bot_id=xxx - List sub-agents under a parent bot
 // GET /api/sub-agents?bot_tree=xxx - Get bot tree (parent + sub-agents)
@@ -40,18 +54,50 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const mainBots = searchParams.get('main_bots');
 
   if (mainBots === 'true') {
-    const result = await service.listMainBotsWithSubAgents();
-    return apiSuccess({ bots: result });
+    try {
+      const result = await service.listMainBotsWithSubAgents();
+      return apiSuccess({ bots: result });
+    } catch (err) {
+      const detail = (err as Error)?.message ?? String(err);
+      logger.error('[sub-agents] listMainBotsWithSubAgents failed', { detail });
+      return apiError(`加载Bot列表失败: ${detail}`, {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        code: 'BOT_LIST_ERROR',
+      });
+    }
   }
 
   if (botTree) {
-    const result = await service.getBotTree(botTree);
+    const parsed = UuidSchema.safeParse(botTree);
+    if (!parsed.success) {
+      return apiError(parsed.error.issues[0]?.message ?? 'bot_tree 必须是合法 UUID', {
+        status: HttpStatus.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    const result = await service.getBotTree(parsed.data);
     return apiSuccess(result);
   }
 
   if (parentBotId) {
-    const result = await service.listSubAgents(parentBotId);
-    return apiSuccess(result);
+    const parsed = UuidSchema.safeParse(parentBotId);
+    if (!parsed.success) {
+      return apiError(parsed.error.issues[0]?.message ?? 'parent_bot_id 必须是合法 UUID', {
+        status: HttpStatus.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    try {
+      const result = await service.listSubAgents(parsed.data);
+      return apiSuccess(result);
+    } catch (err) {
+      const detail = (err as Error)?.message ?? String(err);
+      logger.error('[sub-agents] listSubAgents failed', { detail, parentBotId });
+      return apiError(`加载子Agent失败: ${detail}`, {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        code: 'SUB_AGENT_LIST_ERROR',
+      });
+    }
   }
 
   return apiError('请提供 parent_bot_id、bot_tree 或 main_bots 参数', {
@@ -65,28 +111,20 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const denied = await requirePermission(request, 'sub_agents', 'write');
   if (denied) return denied;
 
-  const { data: body, error: parseError } = await parseJsonBody<CreateSubAgentBody>(request);
+  const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  if (!body?.parent_bot_id || !body?.name || !body?.system_prompt) {
-    return apiError('parent_bot_id、name 和 system_prompt 为必填项', {
+  const parsed = CreateSubAgentSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '参数校验失败', {
       status: HttpStatus.BAD_REQUEST,
       code: 'VALIDATION_ERROR',
     });
   }
 
-  const result = await service.createSubAgent({
-    parent_bot_id: body.parent_bot_id,
-    name: body.name,
-    description: body.description,
-    system_prompt: body.system_prompt,
-    tools: body.tools,
-    knowledge_ids: body.knowledge_ids,
-    delegation_prompt: body.delegation_prompt,
-    collaboration_config: body.collaboration_config,
-  });
+  const result = await service.createSubAgent(parsed.data);
 
-  return apiSuccess(result);
+  return apiSuccess(result, HttpStatus.CREATED);
 });
 
 // PUT /api/sub-agents - Update a sub-agent
@@ -94,28 +132,19 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   const denied = await requirePermission(request, 'sub_agents', 'write');
   if (denied) return denied;
 
-  const { data: body, error: parseError } = await parseJsonBody<UpdateSubAgentBody>(request);
+  const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  if (!body?.id) {
-    return apiError('缺少子Agent ID', {
+  const parsed = UpdateSubAgentSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '参数校验失败', {
       status: HttpStatus.BAD_REQUEST,
       code: 'VALIDATION_ERROR',
     });
   }
 
-  const result = await service.updateSubAgent({
-    id: body.id,
-    name: body.name,
-    description: body.description,
-    system_prompt: body.system_prompt,
-    tools: body.tools,
-    knowledge_ids: body.knowledge_ids,
-    delegation_prompt: body.delegation_prompt,
-    collaboration_config: body.collaboration_config,
-    status: body.status,
-  });
-
+  const { id, ...rest } = parsed.data;
+  const result = await service.updateSubAgent({ id, ...rest });
   return apiSuccess(result);
 });
 
@@ -127,13 +156,14 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
-  if (!id) {
-    return apiError('缺少子Agent ID', {
+  const parsed = UuidSchema.safeParse(id);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '缺少子Agent ID 或格式不合法', {
       status: HttpStatus.BAD_REQUEST,
       code: 'VALIDATION_ERROR',
     });
   }
 
-  const result = await service.deleteSubAgent(id);
+  const result = await service.deleteSubAgent(parsed.data);
   return apiSuccess(result);
 });

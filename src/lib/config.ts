@@ -9,9 +9,9 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   // ─── Supabase ──────────────────────────────
-  COZE_SUPABASE_URL: z.string().url('COZE_SUPABASE_URL must be a valid URL'),
-  COZE_SUPABASE_ANON_KEY: z.string().min(1, 'COZE_SUPABASE_ANON_KEY is required'),
-  COZE_SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
+  SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 
   // ─── Encryption ────────────────────────────
   ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 characters for AES-256'),
@@ -45,9 +45,3 @@ function validateEnv(): EnvConfig {
 
 /** Validated and typed environment configuration */
 export const config = validateEnv();
-
-/** Whether we're running in development mode */
-export const isDev = config.NODE_ENV === 'development';
-
-/** Whether we're running in production mode */
-export const isProd = config.NODE_ENV === 'production';

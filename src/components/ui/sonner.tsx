@@ -1,22 +1,43 @@
-"use client"
+'use client';
 
+import { useEffect, useState } from 'react';
 import {
   CircleCheckIcon,
   InfoIcon,
   Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
-} from "lucide-react"
-import { useTheme } from "next-themes"
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+} from "lucide-react";
+import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useThemeSettings } from "@/lib/theme-settings-context";
+
+/** Replaces next-themes' useTheme — reads from ThemeSettingsProvider via localStorage.
+ *  Guards window.matchMedia so it only runs on the client (SSR-safe). */
+function useCurrentTheme(): string {
+  const { settings } = useThemeSettings();
+  const [resolved, setResolved] = useState<string>("light");
+
+  useEffect(() => {
+    if (settings.theme === "system") {
+      setResolved(
+        window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      );
+    } else {
+      setResolved(settings.theme);
+    }
+  }, [settings.theme]);
+
+  return resolved;
+}
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  const theme = useCurrentTheme();
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      closeButton
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,
@@ -34,7 +55,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       {...props}
     />
-  )
-}
+  );
+};
 
-export { Toaster }
+export { Toaster };

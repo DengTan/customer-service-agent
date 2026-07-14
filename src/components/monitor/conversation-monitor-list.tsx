@@ -2,9 +2,35 @@
 
 import Image from 'next/image';
 import { Search, Globe, ImageIcon, FileText, AlertTriangle, Loader2 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+import { FRONTEND } from '@/lib/constants';
+
+/** Skeleton for a single conversation row */
+function ConversationRowSkeleton({ index = 0 }: { index?: number }) {
+  return (
+    <div
+      className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 animate-skeleton-pulse"
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
+      <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-24 rounded" />
+          <Skeleton className="w-5 h-5 rounded-full" />
+        </div>
+        <Skeleton className="h-3 w-3/4 rounded" />
+        <div className="flex items-center gap-1.5">
+          <Skeleton className="h-3 w-12 rounded" />
+          <Skeleton className="h-3 w-16 rounded" />
+        </div>
+      </div>
+      <Skeleton className="w-16 h-6 rounded shrink-0 self-center" />
+    </div>
+  );
+}
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import type { Conversation } from '@/lib/types';
-import { FRONTEND } from '@/lib/constants';
 
 type FilterType = 'all' | 'active_ai' | 'handoff' | 'ended';
 
@@ -24,8 +50,8 @@ interface ConversationMonitorListProps {
 
 const SOURCE_ICONS: Record<string, { icon: string; color: string }> = {
   '千牛': { icon: '🔵', color: 'text-blue-600' },
-  '抖店': { icon: '🟢', color: 'text-emerald-600' },
-  'Web': { icon: '⚪', color: 'text-gray-500' },
+  '抖店': { icon: '🟢', color: 'text-emerald-700' },
+  'Web': { icon: '⚪', color: 'text-gray-600' },
 };
 
 export function ConversationMonitorList({
@@ -134,7 +160,7 @@ export function ConversationMonitorList({
   const getStatusLabel = (conv: Conversation) => {
     if (conv.status === 'ended') return { label: '已结束', color: 'bg-muted text-muted-foreground' };
     if (conv.status === 'handoff') return { label: '人工处理中', color: 'bg-primary/10 text-primary' };
-    return { label: 'AI处理中', color: 'bg-emerald-500/10 text-emerald-600' };
+    return { label: 'AI处理中', color: 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' };
   };
 
   const filters: { key: FilterType; label: string }[] = [
@@ -180,8 +206,10 @@ export function ConversationMonitorList({
       {/* List */}
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1 scrollbar-none" style={{ scrollbarWidth: 'none' }}>
         {isInitialLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          <div className="flex-1 min-h-0 overflow-y-auto py-1">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <ConversationRowSkeleton key={i} index={i} />
+            ))}
           </div>
         ) : sorted.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground">
@@ -211,7 +239,7 @@ export function ConversationMonitorList({
                     ? 'bg-muted text-muted-foreground'
                     : conv.status === 'handoff'
                     ? 'bg-amber-500/15 text-amber-600'
-                    : 'bg-emerald-500/10 text-emerald-600'
+                    : 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
                 }`}>
                   {conv.customer?.avatar ? (
                     <Image

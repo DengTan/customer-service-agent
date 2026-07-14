@@ -294,7 +294,7 @@ export function ChatPanel({
         <div className="flex items-center gap-2.5">
           <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 overflow-hidden ${
             selectedConversation.status === 'resolved' ? 'bg-muted text-muted-foreground'
-              : 'bg-emerald-500/10 text-emerald-600'
+              : 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
           }`}>
             {selectedConversation.customer_avatar ? (
               <Image
@@ -315,7 +315,7 @@ export function ChatPanel({
               </span>
               {selectedConversation.source_platform && (
                 <span className={`text-[10px] font-medium ${
-                  selectedConversation.source_platform === 'qianniu' ? 'text-blue-600' : selectedConversation.source_platform === 'doudian' ? 'text-emerald-600' : 'text-gray-500'
+                  selectedConversation.source_platform === 'qianniu' ? 'text-blue-600' : selectedConversation.source_platform === 'doudian' ? 'text-emerald-700' : 'text-gray-600'
                 }`}>
                   {SOURCE_PLATFORM_LABELS[selectedConversation.source_platform as keyof typeof SOURCE_PLATFORM_LABELS] || selectedConversation.source_platform}
                 </span>
@@ -327,7 +327,7 @@ export function ChatPanel({
               )}
             </div>
             <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="flex items-center gap-1 text-emerald-600">
+              <span className="flex items-center gap-1 text-emerald-700">
                 <UserCheck className="w-3 h-3" />服务中
               </span>
               {selectedConversation.summary && (
@@ -434,13 +434,13 @@ export function ChatPanel({
                   <div className={`flex gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
                     {!isUser && (
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 mt-0.5 ${
-                        isAgent ? 'bg-emerald-500/15 text-emerald-600' : 'bg-muted text-muted-foreground'
+                        isAgent ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
                       }`}>
                         {isAgent ? '坐' : 'S'}
                       </div>
                     )}
                     <div className={isUser ? 'text-right' : ''}>
-                      <div className={`${isUser ? 'bg-blue-100 text-foreground' : 'bg-card text-foreground'} rounded-lg px-3 py-2 text-left`}>
+                      <div className={`${isUser ? 'bg-blue-100 dark:bg-blue-900 text-foreground' : 'bg-card text-foreground'} rounded-lg px-3 py-2 text-left`}>
                         {/* Attachments */}
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div className="mb-2 space-y-2">

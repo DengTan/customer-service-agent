@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Config, KnowledgeClient, KnowledgeDocument, DataSourceType } from 'coze-coding-dev-sdk';
+import { getEmbeddingService } from './embedding-service';
 import {
   ProductDetailRepository,
   type CreateProductInput,
@@ -11,9 +11,7 @@ import { SizeChartRepository } from '@/server/repositories/size-chart-repository
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { logger } from '@/lib/logger';
-
-const KNOWLEDGE_BOT_ID = process.env.COZE_KNOWLEDGE_BOT_ID || 'YOUR_KNOWLEDGE_BOT_ID';
-const KNOWLEDGE_DATA_SOURCE = 'coze_doc_knowledge';
+import { deleteStorageFiles } from '@/lib/storage-cleanup';
 
 // ─── Content Hash ─────────────────────────────────────────────────────────────
 
@@ -202,7 +200,14 @@ export class ProductDetailService {
     }
 
     // ── Vectorize ───────────────────────────────────────────────────────────
-    const doc_ids = await this.vectorizeProduct(input);
+    const content = buildProductTextContent(input);
+    let embedding: number[] | undefined;
+    try {
+      const embeddingService = getEmbeddingService();
+      embedding = await embeddingService.embed(content);
+    } catch (error) {
+      logger.api.warn('product-embed-failed', { sku: input.sku, error: (error as Error).message });
+    }
 
     // ── Save ────────────────────────────────────────────────────────────────
     try {
@@ -223,19 +228,12 @@ export class ProductDetailService {
         platform_connection_id: input.platform_connection_id ?? null,
         external_product_id: input.external_product_id ?? null,
         sync_source: input.sync_source ?? 'manual',
-        doc_ids,
+        doc_ids: [],
         content_hash: contentHash,
+        embedding,
       };
       return await this.repository.create(createInput);
     } catch (error) {
-      // Rollback: delete vector documents if DB write fails
-      if (doc_ids.length > 0) {
-        try {
-          await this.deleteVectorDocuments(doc_ids);
-        } catch {
-          logger.api.warn('product-create-rollback-vector-delete-failed', { doc_ids, contentHash });
-        }
-      }
       throw toServiceError(error, '创建商品失败', 'DB_ERROR');
     }
   }
@@ -311,33 +309,24 @@ export class ProductDetailService {
       ? buildProductContentHash(merged)
       : existing.content_hash;
 
-    let newDocIds = existing.doc_ids;
+    let newEmbedding = existing.embedding;
 
     // Handle status change → vector lifecycle
     const oldStatus = existing.status;
     const newStatus = input.status ?? existing.status;
 
     if (newStatus === 'off_sale' || newStatus === 'discontinued') {
-      // Delete vectors for offline products
-      if (existing.doc_ids.length > 0) {
-        await this.deleteVectorDocuments(existing.doc_ids);
-        newDocIds = [];
-      }
-    } else if (oldStatus === 'off_sale' || oldStatus === 'discontinued') {
-      // Re-listing: re-vectorize
-      if (contentChanged) {
-        // Delete old first
-        if (existing.doc_ids.length > 0) {
-          await this.deleteVectorDocuments(existing.doc_ids);
-        }
-        newDocIds = await this.vectorizeProduct(merged);
-      }
+      // Clear embedding for offline products
+      newEmbedding = undefined;
     } else if (contentChanged) {
-      // Normal content update: delete old + create new
-      if (existing.doc_ids.length > 0) {
-        await this.deleteVectorDocuments(existing.doc_ids);
+      // Re-embed with new content
+      try {
+        const embeddingService = getEmbeddingService();
+        const content = buildProductTextContent(merged);
+        newEmbedding = await embeddingService.embed(content);
+      } catch (error) {
+        logger.api.warn('product-embed-failed', { sku: merged.sku, error: (error as Error).message });
       }
-      newDocIds = await this.vectorizeProduct(merged);
     }
 
     // Persist
@@ -357,10 +346,11 @@ export class ProductDetailService {
         usage_instructions: merged.usage_instructions !== existing.usage_instructions ? merged.usage_instructions : undefined,
         image_urls: merged.image_urls !== existing.image_urls ? merged.image_urls : undefined,
         status: newStatus !== oldStatus ? newStatus : undefined,
-        doc_ids: newDocIds,
+        doc_ids: [],
         content_hash: newContentHash !== existing.content_hash ? newContentHash : undefined,
         tags: merged.tags !== existing.tags ? merged.tags : undefined,
         platform_connection_id: input.platform_connection_id,
+        embedding: newEmbedding,
       });
     } catch (error) {
       throw toServiceError(error, '更新商品失败', 'DB_ERROR');
@@ -390,15 +380,6 @@ export class ProductDetailService {
       await this.clearProductReferences(id);
     } catch (err) {
       logger.api.warn('product-delete-clear-size-chart-refs-failed', { id });
-    }
-
-    // Delete vector documents
-    if (existing.doc_ids.length > 0) {
-      try {
-        await this.deleteVectorDocuments(existing.doc_ids);
-      } catch (err) {
-        logger.api.warn('product-delete-vector-delete-failed', { id, doc_ids: existing.doc_ids });
-      }
     }
 
     // Delete from DB
@@ -436,21 +417,10 @@ export class ProductDetailService {
       throw new ServiceError('状态值无效', { status: 400, code: 'VALIDATION_ERROR' });
     }
     try {
-      // For off_sale/discontinued, also delete vector documents
+      // For off_sale/discontinued, clear embedding
       if (status === 'off_sale' || status === 'discontinued') {
         for (const id of ids) {
-          const product = await this.repository.findById(id);
-          if (product && product.doc_ids.length > 0) {
-            try {
-              await this.deleteVectorDocuments(product.doc_ids);
-            } catch {
-              logger.api.warn('batch-status-vector-delete-failed', { id, doc_ids: product.doc_ids });
-            }
-          }
-        }
-        // Update all doc_ids to empty
-        for (const id of ids) {
-          await this.repository.update({ id, doc_ids: [] });
+          await this.repository.update({ id, doc_ids: [], embedding: undefined });
         }
       }
       return await this.repository.batchUpdateStatus(ids, status);
@@ -477,65 +447,6 @@ export class ProductDetailService {
       return await this.repository.batchUpdateCategory(ids, category.trim(), parent_category);
     } catch (error) {
       throw toServiceError(error, '批量修改分类失败', 'DB_ERROR');
-    }
-  }
-
-  // ─── Vector helpers ────────────────────────────────────────────────────────
-
-  private async vectorizeProduct(product: {
-    name: string;
-    sku: string;
-    brand?: string | null;
-    category?: string | null;
-    specifications?: Array<{ key: string; value: string }>;
-    features?: string[];
-    description?: string | null;
-    usage_instructions?: string | null;
-  }): Promise<string[]> {
-    const content = buildProductTextContent(product);
-
-    try {
-      const config = new Config();
-      const client = new KnowledgeClient(config);
-
-      const documents: KnowledgeDocument[] = [
-        {
-          source: DataSourceType.TEXT,
-          raw_data: content,
-        },
-      ];
-
-      const result = await client.addDocuments(documents, KNOWLEDGE_DATA_SOURCE, {
-        separator: '\n\n',
-        max_tokens: 2000,
-      });
-
-      if (result.code !== 0) {
-        logger.api.warn('product-vectorize-failed', { sku: product.sku, msg: result.msg });
-        return [];
-      }
-
-      return result.doc_ids || [];
-    } catch (error) {
-      logger.api.warn('product-vectorize-error', { sku: product.sku, error: (error as Error).message });
-      return [];
-    }
-  }
-
-  private async deleteVectorDocuments(docIds: string[]): Promise<void> {
-    if (!docIds || docIds.length === 0) return;
-    try {
-      const config = new Config();
-      const client = new KnowledgeClient(config);
-      // coze-coding-dev-sdk should have deleteDocuments; fallback gracefully
-      const result = await (client as unknown as {
-        deleteDocuments?: (docIds: string[], dataSource: string) => Promise<{ code: number; msg?: string }>;
-      }).deleteDocuments?.(docIds, KNOWLEDGE_DATA_SOURCE);
-      if (result && result.code !== 0) {
-        logger.api.warn('product-vector-delete-failed', { docIds, msg: result.msg });
-      }
-    } catch (error) {
-      logger.api.warn('product-vector-delete-error', { docIds, error: (error as Error).message });
     }
   }
 

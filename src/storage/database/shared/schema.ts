@@ -37,8 +37,10 @@ export const sizeCharts = pgTable(
     description: text("description"),
     // image_url: 尺码表图片URL（可选，尺码示意图）
     image_url: varchar("image_url", { length: 500 }),
-    // doc_ids: Coze SDK 向量文档ID
+    // doc_ids: Coze SDK 向量文档ID（已废弃，Ollama 不再使用此字段）
     doc_ids: jsonb("doc_ids").default(sql`'[]'`),
+    // embedding: Ollama 向量，存储为 JSON 数组字符串
+    embedding: text("embedding"),
     // content_hash: SHA-256 去重哈希
     content_hash: varchar("content_hash", { length: 64 }),
     status: varchar("status", { length: 20 }).notNull().default("active"), // active, disabled
@@ -308,7 +310,8 @@ export const knowledgeItems = pgTable(
     type: varchar("type", { length: 20 }).notNull().default("text"), // text, url, file, image
     content: text("content"), // 文本内容或URL
     content_hash: varchar("content_hash", { length: 64 }), // SHA-256 hash for dedup
-    doc_ids: jsonb("doc_ids"), // SDK返回的文档ID列表
+    doc_ids: jsonb("doc_ids"), // Coze SDK 向量文档ID（已废弃，Ollama 不再使用）
+    embedding: text("embedding"), // Ollama 向量，存储为 JSON 数组字符串
     category: varchar("category", { length: 100 }).default("未分类"),
     parent_category: varchar("parent_category", { length: 100 }), // 层级分类：父分类
     status: varchar("status", { length: 20 }).notNull().default("active"), // active, deleted
@@ -340,6 +343,10 @@ export const knowledgeFeedback = pgTable(
     message_id: varchar("message_id", { length: 36 }).notNull(), // 关联的AI回复消息ID
     conversation_id: varchar("conversation_id", { length: 36 }), // 对话ID（方便按对话聚合）
     knowledge_item_id: varchar("knowledge_item_id", { length: 36 }), // 引用的知识条目ID
+    // P2: stable chunk identity for citation-level feedback precision
+    chunk_id: varchar("chunk_id", { length: 36 }), // chunk UUID when sub-chunk matched; null when parent item matched directly
+    chunk_index: integer("chunk_index"), // chunk position within parent (0 when parent matched)
+    content_hash: varchar("content_hash", { length: 64 }), // SHA-256 of chunk content at time of citation (audit trail)
     knowledge_name: varchar("knowledge_name", { length: 255 }), // 冗余：知识条目名称（条目删除后仍可追溯）
     knowledge_score: doublePrecision("knowledge_score"), // 引用时的相关度分数
     feedback_type: varchar("feedback_type", { length: 20 }).notNull(), // adopted | rejected
@@ -919,8 +926,10 @@ export const productDetails = pgTable(
     // image_urls: 商品图片URL数组，最多10张
     image_urls: jsonb("image_urls").default(sql`'[]'`),
     status: varchar("status", { length: 20 }).notNull().default("on_sale"), // on_sale, off_sale, discontinued
-    // doc_ids: Coze SDK 向量化后返回的文档ID列表（商品独立向量化，不走 knowledge_items 表）
+    // doc_ids: Coze SDK 向量化后返回的文档ID列表（已废弃）
     doc_ids: jsonb("doc_ids").default(sql`'[]'`),
+    // embedding: Ollama 向量，存储为 JSON 数组字符串
+    embedding: text("embedding"),
     // content_hash: SHA-256(名称+品牌+规格+卖点拼接)，用于导入去重
     content_hash: varchar("content_hash", { length: 64 }),
     tags: jsonb("tags").default(sql`'[]'`), // 标签数组，便于搜索和分类
@@ -1055,6 +1064,256 @@ export const contentFilterLogs = pgTable(
     index("cfl_conversation_id_idx").on(table.conversation_id),
     index("cfl_filter_type_idx").on(table.filter_type),
     index("cfl_created_at_idx").on(table.created_at),
+  ]
+);
+
+// ============================================
+// 孤儿表补全 (2026-07-03)
+// 以下 8 张表在数据库中存在，但 schema.ts 之前缺少定义
+// ============================================
+
+// ============================================
+// 平台连接配置表
+// ============================================
+// 存储各平台的 API 连接配置（千牛、抖店等）
+export const platformConnections = pgTable(
+  "platform_connections",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 连接名称（用户友好名称）
+    name: varchar("name", { length: 255 }),
+    // 平台标识
+    platform: varchar("platform", { length: 50 }).notNull(),
+    // 认证信息
+    app_key: varchar("app_key", { length: 100 }).notNull(),
+    app_secret: varchar("app_secret", { length: 200 }).notNull(),
+    access_token: text("access_token"),
+    refresh_token: text("refresh_token"),
+    token_expires_at: timestamp("token_expires_at", { withTimezone: true }),
+    // 店铺信息
+    shop_name: varchar("shop_name", { length: 255 }),
+    shop_id: varchar("shop_id", { length: 100 }),
+    // 连接状态
+    status: varchar("status", { length: 20 }).notNull().default("disconnected"),
+    // Webhook 配置
+    webhook_url: text("webhook_url"),
+    // 扩展配置
+    config: jsonb("config"),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("platform_connections_platform_idx").on(table.platform),
+    index("platform_connections_status_idx").on(table.status),
+  ]
+);
+
+// ============================================
+// 登录日志表
+// ============================================
+// 记录所有登录事件（成功/失败），用于安全审计
+export const loginEvents = pgTable(
+  "login_events",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联用户（可为 NULL，登录失败时无用户）
+    user_id: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    email: varchar("email", { length: 255 }),
+    // 事件类型
+    event_type: varchar("event_type", { length: 20 }).notNull(),
+    // 请求信息
+    ip_address: varchar("ip_address", { length: 50 }),
+    user_agent: text("user_agent"),
+    // 结果
+    success: boolean("success").notNull().default(true),
+    error_message: text("error_message"),
+    // 时间
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("login_events_user_id_idx").on(table.user_id),
+    index("login_events_created_at_idx").on(table.created_at),
+    index("login_events_email_idx").on(table.email),
+    index("login_events_event_type_idx").on(table.event_type),
+  ]
+);
+
+// ============================================
+// 工单表
+// ============================================
+// 企业级工单系统，支持子工单、自定义字段、工单关联
+// 注意: parent_ticket_id 自引用在数据库层处理（迁移脚本已添加 FK 约束）
+// TypeScript 类型上不添加自引用，避免循环类型错误
+export const tickets = pgTable(
+  "tickets",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 工单编号（全局唯一）
+    ticket_number: varchar("ticket_number", { length: 50 }).notNull().unique(),
+    // 基本信息
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    category: varchar("category", { length: 50 }).default("其他"),
+    priority: varchar("priority", { length: 20 }).notNull().default("normal"),
+    status: varchar("status", { length: 20 }).notNull().default("open"),
+    // 指派
+    assignee_id: varchar("assignee_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    creator_id: varchar("creator_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    // 关联对话（重命名自 related_conversation_id）
+    conversation_id: varchar("conversation_id", { length: 36 }).references(() => conversations.id, { onDelete: "set null" }),
+    // 子工单（父工单 ID）— 数据库层约束由迁移脚本处理，TypeScript 层不做自引用避免循环类型
+    parent_ticket_id: varchar("parent_ticket_id", { length: 36 }),
+    // 自定义字段
+    custom_fields: jsonb("custom_fields").default(sql`'{}'`),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("tickets_status_idx").on(table.status),
+    index("tickets_priority_idx").on(table.priority),
+    index("tickets_assignee_id_idx").on(table.assignee_id),
+    index("tickets_conversation_id_idx").on(table.conversation_id),
+    index("tickets_parent_ticket_id_idx").on(table.parent_ticket_id),
+  ]
+);
+
+// ============================================
+// 工单评论表
+// ============================================
+// 工单内部评论和对话，支持内部/外部区分
+export const ticketComments = pgTable(
+  "ticket_comments",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联工单
+    ticket_id: varchar("ticket_id", { length: 36 }).notNull().references(() => tickets.id, { onDelete: "cascade" }),
+    // 作者
+    author_id: varchar("author_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    // 内容
+    content: text("content").notNull(),
+    // 是否内部评论（内部评论对客户不可见）
+    is_internal: boolean("is_internal").notNull().default(false),
+    // 时间
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("ticket_comments_ticket_id_idx").on(table.ticket_id),
+  ]
+);
+
+// ============================================
+// 工单状态变更日志表
+// ============================================
+// 记录工单状态流转历史，用于审计和 SLA 计算
+export const ticketStatusLog = pgTable(
+  "ticket_status_log",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联工单
+    ticket_id: varchar("ticket_id", { length: 36 }).notNull().references(() => tickets.id, { onDelete: "cascade" }),
+    // 状态变更
+    from_status: varchar("from_status", { length: 20 }),
+    to_status: varchar("to_status", { length: 20 }).notNull(),
+    // 操作人
+    operator_id: varchar("operator_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+    // 时间
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("ticket_status_log_ticket_id_idx").on(table.ticket_id),
+  ]
+);
+
+// ============================================
+// 坐席分配配置表
+// ============================================
+// 配置坐席自动分配策略（轮询/负载均衡/指定店铺）
+export const agentAssignmentConfig = pgTable(
+  "agent_assignment_config",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 配置名称
+    name: varchar("name", { length: 100 }).notNull(),
+    // 分配策略
+    strategy: varchar("strategy", { length: 50 }).notNull().default("round_robin"),
+    // 关联店铺（NULL 表示全局策略）
+    shop_id: varchar("shop_id", { length: 36 }).references(() => shops.id, { onDelete: "set null" }),
+    // 坐席最大并发数
+    max_concurrent: integer("max_concurrent").default(5),
+    // 是否启用
+    is_enabled: boolean("is_enabled").notNull().default(true),
+    // 条件配置（JSON，可配置优先技能组等）
+    condition_config: jsonb("condition_config"),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("agent_assignment_config_shop_id_idx").on(table.shop_id),
+    index("agent_assignment_config_enabled_idx").on(table.is_enabled),
+  ]
+);
+
+// ============================================
+// 坐席分配统计表
+// ============================================
+// 按日统计坐席的分配、活跃、完成情况
+export const agentAssignmentStats = pgTable(
+  "agent_assignment_stats",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联坐席（使用 user_id，与代码层对齐）
+    user_id: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    // 统计日期
+    date: varchar("date", { length: 10 }).notNull(),
+    // 分配统计
+    assigned_count: integer("assigned_count").notNull().default(0),
+    // 活跃会话数
+    active_conversations: integer("active_conversations").notNull().default(0),
+    // 已完成数
+    completed_count: integer("completed_count").notNull().default(0),
+    // 已解决数（独立统计）
+    resolved_count: integer("resolved_count").notNull().default(0),
+    // 平均处理时长（秒）
+    avg_handle_time: doublePrecision("avg_handle_time").default(0),
+    // 最后分配时间
+    last_assigned_at: timestamp("last_assigned_at", { withTimezone: true }),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("agent_assignment_stats_user_date_idx").on(table.user_id, table.date),
+    index("agent_assignment_stats_date_idx").on(table.date),
+  ]
+);
+
+// ============================================
+// 店铺坐席绑定表
+// ============================================
+// 建立店铺与坐席的多对多关系，支持优先级和角色
+export const shopAgentBindings = pgTable(
+  "shop_agent_bindings",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联店铺
+    shop_id: varchar("shop_id", { length: 36 }).notNull().references(() => shops.id, { onDelete: "cascade" }),
+    // 关联坐席
+    user_id: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    // 优先级（数字越小优先级越高）
+    priority: integer("priority").notNull().default(0),
+    // 是否启用
+    is_enabled: boolean("is_enabled").notNull().default(true),
+    // 坐席角色
+    role: varchar("role", { length: 50 }).default("agent"),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("shop_agent_bindings_shop_user_idx").on(table.shop_id, table.user_id),
+    index("shop_agent_bindings_user_id_idx").on(table.user_id),
+    index("shop_agent_bindings_enabled_idx").on(table.is_enabled),
   ]
 );
 

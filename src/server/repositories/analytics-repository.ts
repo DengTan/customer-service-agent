@@ -60,22 +60,6 @@ export interface ConversationSource {
   source: string | null;
 }
 
-export interface TicketRow {
-  id: string;
-  status: string;
-  category: string;
-  priority: string;
-  created_at: string;
-  updated_at: string;
-  assignee_id?: string | null;
-}
-
-export interface TicketStatusLogRow {
-  ticket_id: string;
-  to_status: string;
-  created_at: string;
-}
-
 export class AnalyticsRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
@@ -257,22 +241,23 @@ export class AnalyticsRepository {
     }
     
     try {
-      const { data, error } = await this.client
-        .from('alerts')
-        .select('severity, is_resolved, type')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      // 使用 count() 聚合查询，避免全表扫描 + JS 过滤
+      const [totalResult, unresolvedResult, criticalResult, warningResult, infoResult] = await Promise.all([
+        this.client.from('alerts').select('id', { count: 'exact', head: true }),
+        this.client.from('alerts').select('id', { count: 'exact', head: true }).eq('is_resolved', false),
+        this.client.from('alerts').select('id', { count: 'exact', head: true }).eq('is_resolved', false).eq('severity', 'critical'),
+        this.client.from('alerts').select('id', { count: 'exact', head: true }).eq('is_resolved', false).eq('severity', 'warning'),
+        this.client.from('alerts').select('id', { count: 'exact', head: true }).eq('is_resolved', false).eq('severity', 'info'),
+      ]);
 
-      if (error) throw new RepositoryError('get alert stats', error.message, error.code);
+      if (totalResult.error) throw new RepositoryError('get alert stats', totalResult.error.message, totalResult.error.code);
 
-      const alerts = (data || []) as AlertRow[];
-      const unresolvedAlerts = alerts.filter((a) => !a.is_resolved);
       return {
-        total: alerts.length,
-        unresolved: unresolvedAlerts.length,
-        critical: unresolvedAlerts.filter((a) => a.severity === 'critical').length,
-        warning: unresolvedAlerts.filter((a) => a.severity === 'warning').length,
-        info: unresolvedAlerts.filter((a) => a.severity === 'info').length,
+        total: totalResult.count || 0,
+        unresolved: unresolvedResult.count || 0,
+        critical: criticalResult.count || 0,
+        warning: warningResult.count || 0,
+        info: infoResult.count || 0,
       };
     } catch (error) {
       logger.database.error('getAlertStats failed, returning empty stats', { error });
@@ -358,10 +343,15 @@ export class AnalyticsRepository {
     }
     
     try {
+      // 限制近 90 天，避免全量加载历史评分数据
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
       const { data, error } = await this.client
         .from('conversations')
         .select('rating, source')
-        .not('rating', 'is', null);
+        .not('rating', 'is', null)
+        .gte('created_at', ninetyDaysAgo.toISOString());
 
       if (error) throw new RepositoryError('get ratings by source', error.message, error.code);
       return (data ?? []) as RatingBySource[];
@@ -373,7 +363,9 @@ export class AnalyticsRepository {
 
   // ============ Ticket Statistics ============
 
-  async getTicketStats(): Promise<{
+  async getTicketStats(
+    slaResolveMinutes: Record<string, number> = {},
+  ): Promise<{
     total: number;
     by_status: Record<string, number>;
     by_category: Record<string, number>;
@@ -383,88 +375,143 @@ export class AnalyticsRepository {
     overdue_count: number;
   }> {
     try {
-      // 并行查询 tickets 和 ticket_status_log（使用类型化返回）
-      const [ticketsResult, statusLogsResult] = await Promise.all([
-        this.client
-          .from('tickets')
-          .select('id, status, category, priority, created_at, updated_at')
-          .returns<TicketRow[]>(),
-        this.client
-          .from('ticket_status_log')
-          .select('ticket_id, to_status, created_at')
-          .eq('to_status', 'in_progress')
-          .returns<TicketStatusLogRow[]>(),
+      // 基础统计使用 count() 聚合，避免全表扫描
+      const [ticketsCountResult, statusCountsResult, categoryCountsResult, priorityCountsResult] = await Promise.all([
+        this.client.from('tickets').select('id', { count: 'exact', head: true }),
+        this.client.from('tickets').select('status', { count: 'exact', head: true }),
+        this.client.from('tickets').select('category', { count: 'exact', head: true }),
+        this.client.from('tickets').select('priority', { count: 'exact', head: true }),
       ]);
 
-      if (ticketsResult.error) throw new RepositoryError('get ticket stats', ticketsResult.error.message, ticketsResult.error.code);
+      const total = ticketsCountResult.count || 0;
 
-      const tickets = ticketsResult.data || [];
-      const statusLogs = statusLogsResult.data || [];
-
-      // 使用 Map 存储 ticket 创建时间，O(1) 查找
-      const ticketCreatedMap = new Map<string, string>();
-      for (const t of tickets) {
-        ticketCreatedMap.set(t.id, t.created_at);
-      }
-
-      // 构建 earliest first_response per ticket
-      const firstResponseMap = new Map<string, string>();
-      for (const log of statusLogs) {
-        if (!firstResponseMap.has(log.ticket_id)) {
-          firstResponseMap.set(log.ticket_id, log.created_at);
+      const byStatus: Record<string, number> = {};
+      if (statusCountsResult.data) {
+        for (const t of statusCountsResult.data as Array<{ status: string }>) {
+          byStatus[t.status] = (byStatus[t.status] || 0) + 1;
         }
       }
 
-      // 单次循环计算所有统计
-      const byStatus: Record<string, number> = {};
       const byCategory: Record<string, number> = {};
+      if (categoryCountsResult.data) {
+        for (const t of categoryCountsResult.data as Array<{ category: string }>) {
+          byCategory[t.category] = (byCategory[t.category] || 0) + 1;
+        }
+      }
+
       const byPriority: Record<string, number> = {};
+      if (priorityCountsResult.data) {
+        for (const t of priorityCountsResult.data as Array<{ priority: string }>) {
+          byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
+        }
+      }
+
+      // 计算超时工单：按优先级 SLA 动态判断
+      let overdue_count = 0;
+      if (Object.keys(slaResolveMinutes).length > 0) {
+        // 有 SLA 配置，按优先级阈值计算超时
+        const openTicketsResult = await this.client
+          .from('tickets')
+          .select('id, priority, created_at')
+          .in('status', ['open', 'in_progress']);
+
+        if (!openTicketsResult.error && openTicketsResult.data) {
+          const now = Date.now();
+          for (const t of openTicketsResult.data as Array<{ id: string; priority: string; created_at: string }>) {
+            const slaMinutes = slaResolveMinutes[t.priority] ?? slaResolveMinutes['low'] ?? 2880;
+            const slaMs = slaMinutes * 60 * 1000;
+            if (now - new Date(t.created_at).getTime() > slaMs) {
+              overdue_count++;
+            }
+          }
+        }
+      } else {
+        // 无 SLA 配置，回退到默认 24h 阈值
+        const overdueResult = await this.client
+          .from('tickets')
+          .select('id', { count: 'exact', head: true })
+          .or(`status.eq.open,status.eq.in_progress`)
+          .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        overdue_count = overdueResult.count || 0;
+      }
+
+      // 平均处理时长：只加载已关闭工单（有限数量，防止大表爆炸）
+      const resolvedTicketsResult = await this.client
+        .from('tickets')
+        .select('created_at, updated_at')
+        .in('status', ['closed', 'resolved'])
+        .order('updated_at', { ascending: false })
+        .limit(1000);
+
       let totalResolutionMs = 0;
       let resolvedCount = 0;
-      let totalFirstResponseMs = 0;
-      let firstResponseCount = 0;
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-      for (const t of tickets) {
-        // 统计 by status/category/priority
-        byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-        byCategory[t.category] = (byCategory[t.category] || 0) + 1;
-        byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
-
-        // 计算平均处理时长（closed/resolved）
-        if (t.status === 'closed' || t.status === 'resolved') {
-          const created = new Date(t.created_at).getTime();
-          const updated = new Date(t.updated_at).getTime();
-          totalResolutionMs += updated - created;
+      if (resolvedTicketsResult.data) {
+        for (const t of resolvedTicketsResult.data as Array<{ created_at: string; updated_at: string }>) {
+          totalResolutionMs += new Date(t.updated_at).getTime() - new Date(t.created_at).getTime();
           resolvedCount++;
         }
+      }
 
-        // 计算平均首次响应时长
-        const firstResponseAt = firstResponseMap.get(t.id);
-        if (firstResponseAt) {
-          const created = ticketCreatedMap.get(t.id);
-          if (created) {
-            const createdMs = new Date(created).getTime();
-            const respondedMs = new Date(firstResponseAt).getTime();
-            totalFirstResponseMs += respondedMs - createdMs;
-            firstResponseCount++;
+      // 平均首次响应时长：只加载有状态日志的工单
+      const firstResponseLogsResult = await this.client
+        .from('ticket_status_log')
+        .select('ticket_id, created_at')
+        .eq('to_status', 'in_progress')
+        .order('created_at', { ascending: true });
+
+      if (firstResponseLogsResult.error) {
+        logger.database.warn('getTicketStats: firstResponseLogs query failed', { error: firstResponseLogsResult.error });
+      }
+
+      const ticketCreatedMap = new Map<string, string>();
+      if (resolvedTicketsResult.data) {
+        for (const t of resolvedTicketsResult.data as Array<{ created_at: string; id?: string }>) {
+          // We don't have id here, skip - already have created_at in ticket_status_log
+        }
+      }
+
+      const firstResponseMap = new Map<string, string>();
+      if (firstResponseLogsResult.data) {
+        for (const log of firstResponseLogsResult.data as Array<{ ticket_id: string; created_at: string }>) {
+          if (!firstResponseMap.has(log.ticket_id)) {
+            firstResponseMap.set(log.ticket_id, log.created_at);
           }
         }
       }
 
-      // 超时工单数
-      const overdueCount = tickets.filter(t =>
-        (t.status === 'open' || t.status === 'in_progress') && t.created_at < oneDayAgo
-      ).length;
+      let totalFirstResponseMs = 0;
+      let firstResponseCount = 0;
+      if (firstResponseMap.size > 0) {
+        // 批量查询工单创建时间（仅取有首次响应的工单）
+        const ticketIds = Array.from(firstResponseMap.keys());
+        const ticketsWithCreatedResult = await this.client
+          .from('tickets')
+          .select('id, created_at')
+          .in('id', ticketIds)
+          .limit(500);
+
+        if (!ticketsWithCreatedResult.error && ticketsWithCreatedResult.data) {
+          for (const t of ticketsWithCreatedResult.data as Array<{ id: string; created_at: string }>) {
+            ticketCreatedMap.set(t.id, t.created_at);
+          }
+        }
+      }
+      for (const [ticketId, firstResponseAt] of firstResponseMap) {
+        const created = ticketCreatedMap.get(ticketId);
+        if (created) {
+          totalFirstResponseMs += new Date(firstResponseAt).getTime() - new Date(created).getTime();
+          firstResponseCount++;
+        }
+      }
 
       return {
-        total: tickets.length,
+        total,
         by_status: byStatus,
         by_category: byCategory,
         by_priority: byPriority,
         avg_resolution_hours: resolvedCount > 0 ? (totalResolutionMs / resolvedCount) / (1000 * 60 * 60) : null,
         avg_first_response_hours: firstResponseCount > 0 ? (totalFirstResponseMs / firstResponseCount) / (1000 * 60 * 60) : null,
-        overdue_count: overdueCount,
+        overdue_count,
       };
     } catch (error) {
       logger.database.error('getTicketStats failed', { error });
@@ -523,11 +570,14 @@ export class AnalyticsRepository {
 
   async getAgentTicketStats(): Promise<Array<{ assignee_id: string; total: number; resolved: number; avg_resolution_hours: number }>> {
     try {
+      // 只查询已关闭工单（有限数量），避免全表扫描
       const { data, error } = await this.client
         .from('tickets')
         .select('assignee_id, status, created_at, updated_at')
         .not('assignee_id', 'is', null)
-        .returns<TicketRow[]>();
+        .in('status', ['closed', 'resolved'])
+        .order('updated_at', { ascending: false })
+        .limit(5000);
 
       if (error) throw new RepositoryError('get agent ticket stats', error.message, error.code);
 

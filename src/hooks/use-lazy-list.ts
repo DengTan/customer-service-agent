@@ -15,6 +15,7 @@ export interface LazyListResult<T> {
   reset: () => Promise<void>;
   refresh: () => Promise<void>;
   updateItems: (updateFn: (prev: T[]) => T[]) => void;
+  updateItem: (id: string, updates: Partial<T>) => void;
   setTotal: (fn: (prev: number) => number) => void;
   updateItemsLength: (delta: number) => void;
   startPolling: (intervalMs: number) => void;
@@ -176,6 +177,19 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
     setItems(updateFn);
   }, []);
 
+  // P2-1: Update a single item by ID
+  const updateItem = useCallback((id: string, updates: Partial<T>) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        const itemId = (item as { id: string }).id;
+        if (itemId === id) {
+          return { ...item, ...updates };
+        }
+        return item;
+      })
+    );
+  }, []);
+
   // P2-1: Allow callers to adjust itemsLengthRef (e.g., after deleting an item)
   const updateItemsLength = useCallback((delta: number) => {
     itemsLengthRef.current = Math.max(0, itemsLengthRef.current + delta);
@@ -225,6 +239,7 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
     reset,
     refresh,
     updateItems,
+    updateItem,
     setTotal,
     updateItemsLength,
     startPolling,

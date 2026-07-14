@@ -1,10 +1,13 @@
 import { NextRequest } from 'next/server';
-import { parseJsonBody, withErrorHandlerSimple, apiSuccess } from '@/lib/api-utils';
+import { parseJsonBody, withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
 import { ConversationTagService } from '@/server/services/conversation-tag-service';
 
 const service = new ConversationTagService();
 
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'read');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const category = searchParams.get('category');
   const conversation_id = searchParams.get('conversation_id');
@@ -19,6 +22,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -46,6 +52,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'write');
+  if (denied) return denied;
+
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -62,6 +71,9 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'quality', 'delete');
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   const record_id = searchParams.get('record_id');

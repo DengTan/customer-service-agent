@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import { Bot, Star, Send, Sparkles, Copy, Check, PhoneOff, Download, RotateCcw, Zap, ArrowRightLeft, User, BookOpen, Headphones, X, ChevronRight, Clock, Tag, MessageSquare, Globe, AlertTriangle, FileText, Paperclip, ImageIcon, Loader2, Ticket, Cpu, Network, Users } from 'lucide-react';
 import type { Conversation, Message } from './chat-page';
 import type { CardAction } from '@/lib/types';
@@ -11,6 +12,8 @@ import { MarkdownRenderer } from './markdown-renderer';
 import { RichMessageCard } from './rich-message-card';
 import { SourcePanel } from './source-panel';
 import { formatMessageTime, shouldShowTimeDivider } from '@/lib/chat-utils';
+import { shouldShowRatingCard, type RatingSubmitResult } from './rating-gating';
+import { useThemeSettings } from '@/lib/theme-settings-context';
 
 interface ChatWindowProps {
   conversation: Conversation | undefined;
@@ -21,6 +24,13 @@ interface ChatWindowProps {
   streamingConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null;
   isLoading: boolean;
   isSending: boolean;
+  /**
+   * Per-conversation rating capability cache (phase 4). Sourced from the
+   * conversation detail endpoint. When false, the rating card must not
+   * appear, and a server-confirmed RATING_DISABLED response will keep it
+   * hidden for the rest of the session.
+   */
+  ratingEnabled: boolean;
   activeDelegations: Array<{
     child_bot_name: string;
     child_bot_id: string;
@@ -32,7 +42,7 @@ interface ChatWindowProps {
   /** Scope for quick replies filtering: 'ai' for AI chatbot, 'agent' for agent workspace, undefined for all */
   quickRepliesScope?: 'ai' | 'agent';
   onSend: (content: string, imageUrl?: string) => void;
-  onSubmitRating: (rating: number, comment: string) => void;
+  onSubmitRating: (rating: number, comment: string) => Promise<RatingSubmitResult>;
   onEndConversation: (id: string) => void;
   onRestartConversation: () => void;
   onHandoff: (id: string, reason?: string) => void;
@@ -83,7 +93,7 @@ function ConversationTicketsBanner({ conversationId }: { conversationId?: string
       })
       .catch(err => {
         if (err.name !== 'AbortError') {
-          console.error('[ConversationTicketsBanner] Failed to fetch tickets:', err);
+          logger.error('[ConversationTicketsBanner] Failed to fetch tickets', { error: err });
         }
       });
 
@@ -103,8 +113,8 @@ function ConversationTicketsBanner({ conversationId }: { conversationId?: string
           <span className="text-muted-foreground truncate">{t.title}</span>
           <span className={`ml-auto px-1.5 py-0.5 rounded-sm text-[10px] font-medium ${
             t.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
-            t.status === 'pending_customer' ? 'bg-amber-100 text-amber-700' :
-            t.status === 'open' ? 'bg-gray-100 text-gray-700' :
+            t.status === 'pending_customer' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
+            t.status === 'open' ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' :
             'bg-muted text-muted-foreground'
           }`}>
             {t.status_label}
@@ -131,6 +141,7 @@ export function ChatWindow({
   isSending,
   allConversations,
   activeDelegations = [],
+  ratingEnabled = true,
   quickRepliesScope,
   onSend,
   onSubmitRating,
@@ -161,6 +172,9 @@ export function ChatWindow({
   const [transferDepartments, setTransferDepartments] = useState(DEFAULT_TRANSFER_DEPARTMENTS);
   const [transferAgents, setTransferAgents] = useState(DEFAULT_TRANSFER_AGENTS);
   const [quickReplies, setQuickReplies] = useState(DEFAULT_QUICK_REPLIES);
+
+  // Theme settings for appearance preferences
+  const { settings: themeSettings } = useThemeSettings();
 
   // Load dynamic configuration from APIs on mount
   useEffect(() => {
@@ -279,7 +293,7 @@ export function ChatWindow({
           toast.error(`暂不支持该操作：${action.type}`);
       }
     } catch (err) {
-      console.error('Card action error:', err);
+      logger.error('Card action error', { error: err });
       toast.error('操作失败，请重试');
     } finally {
       setIsProcessingAction(false);
@@ -320,15 +334,31 @@ export function ChatWindow({
     }
   }, [messages, streamingContent]);
 
-  // Show rating check
+  // Show rating check — phase 4: gate on the per-conversation capability and
+  // delegate the decision to shouldShowRatingCard. The capability comes from
+  // the conversation detail response; switching conversations resets state
+  // because ratingSubmitted is local to each ChatWindow mount lifecycle
+  // (the chat page already calls loadMessages on tab open which re-derives
+  // ratingEnabled from the detail payload).
   useEffect(() => {
-    if (conversation?.status === 'ended' && !conversation?.rating) {
-      setShowRating(true);
-      setRatingSubmitted(false);
+    const show = shouldShowRatingCard({
+      conversationStatus: conversation?.status,
+      hasRating: !!conversation?.rating,
+      ratingEnabled,
+    });
+    setShowRating(show);
+    if (!show) {
+      // When the card must disappear (capability off, status not 'ended', or
+      // already rated) clear the local "submitted" flag too so a later valid
+      // conversation shows the card again. Only clear on conversation change
+      // — leaving it across "submitted → ended → already-rated" is harmless.
+      if (conversation?.rating) {
+        setRatingSubmitted(true);
+      }
     } else {
-      setShowRating(false);
+      setRatingSubmitted(false);
     }
-  }, [conversation]);
+  }, [conversation, ratingEnabled]);
 
   // Auto-show source panel when streaming completes with sources
   const prevStreamingSourcesLenRef = useRef<number>(0);
@@ -428,10 +458,31 @@ export function ChatWindow({
     }
   };
 
-  const handleRatingSubmit = (rating: number, comment: string) => {
-    onSubmitRating(rating, comment);
-    setRatingSubmitted(true);
+  const handleRatingSubmit = async (rating: number, comment: string) => {
+    // Phase 4: only flip to the "感谢评价" state after the parent has
+    // confirmed a 2xx response. The parent invokes processRatingSubmit and
+    // toasts on RATING_DISABLED / RETRY; we mirror that in local UI state.
+    // We hide the card immediately to avoid double submission; the parent
+    // signals success vs failure via its return value.
     setShowRating(false);
+    try {
+      const result = await onSubmitRating(rating, comment);
+      if (result?.ok) {
+        setRatingSubmitted(true);
+      } else if (result && 'code' in result && result.code === 'RATING_DISABLED') {
+        // Capability off — parent already updated tab state; force-clear
+        // the "submitted" flag too so we don't show the thank-you line for
+        // a rating that wasn't accepted.
+        setRatingSubmitted(false);
+      } else {
+        // RETRY or other failure: keep the card open.
+        setRatingSubmitted(ratingSubmitted);
+        setShowRating(true);
+      }
+    } catch {
+      setRatingSubmitted(ratingSubmitted);
+      setShowRating(true);
+    }
   };
 
   const handleQuickReply = (text: string) => {
@@ -461,7 +512,7 @@ export function ChatWindow({
       setTransferNote('');
       onHandoff(conversation.id, transferNote ? `${reason}：${transferNote}` : reason);
     } catch (err) {
-      console.error('转接失败:', err);
+      logger.error('转接失败', { error: err });
       toast.error('转接人工客服失败，请重试');
     } finally {
       setIsTransferring(false);
@@ -531,7 +582,7 @@ export function ChatWindow({
           <div className="flex items-center gap-3 flex-wrap">
             {/* Avatar */}
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${
-              isUrgent ? 'bg-error/15 text-error' : convSource === '千牛' ? 'bg-primary/10 text-primary' : convSource === '抖店' ? 'bg-emerald-100 text-emerald-700' : 'bg-success/15 text-success'
+              isUrgent ? 'bg-error/15 text-error' : convSource === '千牛' ? 'bg-primary/10 text-primary' : convSource === '抖店' ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-success/20 text-success'
             }`}>
               {convTitle.charAt(0)}
             </div>
@@ -539,7 +590,7 @@ export function ChatWindow({
           {/* Source tag */}
           {convSource && (
             <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${
-              convSource === '千牛' ? 'bg-primary/10 text-primary' : convSource === '抖店' ? 'bg-emerald-100 text-emerald-700' : 'bg-success/10 text-success'
+              convSource === '千牛' ? 'bg-primary/10 text-primary' : convSource === '抖店' ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : 'bg-success/20 text-success'
             }`}>
               {convSource}
             </span>
@@ -766,7 +817,7 @@ export function ChatWindow({
           </div>
         ) : (
           /* Message list */
-          <div className="space-y-3 max-w-3xl mx-auto">
+          <div className={`space-y-${themeSettings.compactMode ? '1' : '3'} max-w-3xl mx-auto`}>
             {messages.map((msg, idx) => {
               const prevMsg = idx > 0 ? messages[idx - 1] : undefined;
               const showTimeDivider = shouldShowTimeDivider(msg, prevMsg);
@@ -775,7 +826,7 @@ export function ChatWindow({
               return (
                 <div key={msg.id}>
                   {/* Time divider */}
-                  {showTimeDivider && (
+                  {showTimeDivider && themeSettings.showTimestamps && (
                     <div className="flex items-center justify-center my-4 animate-fade-in">
                       <span className="text-xs text-muted-foreground/60 bg-muted/50 px-3 py-1 rounded-full">
                         {formatMessageTime(msg.created_at)}
@@ -791,7 +842,7 @@ export function ChatWindow({
                     ) : null}
                     <div className={isUser ? 'text-right' : ''}>
                       <div
-                        className={`${isUser ? 'bg-blue-100 text-foreground' : `bg-card text-foreground cursor-pointer transition-colors ${selectedMsgIdForSource === msg.id ? 'ring-1 ring-primary/30' : 'hover:bg-muted/30'}`} rounded-lg px-3 py-2 text-left`}
+                        className={`${isUser ? 'bg-blue-100 dark:bg-blue-900 text-foreground' : `bg-card text-foreground cursor-pointer transition-colors ${selectedMsgIdForSource === msg.id ? 'ring-1 ring-primary/30' : 'hover:bg-muted/30'}`} rounded-lg px-3 py-2 text-left`}
                         onClick={() => {
                           if (!isUser && msg.sources && msg.sources.length > 0) {
                             setSelectedMsgIdForSource(selectedMsgIdForSource === msg.id ? null : msg.id);
@@ -858,7 +909,7 @@ export function ChatWindow({
                                 <BookOpen className="w-2.5 h-2.5" />
                                 {s.type === 'knowledge' ? '知识库' : s.type === 'auto_reply' ? '自动回复' : '引用'}
                                 {s.score !== undefined && s.score > 0 && (
-                                  <span className={`ml-0.5 ${s.score >= 0.75 ? 'text-emerald-500' : s.score >= 0.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                                  <span className={`ml-0.5 ${s.score >= 0.75 ? 'text-emerald-600' : s.score >= 0.5 ? 'text-amber-600' : 'text-red-600'}`}>
                                     {Math.round(s.score * 100)}%
                                   </span>
                                 )}
@@ -872,14 +923,14 @@ export function ChatWindow({
                         {msg.delegations && msg.delegations.length > 0 && (
                           <div className="mt-2 pt-1.5 border-t border-border/30">
                             {msg.delegations.map((d, i) => (
-                              <div key={i} className="flex items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+                              <div key={i} className="flex items-center gap-1.5 text-[10px] text-blue-600">
                                 <Network className="w-3 h-3" />
                                 <span>由 {d.child_bot_name} 处理</span>
                                 {d.intent && (
-                                  <span className="text-blue-400 dark:text-blue-500">· {d.intent}</span>
+                                  <span className="text-blue-500">· {d.intent}</span>
                                 )}
                                 {d.confidence > 0 && (
-                                  <span className="text-blue-400 dark:text-blue-500">· 置信度 {Math.round(d.confidence * 100)}%</span>
+                                  <span className="text-blue-500">· 置信度 {Math.round(d.confidence * 100)}%</span>
                                 )}
                               </div>
                             ))}
@@ -890,7 +941,7 @@ export function ChatWindow({
                           <div className="mt-1">
                             <div
                               className={`inline-flex items-center gap-1 text-[10px] font-medium cursor-pointer hover:opacity-80 transition-opacity ${
-                                msg.confidence < 0.4 ? 'text-red-500' : msg.confidence < 0.7 ? 'text-amber-500' : 'text-emerald-500'
+                                msg.confidence < 0.4 ? 'text-red-600' : msg.confidence < 0.7 ? 'text-amber-600' : 'text-emerald-600'
                               }`}
                               onClick={() => setExpandedConfMsgId(expandedConfMsgId === msg.id ? null : msg.id)}
                             >
@@ -901,14 +952,26 @@ export function ChatWindow({
                             </div>
                             {expandedConfMsgId === msg.id && msg.confidence_breakdown && (() => {
                               const bd = msg.confidence_breakdown;
+                              const overallConf = msg.confidence;
+                              const llmSelfConf = bd.llm_self_score;
+                              const diff = llmSelfConf > 0 ? Math.abs(overallConf - llmSelfConf) : 0;
+                              const isCapped = bd.handoff_intent || diff > 0.3;
                               return (
                                 <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5 text-muted-foreground">
                                   <div className="flex justify-between gap-4"><span>知识库匹配</span><span>{bd.knowledge_score > 0 ? `${Math.round(bd.knowledge_score * 100)}%` : '-'}</span></div>
                                   <div className="flex justify-between gap-4"><span>工具调用</span><span>{bd.tool_score > 0 ? `${Math.round(bd.tool_score * 100)}%` : '-'}</span></div>
                                   <div className="flex justify-between gap-4"><span>LLM自评</span><span>{bd.llm_self_score > 0 ? `${Math.round(bd.llm_self_score * 100)}%` : '-'}</span></div>
                                   <div className="flex justify-between gap-4"><span>子Agent</span><span>{bd.sub_agent_score > 0 ? `${Math.round(bd.sub_agent_score * 100)}%` : '-'}</span></div>
-                                  {bd.handoff_intent && <div className="text-red-500">检测到转人工意图</div>}
-                                  {bd.no_support && <div className="text-amber-500">无知识库/工具支撑</div>}
+                                  {bd.handoff_intent && (
+                                    <div className="text-red-500 flex items-center gap-1">
+                                      <span>⚠️</span>
+                                      <span>检测到转人工意图，已降低置信度</span>
+                                    </div>
+                                  )}
+                                  {bd.no_support && <div className="text-amber-500">⚠️ 无知识库/工具支撑，综合评分降低</div>}
+                                  {isCapped && !bd.handoff_intent && (
+                                    <div className="text-muted-foreground/70 italic">综合评分已根据权重调整</div>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -930,7 +993,9 @@ export function ChatWindow({
                             )}
                           </button>
                         )}
-                        <span className="text-[10px] text-muted-foreground">{formatMessageTime(msg.created_at)}</span>
+                        {themeSettings.showTimestamps && (
+                          <span className="text-[10px] text-muted-foreground">{formatMessageTime(msg.created_at)}</span>
+                        )}
                       </div>
                     </div>
                     {/* User avatar on the right side of bubble */}
@@ -949,7 +1014,7 @@ export function ChatWindow({
               <div className="flex gap-2 pl-0 pr-3 msg-enter-assistant">
                 <div className="w-7 h-7 bg-primary/15 rounded-full flex items-center justify-center text-[11px] font-semibold text-primary shrink-0 mt-0.5">AI</div>
                 <div>
-                  <div className="bg-blue-100 rounded-lg px-3 py-2 text-foreground">
+                  <div className="bg-blue-100 dark:bg-blue-900 rounded-lg px-3 py-2 text-foreground">
                     <div className="text-sm leading-relaxed">
                       <MarkdownRenderer content={streamingContent} />
                       <span className="inline-block w-1.5 h-4 bg-primary/50 animate-pulse ml-0.5 align-middle" />
@@ -963,7 +1028,7 @@ export function ChatWindow({
             {isSending && !streamingContent && (
               <div className="flex gap-2 pl-0 pr-3 items-center">
                 <div className="w-7 h-7 bg-primary/15 rounded-full flex items-center justify-center text-[11px] font-semibold text-primary shrink-0">AI</div>
-                <div className="bg-blue-100 rounded-lg px-3 py-2 flex items-center justify-center">
+                <div className="bg-blue-100 dark:bg-blue-900 rounded-lg px-3 py-2 flex items-center justify-center">
                   <div className="flex items-center justify-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
                     <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -980,12 +1045,12 @@ export function ChatWindow({
                   <div key={idx} className="flex items-center gap-2 bg-blue-100 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 rounded-lg px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
                     <Network className="w-3.5 h-3.5 shrink-0 animate-pulse" />
                     <span className="font-medium">{delegation.child_bot_name}</span>
-                    <span className="text-blue-400 dark:text-blue-500">处理中</span>
+                    <span className="text-blue-600">处理中</span>
                     {delegation.intent && (
-                      <span className="text-blue-500 dark:text-blue-400 truncate max-w-[120px]">· {delegation.intent}</span>
+                      <span className="text-blue-500 truncate max-w-[120px]">· {delegation.intent}</span>
                     )}
                     {delegation.collaborations > 0 && (
-                      <span className="text-blue-400 dark:text-blue-500">· 协作{delegation.collaborations}次</span>
+                      <span className="text-blue-500">· 协作{delegation.collaborations}次</span>
                     )}
                     <Loader2 className="w-3 h-3 shrink-0 animate-spin ml-auto" />
                   </div>
@@ -1195,7 +1260,7 @@ export function ChatWindow({
               <div className="text-sm font-medium text-foreground">{convTitle}</div>
               <div className="flex items-center justify-center gap-2 mt-1">
                 <span className={`inline-flex items-center gap-1 text-xs ${
-                  convSource === '千牛' ? 'text-primary' : convSource === '抖店' ? 'text-emerald-600' : 'text-success'
+                  convSource === '千牛' ? 'text-primary' : convSource === '抖店' ? 'text-emerald-700' : 'text-success'
                 }`}>
                   <Globe className="w-3 h-3" />
                   {convSource || '网页'}

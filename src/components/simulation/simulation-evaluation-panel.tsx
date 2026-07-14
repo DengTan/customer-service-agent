@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Star, X, Trash2, Loader2, BarChart3 } from 'lucide-react';
 import { SimulationEvaluation, SimulationEvaluationStats } from '@/lib/types';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface EvaluationPanelProps {
   simulationId: string;
@@ -41,6 +42,9 @@ export function SimulationEvaluationPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [data, setData] = useState<EvaluationWithStats | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
 
   // Load existing evaluations
   useEffect(() => {
@@ -98,7 +102,14 @@ export function SimulationEvaluationPanel({
   };
 
   const handleDelete = async (evalId: string) => {
-    if (!confirm('确定要删除这条评价吗？')) return;
+    const confirmed = await confirm({
+      title: '删除评价',
+      description: '确定要删除这条评价吗？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/simulations/${simulationId}/evaluation?evaluation_id=${evalId}`, {
@@ -120,16 +131,16 @@ export function SimulationEvaluationPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="w-80 border-l border-border bg-card shrink-0 flex flex-col overflow-hidden animate-slide-in-right">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">评估</span>
+          <BarChart3 className="w-4 h-4 text-primary shrink-0" />
+          <span className="text-sm font-medium text-foreground leading-tight">评估</span>
         </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors"
+          className="flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           <X className="w-4 h-4" />
         </button>

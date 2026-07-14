@@ -14,9 +14,9 @@ export interface KnowledgeImportJob {
   file_type: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
-  current_stage: string | null;
-  raw_text_preview: string | null;
-  chunk_preview: ChunkPreview[] | null;
+  stage: string | null;
+  description: string | null;
+  chunks_preview: ChunkPreview[] | null;
   total_chunks: number;
   doc_ids: string[] | null;
   error_message: string | null;
@@ -53,7 +53,7 @@ export class KnowledgeImportJobRepository {
         category: params.category || '未分类',
         parent_category: params.parent_category || null,
         image_url: params.image_url || null,
-        raw_text_preview: params.description || null,
+        description: params.description || null,
         created_by: params.created_by || null,
         status: 'pending',
         progress: 0,
@@ -86,9 +86,9 @@ export class KnowledgeImportJobRepository {
   async update(id: string, updates: Partial<{
     status: string;
     progress: number;
-    current_stage: string | null;
-    raw_text_preview: string | null;
-    chunk_preview: ChunkPreview[] | null;
+    stage: string | null;
+    description: string | null;
+    chunks_preview: ChunkPreview[] | null;
     total_chunks: number;
     doc_ids: string[] | null;
     error_message: string | null;
@@ -110,7 +110,7 @@ export class KnowledgeImportJobRepository {
   async findActiveByUser(userId?: string | null): Promise<KnowledgeImportJob[]> {
     let query = this.supabase
       .from(this.tableName)
-      .select('id, status, progress, current_stage, file_name, created_at')
+      .select('id, status, progress, stage, file_name, created_at')
       .in('status', ['pending', 'processing'])
       .order('created_at', { ascending: false })
       .limit(20);
@@ -129,7 +129,7 @@ export class KnowledgeImportJobRepository {
       id: item.id,
       status: item.status,
       progress: item.progress,
-      current_stage: item.current_stage,
+      stage: item.stage,
       file_name: item.file_name,
       created_at: item.created_at,
     } as unknown as KnowledgeImportJob));
@@ -155,10 +155,10 @@ export class KnowledgeImportJobRepository {
       file_type: data.file_type as string,
       status: data.status as 'pending' | 'processing' | 'completed' | 'failed',
       progress: data.progress as number,
-      current_stage: data.current_stage as string | null,
-      raw_text_preview: data.raw_text_preview as string | null,
-      chunk_preview: data.chunk_preview as ChunkPreview[] | null,
-      total_chunks: data.total_chunks as number,
+      stage: data.stage as string | null,
+      description: data.description as string | null,
+      chunks_preview: data.chunks_preview as ChunkPreview[] | null,
+      total_chunks: (data.total_chunks as number) || 0,
       doc_ids: data.doc_ids as string[] | null,
       error_message: data.error_message as string | null,
       category: data.category as string,

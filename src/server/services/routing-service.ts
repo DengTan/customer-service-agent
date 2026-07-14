@@ -7,6 +7,7 @@ import {
 import { BotConfigRepository, type BotConfigRow } from '@/server/repositories/bot-config-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { logger } from '@/lib/logger';
 
 export interface RoutingMatchResult {
   matched: true;
@@ -60,7 +61,7 @@ export class RoutingService {
       return null;
     } catch (error) {
       // Routing match failure should not block message processing
-      console.error('[RoutingService] matchRule failed:', error);
+      logger.error('[RoutingService] matchRule failed', { error });
       return null;
     }
   }
@@ -93,9 +94,14 @@ export class RoutingService {
     }
 
     try {
+      const existing = await this.repo.findById(input.id);
+      if (!existing) {
+        throw new ServiceError('路由规则不存在', { status: 404, code: 'NOT_FOUND' });
+      }
       const rule = await this.repo.update(input);
       return { rule };
     } catch (error) {
+      if (error instanceof ServiceError) throw error;
       throw toServiceError(error, '更新路由规则失败', 'DB_ERROR');
     }
   }
@@ -106,8 +112,13 @@ export class RoutingService {
     }
 
     try {
+      const existing = await this.repo.findById(id);
+      if (!existing) {
+        throw new ServiceError('路由规则不存在', { status: 404, code: 'NOT_FOUND' });
+      }
       await this.repo.delete(id);
     } catch (error) {
+      if (error instanceof ServiceError) throw error;
       throw toServiceError(error, '删除路由规则失败', 'DB_ERROR');
     }
   }

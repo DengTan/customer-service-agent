@@ -24,7 +24,7 @@ export const DEMO_QUALITY_RULES: QualityRule[] = [
     id: 'demo-rule-3',
     name: '满意度偏低',
     type: 'satisfaction_below',
-    config: { min_rating: 3 },
+    config: { threshold: 3 },
     is_enabled: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),

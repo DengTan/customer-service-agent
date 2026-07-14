@@ -1,8 +1,9 @@
 'use client';
 
-import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler, ArrowLeft, Sparkles } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 interface SourceItem {
   type?: string; // optional for backward compatibility, defaults handled in processing
@@ -13,10 +14,42 @@ interface SourceItem {
   category?: string;
   knowledge_item_id?: string;
   item_id?: string;
+  /**
+   * P2: stable chunk identity for citation stability.
+   * When chunk_id is present, use it as the stable key; fall back to knowledge_item_id.
+   * null chunk_id means parent item was matched directly (no sub-chunk).
+   */
+  chunk_id?: string | null;
+  chunk_index?: number;
+  content_hash?: string | null;
+  /**
+   * Provenance contract version.
+   * - 2 = claim-verified by the orchestrator (default for new messages)
+   * - 1 = legacy: candidates merged into sources without verification (pre-RAG-fix)
+   */
+  provenanceVersion?: 1 | 2;
+  /** Optional rerank backend tag (e.g. "mock", "bge", "cohere"). */
+  rerankBackend?: string;
+}
+
+interface SourceMessageItem {
+  id: string;
+  content: string;
+  sources: SourceItem[];
+  confidence?: number;
+  confidenceBreakdown?: {
+    knowledge_score: number;
+    tool_score: number;
+    llm_self_score: number;
+    sub_agent_score: number;
+    handoff_intent: boolean;
+    no_support: boolean;
+    final: number;
+  } | null;
 }
 
 interface SourcePanelProps {
-  sources: SourceItem[];
+  sources?: SourceItem[];
   confidence?: number | null;
   confidenceBreakdown?: {
     knowledge_score: number;
@@ -29,7 +62,10 @@ interface SourcePanelProps {
   } | null;
   messageId?: string;
   conversationId?: string;
+  /** 消息列表模式：所有带引用的消息 */
+  messagesWithSources?: SourceMessageItem[];
   onClose: () => void;
+  onSelectMessage?: (msg: SourceMessageItem) => void;
 }
 
 function getSourceIcon(type: string | undefined) {
@@ -80,9 +116,55 @@ function getScoreTextColor(score: number): string {
   return 'text-red-600';
 }
 
-export function SourcePanel({ sources, confidence, confidenceBreakdown, messageId, conversationId, onClose }: SourcePanelProps) {
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
+export function SourcePanel({
+  sources = [],
+  confidence,
+  confidenceBreakdown,
+  messageId,
+  conversationId,
+  messagesWithSources,
+  onClose,
+  onSelectMessage,
+}: SourcePanelProps) {
+  // 源列表展开状态（使用数字索引）
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  // 置信度详情展开状态（独立状态）
+  const [confidenceExpanded, setConfidenceExpanded] = useState(false);
   const [feedbackStates, setFeedbackStates] = useState<Record<number, 'submitting' | 'submitted' | 'rejected'>>({});
+  // 消息列表模式：当前选中的消息
+  const [selectedMessage, setSelectedMessage] = useState<SourceMessageItem | null>(null);
+  // 是否显示消息列表
+  const isMessageListMode = messagesWithSources && messagesWithSources.length > 0;
+
+  // 当传入 messagesWithSources 时，自动显示消息列表
+  const [showList, setShowList] = useState(!!isMessageListMode);
+
+  // Sync showList when messagesWithSources changes
+  useEffect(() => {
+    setShowList(!!isMessageListMode);
+    if (!isMessageListMode) {
+      setSelectedMessage(null);
+    }
+  }, [isMessageListMode]);
+
+  // 处理消息选择
+  const handleSelectMessage = (msg: SourceMessageItem) => {
+    setSelectedMessage(msg);
+    setShowList(false);
+    onSelectMessage?.(msg);
+  };
+
+  // 处理返回列表
+  const handleBackToList = () => {
+    setSelectedMessage(null);
+    setShowList(true);
+  };
+
+  // 当前显示的 sources 和 confidence（优先使用选中的消息，否则使用 props）
+  const currentSources = selectedMessage?.sources || sources;
+  const currentConfidence = selectedMessage?.confidence ?? confidence;
+  const currentBreakdown = selectedMessage?.confidenceBreakdown ?? confidenceBreakdown;
+  const currentMessageId = selectedMessage?.id || messageId;
 
   // Group sources by type for summary
   const sourceTypeCounts = sources.reduce<Record<string, number>>((acc, s) => {
@@ -96,8 +178,9 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
     source: SourceItem,
     feedbackType: 'adopted' | 'rejected',
   ) => {
-    const itemId = source.knowledge_item_id || source.item_id;
-    if (!itemId) {
+    // P2: use stable chunk identity as the primary key; fall back to item id
+    const stableId = source.chunk_id ?? source.knowledge_item_id ?? source.item_id;
+    if (!stableId) {
       toast.error('无法定位知识条目');
       return;
     }
@@ -109,7 +192,11 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
         body: JSON.stringify({
           message_id: messageId,
           conversation_id: conversationId,
-          knowledge_item_id: itemId,
+          // P2: prefer chunk_id as stable key; include full identity for audit
+          knowledge_item_id: source.knowledge_item_id ?? source.item_id,
+          chunk_id: source.chunk_id ?? null,
+          chunk_index: source.chunk_index ?? 0,
+          content_hash: source.content_hash ?? null,
           knowledge_name: source.name,
           knowledge_score: source.score,
           feedback_type: feedbackType,
@@ -120,7 +207,7 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
       setFeedbackStates((prev) => ({ ...prev, [index]: 'submitted' }));
       toast.success(feedbackType === 'adopted' ? '已记录为有用' : '已记录为不准确');
     } catch (e) {
-      console.error('feedback error', e);
+      logger.error('feedback error', { error: e });
       setFeedbackStates((prev) => {
         const next = { ...prev };
         delete next[index];
@@ -133,86 +220,142 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
   return (
     <div className="w-80 border-l border-border bg-card shrink-0 flex flex-col overflow-hidden animate-slide-in-right">
       {/* Panel header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-4 h-12 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">AI 引用溯源</span>
+          {showList && isMessageListMode ? (
+            <>
+              <BookOpen className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-medium text-foreground leading-tight">选择消息</span>
+              <span className="text-xs text-muted-foreground leading-tight">({messagesWithSources.length})</span>
+            </>
+          ) : selectedMessage ? (
+            <>
+              <button
+                onClick={handleBackToList}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-medium text-foreground leading-tight">消息引用详情</span>
+            </>
+          ) : (
+            <>
+              <BookOpen className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-medium text-foreground leading-tight">AI 引用溯源</span>
+            </>
+          )}
         </div>
         <button
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Confidence overview */}
-        {confidence !== null && confidence !== undefined && (
+        {/* 消息列表模式 */}
+        {showList && isMessageListMode ? (
+          <div className="py-2">
+            {messagesWithSources.map((msg, index) => (
+              <button
+                key={msg.id || index}
+                onClick={() => handleSelectMessage(msg)}
+                className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors border-b border-border/30 last:border-b-0"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    {/* 消息内容预览 */}
+                    <div className="text-xs text-foreground line-clamp-2 mb-1">
+                      {msg.content}
+                    </div>
+                    {/* 引用统计 */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {msg.sources.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                          <BookOpen className="w-2.5 h-2.5" />
+                          {msg.sources.length}条引用
+                        </span>
+                      )}
+                      {msg.confidence !== undefined && msg.confidence !== null && (
+                        <span className="text-[10px] text-muted-foreground">
+                          置信度 {Math.round(msg.confidence * 100)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0 mt-1" />
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            {/* Confidence overview */}
+            {currentConfidence !== null && currentConfidence !== undefined && (
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground">综合置信度</span>
-              <span className={`text-sm font-semibold ${getScoreTextColor(confidence)}`}>
-                {Math.round(confidence * 100)}%
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold ${getScoreTextColor(currentConfidence)}`}>
+                  {Math.round(currentConfidence * 100)}%
+                </span>
+                {currentBreakdown && (
+                  <button
+                    onClick={() => setConfidenceExpanded(!confidenceExpanded)}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {confidenceExpanded ? (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${getScoreColor(confidence)}`}
-                style={{ width: `${Math.round(confidence * 100)}%` }}
+                className={`h-full rounded-full transition-all duration-500 ${getScoreColor(currentConfidence)}`}
+                style={{ width: `${Math.round(currentConfidence * 100)}%` }}
               />
             </div>
-            {/* Confidence breakdown */}
-            {confidenceBreakdown && (
+            {/* Confidence breakdown - expandable */}
+            {confidenceExpanded && currentBreakdown && (
               <div className="mt-2 space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <BookOpen className="w-3 h-3 text-primary" />
                   <span>知识库匹配</span>
-                  <span>{confidenceBreakdown.knowledge_score > 0 ? `${Math.round(confidenceBreakdown.knowledge_score * 100)}%` : '-'}</span>
+                  <span className="ml-auto">{currentBreakdown.knowledge_score > 0 ? `${Math.round(currentBreakdown.knowledge_score * 100)}%` : '-'}</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <Wrench className="w-3 h-3 text-emerald-500" />
                   <span>工具调用</span>
-                  <span>{confidenceBreakdown.tool_score > 0 ? `${Math.round(confidenceBreakdown.tool_score * 100)}%` : '-'}</span>
+                  <span className="ml-auto">{currentBreakdown.tool_score > 0 ? `${Math.round(currentBreakdown.tool_score * 100)}%` : '-'}</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
                   <span>LLM 自评</span>
-                  <span>{confidenceBreakdown.llm_self_score > 0 ? `${Math.round(confidenceBreakdown.llm_self_score * 100)}%` : '-'}</span>
+                  <span className="ml-auto">{currentBreakdown.llm_self_score > 0 ? `${Math.round(currentBreakdown.llm_self_score * 100)}%` : '-'}</span>
                 </div>
-                {confidenceBreakdown.sub_agent_score > 0 && (
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                    <span>子Agent</span>
-                    <span>{Math.round(confidenceBreakdown.sub_agent_score * 100)}%</span>
-                  </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <Network className="w-3 h-3 text-blue-500" />
+                  <span>子Agent</span>
+                  <span className="ml-auto">{currentBreakdown.sub_agent_score > 0 ? `${Math.round(currentBreakdown.sub_agent_score * 100)}%` : '-'}</span>
+                </div>
+                {currentBreakdown.no_support && (
+                  <div className="text-[10px] text-amber-600 mt-1">⚠️ 无知识库/工具支撑</div>
                 )}
-                {confidenceBreakdown.no_support && (
-                  <div className="text-[10px] text-amber-600 mt-1">无知识库/工具支撑</div>
-                )}
-                {confidenceBreakdown.handoff_intent && (
-                  <div className="text-[10px] text-red-500">检测到转人工意图</div>
+                {currentBreakdown.handoff_intent && (
+                  <div className="text-[10px] text-red-500">⚠️ 检测到转人工意图</div>
                 )}
               </div>
             )}
           </div>
         )}
 
-        {/* Source type summary */}
-        {Object.keys(sourceTypeCounts).length > 0 && (
-          <div className="px-4 py-2.5 border-b border-border">
-            <div className="flex items-center gap-2 flex-wrap">
-              {Object.entries(sourceTypeCounts).map(([type, count]) => (
-                <span
-                  key={type}
-                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
-                >
-                  {getSourceIcon(type)}
-                  {getSourceLabel(type)} {count}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Source list */}
-        {sources.length === 0 ? (
+                {/* Source list */}
+        {currentSources.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <div className="w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-3">
               <FileText className="w-5 h-5 text-muted-foreground/40" />
@@ -222,8 +365,8 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
           </div>
         ) : (
           <div className="py-2">
-            {sources.map((source, index) => (
-              <div key={index} className="px-3">
+            {currentSources.map((source, index) => (
+              <div key={index} className="px-3 mb-1">
                 <button
                   className="w-full text-left"
                   onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
@@ -235,34 +378,57 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
                     </div>
                     {/* Content preview */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-[10px] font-medium text-muted-foreground">
+                      {/* Header row: type badge, score, category */}
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                           {getSourceLabel(source.type)}
                         </span>
+                        {/* Legacy provenance marker — only show for v1 citations to help
+                            UI consumers distinguish pre-fix messages from claim-verified ones. */}
+                        {source.provenanceVersion === 1 && (
+                          <span
+                            className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                            title="Legacy retrieval source — claim support was not verified"
+                          >
+                            未核验引用
+                          </span>
+                        )}
+                        {source.rerankBackend === 'mock' && source.provenanceVersion !== 1 && (
+                          <span
+                            className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                            title="Heuristic rerank (mock fallback) — not a cross-encoder"
+                          >
+                            启发式打分
+                          </span>
+                        )}
                         {source.score !== undefined && source.score > 0 && (
-                          <span className={`text-[10px] font-medium ${getScoreTextColor(source.score)}`}>
-                            {Math.round(source.score * 100)}%
+                          <span className={`inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
+                            <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
                           </span>
                         )}
                         {source.category && (
-                          <span className="text-[10px] px-1 py-0 rounded bg-primary/8 text-primary">
+                          <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[80px]">
                             {source.category}
                           </span>
                         )}
                       </div>
+                      {/* Name */}
                       {source.name && (
-                        <div className="text-xs font-medium text-foreground truncate mb-0.5">
+                        <div className="text-xs font-medium text-foreground truncate mb-0.5" title={source.name}>
                           {source.name}
                         </div>
                       )}
+                      {/* Content preview */}
                       {source.content && (
                         <div className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
                           {source.content}
                         </div>
                       )}
                       {source.keyword && (
-                        <div className="text-[10px] text-amber-600 mt-0.5">
-                          关键词：{source.keyword}
+                        <div className="text-[10px] text-amber-600 mt-0.5 flex items-center gap-1">
+                          <span className="bg-amber-100 dark:bg-amber-900/30 px-1 py-0.5 rounded">
+                            关键词：{source.keyword}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -278,9 +444,12 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
                 </button>
                 {/* Expanded detail */}
                 {expandedIndex === index && source.content && (
-                  <div className="ml-7 mr-2 mb-2 p-3 bg-surface-container rounded-lg border border-border/50">
-                    <div className="text-[10px] font-medium text-muted-foreground mb-1.5">原文内容</div>
-                    <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words">
+                  <div className="mt-1 px-2 py-2 bg-surface-container rounded-lg border border-border/50">
+                    <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                      <FileText className="w-3 h-3" />
+                      原文内容
+                    </div>
+                    <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                       {source.content}
                     </div>
                     {/* Score bar */}
@@ -288,8 +457,8 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
                       <div className="mt-2 pt-2 border-t border-border/30">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[10px] text-muted-foreground">相关度</span>
-                          <span className={`text-[10px] font-medium ${getScoreTextColor(source.score)}`}>
-                            {Math.round(source.score * 100)}%
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
+                            <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
                           </span>
                         </div>
                         <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
@@ -301,7 +470,7 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
                       </div>
                     )}
                     {/* Feedback row */}
-                    {source.knowledge_item_id && messageId && (
+                    {source.knowledge_item_id && currentMessageId && (
                       <div className="mt-2 pt-2 border-t border-border/30 flex items-center justify-between gap-2">
                         {feedbackStates[index] === 'submitted' ? (
                           <span className="text-[10px] text-muted-foreground">已记录反馈，感谢</span>
@@ -343,6 +512,8 @@ export function SourcePanel({ sources, confidence, confidenceBreakdown, messageI
               </div>
             ))}
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

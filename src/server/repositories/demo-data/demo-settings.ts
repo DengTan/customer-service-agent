@@ -4,6 +4,7 @@ import type { SettingRow } from '../types';
 export const DEMO_SETTINGS: SettingRow[] = [
   { key: 'theme', value: 'light' },
   { key: 'language', value: 'zh-CN' },
+  { key: 'ai_model_enabled', value: 'true' },
   { key: 'ai_model', value: 'doubao-seed-2-0-lite-260215' },
   { key: 'multimodal_model', value: 'doubao-seed-2-0-pro-260215' },
   { key: 'multimodal_enabled', value: 'true' },

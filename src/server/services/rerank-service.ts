@@ -41,6 +41,7 @@ const DEFAULT_BATCH_SIZE = 8;
  */
 export class RerankService {
   private config: RerankConfig;
+  private lastBackend: 'bge' | 'cohere' | 'generic' | 'mock' | null = null;
 
   constructor(config: RerankConfig = {}) {
     this.config = {
@@ -55,6 +56,34 @@ export class RerankService {
    */
   updateConfig(config: Partial<RerankConfig>): void {
     this.config = { ...this.config, ...config };
+    this.lastBackend = null;
+  }
+
+  /**
+   * Identify which backend the most recent scoring pass actually used.
+   * Returns 'bge' | 'cohere' | 'generic' | 'mock'. Used by the orchestrator
+   * to surface a `degraded` flag in the evidence trace so callers know
+   * whether a real cross-encoder produced the scores.
+   */
+  getActiveBackend(): 'bge' | 'cohere' | 'generic' | 'mock' {
+    if (this.lastBackend) return this.lastBackend;
+
+    const model = this.config.model || DEFAULT_RERANK_MODEL;
+
+    // Cohere always wins if a key is set, matching scoreWithCohere() behavior
+    if (model.startsWith('cohere')) {
+      return process.env.COHERE_API_KEY ? 'cohere' : 'mock';
+    }
+
+    if (model.startsWith('bge-reranker')) {
+      return process.env.BGE_RERANK_API_URL ? 'bge' : 'mock';
+    }
+
+    if (model === 'mock' || !process.env.RERANK_API_URL) {
+      return 'mock';
+    }
+
+    return 'generic';
   }
 
   /**
@@ -180,6 +209,7 @@ export class RerankService {
         results: Array<{ index: number; relevance_score: number }>;
       };
 
+      this.lastBackend = 'bge';
       return candidates.map((c, idx) => ({
         ...c,
         rerankScore: data.results.find(r => r.index === idx)?.relevance_score ?? 0,
@@ -227,6 +257,7 @@ export class RerankService {
         results: Array<{ index: number; relevance_score: number }>;
       };
 
+      this.lastBackend = 'cohere';
       return candidates.map((c, idx) => ({
         ...c,
         rerankScore: data.results.find(r => r.index === idx)?.relevance_score ?? 0,
@@ -274,6 +305,7 @@ export class RerankService {
       };
 
       const scoreMap = new Map(data.scores.map(s => [s.id, s.score]));
+      this.lastBackend = 'generic';
       return candidates.map(c => ({
         ...c,
         rerankScore: scoreMap.get(c.id) ?? 0,
@@ -292,6 +324,8 @@ export class RerankService {
     query: string,
     candidates: RerankCandidate[]
   ): Array<RerankCandidate & { rerankScore: number }> {
+    this.lastBackend = 'mock';
+
     // Extract keywords from query
     const queryTerms = new Set(
       query

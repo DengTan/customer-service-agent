@@ -1,0 +1,34 @@
+---
+description: Replace console with structured logger
+alwaysApply: true
+---
+
+# Structured Logging
+
+使用项目 logger 而非 `console`。
+
+```typescript
+import { logger } from '@/lib/logger';
+
+// ❌ BAD
+console.error('Something went wrong');
+
+// ✅ GOOD
+logger.error('Something went wrong');
+logger.error('Failed to fetch', { data, error: err });
+```
+
+## Log Levels
+
+| Method | Use Case |
+|--------|----------|
+| `logger.debug()` | 详细调试信息 |
+| `logger.info()` | 一般操作事件 |
+| `logger.warn()` | 可恢复的警告 |
+| `logger.error()` | 错误/失败 |
+
+## 规范
+
+- 第二个参数传入上下文对象
+- 敏感数据自动脱敏
+- error 对象使用 `error: err` 属性

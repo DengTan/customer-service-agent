@@ -1,7 +1,9 @@
-import { KnowledgeClient, Config } from 'coze-coding-dev-sdk';
+import { getEmbeddingService } from './embedding-service';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { Bm25SearchService, getBm25Service, Bm25Result } from './bm25-search-service';
-import { getRerankService, resetRerankService, RerankCandidate, RerankResult } from './rerank-service';
+import { RerankService, resetRerankService, RerankCandidate, RerankResult } from './rerank-service';
 import { logger } from '@/lib/logger';
+import { HTTP } from '@/lib/constants';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 
 export interface HybridSearchConfig {
@@ -14,7 +16,6 @@ export interface HybridSearchConfig {
   bm25TopK: number;
   rrfK: number;
   minScoreThreshold: number;
-  parentChunkEnabled: boolean;
 }
 
 export interface HybridSearchResult {
@@ -25,6 +26,12 @@ export interface HybridSearchResult {
   score: number;
   source: 'vector' | 'bm25' | 'hybrid';
   rank: number;
+  /** Stable chunk identity: populated when a chunk matched, null when parent item matched */
+  chunkId: string | null;
+  /** Chunk position within parent (0 when parent matched directly) */
+  chunkIndex: number;
+  /** SHA-256 content hash for citation stability */
+  contentHash: string | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -37,6 +44,10 @@ export interface HybridSearchResponse {
   vectorResults: number;
   bm25Results: number;
   rerankApplied: boolean;
+  /** Which rerank backend (if any) actually produced the scores. */
+  rerankBackend: 'bge' | 'cohere' | 'generic' | 'mock' | 'none';
+  /** True when rerank was disabled OR fell back to mock scoring. */
+  rerankDegraded: boolean;
 }
 
 // Default configuration
@@ -49,8 +60,7 @@ const DEFAULT_CONFIG: HybridSearchConfig = {
   vectorTopK: 20,
   bm25TopK: 20,
   rrfK: 60,
-  minScoreThreshold: 0.75,
-  parentChunkEnabled: false,
+  minScoreThreshold: HTTP.KNOWLEDGE_MIN_SCORE,
 };
 
 /**
@@ -121,12 +131,10 @@ export class HybridSearchService {
     }
   ): Promise<HybridSearchResponse> {
     const startTime = Date.now();
-    const limit = options?.limit || this.config.rerankTopN;
-    const minScore = options?.minScore ?? this.config.minScoreThreshold;
-    const skipRerank = options?.skipRerank ?? !this.config.rerankEnabled;
-
-    // Load fresh config
-    await this.loadConfig();
+    const config = await this.loadConfig();
+    const limit = options?.limit || config.rerankTopN;
+    const minScore = options?.minScore ?? config.minScoreThreshold;
+    const skipRerank = options?.skipRerank ?? !config.rerankEnabled;
 
     // Clean query
     const cleanQuery = this.stripToolCallPatterns(query);
@@ -149,9 +157,10 @@ export class HybridSearchService {
       // Step 3: Rerank (if enabled)
       let finalResults: HybridSearchResult[];
       let rerankApplied = false;
+      let rerankBackend: 'bge' | 'cohere' | 'generic' | 'mock' | 'none' = 'none';
 
       if (!skipRerank && fusedResults.length > 0) {
-        const rerankService = getRerankService({ model: this.config.rerankModel });
+        const rerankService = new RerankService({ model: this.config.rerankModel });
         const candidates: RerankCandidate[] = fusedResults.map(r => ({
           id: r.id,
           content: r.content,
@@ -166,6 +175,7 @@ export class HybridSearchService {
         const reranked = await rerankService.rerank(cleanQuery, candidates, limit);
         finalResults = this.convertRerankResults(reranked);
         rerankApplied = true;
+        rerankBackend = rerankService.getActiveBackend();
       } else {
         finalResults = fusedResults.slice(0, limit);
       }
@@ -194,6 +204,8 @@ export class HybridSearchService {
         vectorResults: vectorResults.length,
         bm25Results: bm25Results.length,
         rerankApplied,
+        rerankBackend: rerankApplied ? rerankBackend : 'none',
+        rerankDegraded: !rerankApplied || rerankBackend === 'mock',
       };
     } catch (err) {
       logger.agent.error('[HybridSearch] Search failed', { error: err, query: cleanQuery });
@@ -206,44 +218,64 @@ export class HybridSearchService {
         vectorResults: 0,
         bm25Results: 0,
         rerankApplied: false,
+        rerankBackend: 'none',
+        rerankDegraded: true,
       };
     }
   }
 
   /**
-   * Vector search using Coze SDK.
+   * Vector search using Ollama + pgvector.
    */
   private async vectorSearch(query: string): Promise<HybridSearchResult[]> {
     try {
-      const config = new Config();
-      const client = new KnowledgeClient(config);
+      // Get query embedding
+      const queryEmbedding = await getEmbeddingService().embed(query);
 
-      const result = await client.search(
-        query,
-        undefined,
-        this.config.vectorTopK,
-        0 // No pre-filtering, get all results
-      );
+      // Search via pgvector RPC
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.rpc('match_knowledge_items', {
+        p_query_embedding: queryEmbedding,
+        p_match_threshold: 0.0,
+        p_match_count: this.config.vectorTopK,
+      });
 
-      if (result.code !== 0 || !result.chunks) {
+      if (error || !data) {
+        logger.agent.warn('[HybridSearch] Vector search RPC failed', { error });
         return [];
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (result.chunks as any[]).map(chunk => ({
-        id: chunk.id || chunk.knowledge_item_id || `vec_${chunk.doc_id}`,
-        content: chunk.content,
-        name: chunk.name || '',
-        category: chunk.category || '未分类',
-        score: chunk.score,
-        source: 'vector' as const,
-        rank: 0,
-        metadata: {
-          docId: chunk.doc_id,
-          knowledgeItemId: chunk.knowledge_item_id,
-          originalScore: chunk.score, // Preserve original vector score for hybrid fusion
-        },
-      }));
+      return (data as Array<{
+        id: string;
+        content: string;
+        name?: string;
+        category?: string;
+        similarity: number;
+        knowledge_item_id?: string;
+        chunk_id?: string;
+        chunk_index?: number;
+        content_hash?: string;
+      }>).map(item => {
+        const itemId = item.knowledge_item_id || item.id || '';
+        return {
+          id: itemId,
+          content: item.content,
+          name: item.name || '',
+          category: item.category || '未分类',
+          score: item.similarity,
+          source: 'vector' as const,
+          rank: 0,
+          chunkId: item.chunk_id ?? null,
+          chunkIndex: item.chunk_index ?? 0,
+          contentHash: item.content_hash ?? null,
+          metadata: {
+            knowledgeItemId: item.knowledge_item_id,
+            chunkId: item.chunk_id,
+            contentHash: item.content_hash,
+            originalScore: item.similarity,
+          },
+        };
+      });
     } catch (err) {
       logger.agent.warn('[HybridSearch] Vector search failed', { error: err });
       return [];
@@ -260,20 +292,26 @@ export class HybridSearchService {
 
       const results = this.bm25Service.search(query, this.config.bm25TopK);
 
-      return results.map(r => ({
-        id: r.id,
-        content: r.content,
-        name: r.name,
-        category: r.category,
-        score: r.score,
-        source: 'bm25' as const,
-        rank: 0,
-        metadata: {
-          knowledgeItemId: r.knowledge_item_id,
+      return results.map(r => {
+        const isChunk = r.knowledge_item_id !== r.id;
+        return {
+          id: r.id,
+          content: r.content,
+          name: r.name,
+          category: r.category,
+          score: r.score,
+          source: 'bm25' as const,
+          rank: 0,
+          chunkId: isChunk ? r.id : null,
           chunkIndex: r.chunk_index,
-          originalScore: r.score, // Preserve original BM25 score for hybrid fusion
-        },
-      }));
+          contentHash: null, // BM25 doesn't compute content_hash
+          metadata: {
+            knowledgeItemId: r.knowledge_item_id,
+            chunkIndex: r.chunk_index,
+            originalScore: r.score,
+          },
+        };
+      });
     } catch (err) {
       logger.agent.warn('[HybridSearch] BM25 search failed', { error: err });
       return [];
@@ -302,26 +340,29 @@ export class HybridSearchService {
     }>();
 
     // Add vector results with RRF contribution
+    // P2: dedup key = chunkId ?? id (stable chunk identity)
     for (let i = 0; i < Math.min(vectorResults.length, vectorTopK); i++) {
       const r = vectorResults[i];
+      const dedupKey = r.chunkId ?? r.id;
       const rrfScore = 1 / (k + i + 1);
-      const existing = scoreMap.get(r.id);
+      const existing = scoreMap.get(dedupKey);
       if (existing) {
         existing.rrfScore += this.config.vectorWeight * rrfScore;
       } else {
-        scoreMap.set(r.id, { result: { ...r }, rrfScore: this.config.vectorWeight * rrfScore });
+        scoreMap.set(dedupKey, { result: { ...r }, rrfScore: this.config.vectorWeight * rrfScore });
       }
     }
 
     // Add BM25 results with RRF contribution
     for (let i = 0; i < Math.min(bm25Results.length, bm25TopK); i++) {
       const r = bm25Results[i];
+      const dedupKey = r.chunkId ?? r.id;
       const rrfScore = 1 / (k + i + 1);
-      const existing = scoreMap.get(r.id);
+      const existing = scoreMap.get(dedupKey);
       if (existing) {
         existing.rrfScore += this.config.bm25Weight * rrfScore;
       } else {
-        scoreMap.set(r.id, { result: { ...r }, rrfScore: this.config.bm25Weight * rrfScore });
+        scoreMap.set(dedupKey, { result: { ...r }, rrfScore: this.config.bm25Weight * rrfScore });
       }
     }
 
@@ -359,16 +400,22 @@ export class HybridSearchService {
    * Convert rerank results back to HybridSearchResult format.
    */
   private convertRerankResults(reranked: RerankResult[]): HybridSearchResult[] {
-    return reranked.map((r, idx) => ({
-      id: r.id,
-      content: r.content,
-      name: (r.metadata as Record<string, unknown>)?.name as string || '',
-      category: (r.metadata as Record<string, unknown>)?.category as string || '未分类',
-      score: r.rerankScore,
-      source: (r.metadata as Record<string, unknown>)?.source as 'vector' | 'bm25' | 'hybrid' || 'hybrid',
-      rank: idx + 1,
-      metadata: r.metadata,
-    }));
+    return reranked.map((r, idx) => {
+      const meta = r.metadata as Record<string, unknown>;
+      return {
+        id: r.id,
+        content: r.content,
+        name: (meta?.name as string) || '',
+        category: (meta?.category as string) || '未分类',
+        score: r.rerankScore,
+        source: (meta?.source as 'vector' | 'bm25' | 'hybrid') || 'hybrid',
+        rank: idx + 1,
+        chunkId: (meta?.chunkId as string | null) ?? null,
+        chunkIndex: (meta?.chunkIndex as number) ?? 0,
+        contentHash: (meta?.contentHash as string | null) ?? null,
+        metadata: r.metadata,
+      };
+    });
   }
 
   /**

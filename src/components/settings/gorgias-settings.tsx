@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Globe, Key, Check, X, Loader2, RefreshCw, ExternalLink, Webhook, Copy, CheckCircle2, AlertTriangle, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 
 interface GorgiasSettings {
   enabled: boolean;
@@ -76,7 +77,7 @@ export default function GorgiasSettings() {
         setWebhookDiagnostics((data.webhook as WebhookDiagnostics) || null);
       }
     } catch (err) {
-      console.error('Failed to fetch webhook diagnostics:', err);
+      logger.error('Failed to fetch webhook diagnostics', { error: err });
       // Diagnostics is non-critical, continue silently but log for debugging
     } finally {
       setDiagnosing(false);
@@ -121,7 +122,7 @@ export default function GorgiasSettings() {
         fetchDiagnostics();
       }
     } catch (err) {
-      console.error('Failed to load Gorgias settings:', err);
+      logger.error('Failed to load Gorgias settings', { error: err });
     } finally {
       setLoading(false);
     }
@@ -221,7 +222,7 @@ export default function GorgiasSettings() {
         toast.error(errorMsg);
       }
     } catch (err) {
-      console.error('Failed to save Gorgias settings:', err);
+      logger.error('Failed to save Gorgias settings', { error: err });
       toast.error('网络错误，请检查连接后重试');
     } finally {
       setSaving(false);

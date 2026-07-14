@@ -435,7 +435,7 @@ export function ProductFormModal({ open, product, onClose, onSaved }: ProductFor
                         <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                           {CHART_TYPE_LABELS[chart.chart_type as keyof typeof CHART_TYPE_LABELS] || chart.chart_type}
                         </span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${chart.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${chart.status === 'active' ? 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
                           {chart.status === 'active' ? '启用' : '禁用'}
                         </span>
                       </div>

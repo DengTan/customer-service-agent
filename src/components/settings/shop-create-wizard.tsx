@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,12 +95,12 @@ function Step1Knowledge({ knowledgeIds, setKnowledgeIds }: Step1Props) {
                 onClick={() => toggle(item.id)}
                 className={`relative p-3 border rounded-lg cursor-pointer transition-all ${
                   selected
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-blue-300'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
                 }`}
               >
                 <div className={`absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                  selected ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'
+                  selected ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-300'
                 }`}>
                   {selected ? '✓' : '+'}
                 </div>
@@ -152,8 +153,8 @@ function Step2BasicConfig({ config, setConfig }: Step2Props) {
               key={opt.value}
               className={`px-3 py-1.5 border rounded-lg text-sm cursor-pointer transition-colors ${
                 config.shipping_policy === opt.value
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-blue-300'
               }`}
             >
               <input
@@ -179,8 +180,8 @@ function Step2BasicConfig({ config, setConfig }: Step2Props) {
               key={String(v)}
               className={`px-3 py-1.5 border rounded-lg text-sm cursor-pointer transition-colors ${
                 config.allow_designated_express === v
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-600'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
               }`}
             >
               <input
@@ -213,8 +214,8 @@ function Step2BasicConfig({ config, setConfig }: Step2Props) {
               key={opt.value}
               className={`px-3 py-1.5 border rounded-lg text-sm cursor-pointer transition-colors ${
                 config.shipping_time === opt.value
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-blue-300'
               }`}
             >
               <input
@@ -254,8 +255,8 @@ function Step2BasicConfig({ config, setConfig }: Step2Props) {
               key={String(v)}
               className={`px-3 py-1.5 border rounded-lg text-sm cursor-pointer transition-colors ${
                 config.return_policy_7days === v
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-600'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'
               }`}
             >
               <input
@@ -286,8 +287,8 @@ function Step2BasicConfig({ config, setConfig }: Step2Props) {
               key={opt.value}
               className={`px-3 py-1.5 border rounded-lg text-sm cursor-pointer transition-colors ${
                 config.handoff_timeout_hours === opt.value
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-blue-300'
               }`}
             >
               <input
@@ -547,7 +548,7 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
           });
           setQuickReplies(merged);
         })
-        .catch((err) => console.error('[ShopCreateWizard] Failed to fetch quick replies:', err));
+        .catch((err) => logger.error('[ShopCreateWizard] Failed to fetch quick replies', { error: err }));
     }
   }, [open, step]);
 
@@ -674,7 +675,7 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
                     ? 'bg-green-500 text-white'
                     : step === n
                     ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-300'
                 }`}>
                   {step > n ? '✓' : n}
                 </div>

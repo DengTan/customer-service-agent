@@ -3,13 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw } from 'lucide-react';
+import useSWR from 'swr';
+import { swrConfig } from '@/lib/swr-config';
+import { useVisibilityAwarePoll } from '@/hooks/use-visibility-aware-poll';
 import { ConversationMonitorList } from './conversation-monitor-list';
 import { ConversationDetail } from './conversation-detail';
 import { StatsBar } from './stats-bar';
 import { AlertBar } from './alert-bar';
 import { AlertDrawer } from './alert-drawer';
+import { MonitorListSkeleton, MonitorDetailSkeleton } from './monitor-skeleton';
 import { useLazyList } from '@/hooks/use-lazy-list';
 import type { Conversation, Message } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 interface AlertStats {
   unresolved: number;
@@ -90,54 +95,57 @@ export function MonitorPage() {
     pageSize: 10,
   });
 
-  // Load alert stats
-  const loadAlertStats = useCallback(async () => {
-    try {
-      const res = await fetch('/api/alerts?limit=100');
-      if (!res.ok) return;
-      const data = await res.json();
-      const alerts = data.alerts || [];
+  // SWR cache for alert stats (refresh every 30 seconds)
+  const fetcher = (url: string) => fetch(url).then((r) => r.json());
+  const { data: alertStatsData, mutate: mutateAlertStats } = useSWR('/api/alerts?limit=100', fetcher, {
+    ...swrConfig,
+    refreshInterval: 30000,
+  });
+
+  // Update alert stats from SWR data
+  useEffect(() => {
+    if (alertStatsData?.alerts) {
+      const alerts = alertStatsData.alerts;
       setAlertStats({
         unresolved: alerts.filter((a: { is_resolved: boolean }) => !a.is_resolved).length,
         lowConfidence: alerts.filter((a: { type: string }) => a.type === 'low_confidence').length,
         highTurn: alerts.filter((a: { type: string }) => a.type === 'high_turn_count').length,
         ticket: alerts.filter((a: { type: string }) => a.type.startsWith('ticket_')).length,
       });
-    } catch { /* ignore */ }
-  }, []);
+    }
+  }, [alertStatsData]);
 
-  // Initial load + polling (stable useEffect with deps=[])
-  const loadInitialRef = useRef(loadInitial);
-  const loadAlertStatsRef = useRef(loadAlertStats);
-  const startPollingRef = useRef(startPolling);
-  const cleanupRef = useRef(cleanup);
-
+  // Initial load
   useEffect(() => {
-    loadInitialRef.current = loadInitial;
+    loadInitial();
   }, [loadInitial]);
-  useEffect(() => {
-    loadAlertStatsRef.current = loadAlertStats;
-  }, [loadAlertStats]);
-  useEffect(() => {
-    startPollingRef.current = startPolling;
-  }, [startPolling]);
+
+  // Use visibility-aware polling for conversations
+  useVisibilityAwarePoll(
+    () => {
+      if (!isInitialLoading && conversations.length > 0) {
+        refresh();
+      }
+    },
+    5000,
+    true
+  );
+
+  // Cleanup on unmount
+  const cleanupRef = useRef(cleanup);
   useEffect(() => {
     cleanupRef.current = cleanup;
   }, [cleanup]);
 
   useEffect(() => {
-    loadInitialRef.current();
-    loadAlertStatsRef.current();
-    startPollingRef.current(5000);
     return () => {
       cleanupRef.current();
     };
   }, []);
 
-  // Sync statusCountsRef → state (triggered whenever fetchFn may have updated the ref)
+  // Sync statusCountsRef → state
   useEffect(() => {
     const incoming = statusCountsRef.current;
-    // Only update if actually changed (shallow compare)
     const changed =
       incoming.active !== statusCounts.active ||
       incoming.handoff !== statusCounts.handoff ||
@@ -146,7 +154,7 @@ export function MonitorPage() {
     if (changed) {
       setStatusCounts(incoming);
     }
-  }); // intentionally no deps — reads latest ref after every render
+  });
 
   // Load messages when selection changes
   const loadMessages = useCallback(async (convId: string, silent = false) => {
@@ -159,7 +167,7 @@ export function MonitorPage() {
         setMessages(data.messages);
       }
     } catch (err) {
-      console.error('加载消息失败:', err);
+      logger.error('加载消息失败', { error: err });
       if (!silent) toast.error('加载消息失败');
     } finally {
       if (!silent) setIsLoadingMessages(false);
@@ -202,7 +210,7 @@ export function MonitorPage() {
       );
       toast.success('已接管对话');
     } catch (err) {
-      console.error('接管失败:', err);
+      logger.error('接管失败', { error: err });
       toast.error('接管失败，请重试');
     }
   }, [updateItems]);
@@ -220,7 +228,7 @@ export function MonitorPage() {
       );
       toast.success('对话已结束');
     } catch (err) {
-      console.error('结束对话失败:', err);
+      logger.error('结束对话失败', { error: err });
       toast.error('结束对话失败');
     }
   }, [updateItems]);
@@ -238,7 +246,7 @@ export function MonitorPage() {
       );
       toast.success('对话已重新开启');
     } catch (err) {
-      console.error('重开对话失败:', err);
+      logger.error('重开对话失败', { error: err });
       toast.error('重开对话失败');
     }
   }, [updateItems]);
@@ -344,9 +352,9 @@ export function MonitorPage() {
   const handleManualRefresh = useCallback(async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
-    await Promise.all([refresh(), loadAlertStats()]);
+    await refresh();
     setIsRefreshing(false);
-  }, [isRefreshing, refresh, loadAlertStats]);
+  }, [isRefreshing, refresh]);
 
   // Alert bar click
   const handleAlertClick = useCallback(() => {
@@ -392,32 +400,40 @@ export function MonitorPage() {
         activeFilter={activeFilter}
       />
       <div className="flex flex-1 min-h-0">
-        <ConversationMonitorList
-          conversations={conversations}
-          selectedId={selectedId}
-          onSelect={handleSelect}
-          activeFilter={activeFilter}
-          hasMore={hasMore}
-          isLoadingMore={isLoadingMore}
-          onLoadMore={loadMore}
-          onSearchChange={handleSearchChange}
-          onFilterChange={handleTabFilterChange}
-          isInitialLoading={isInitialLoading}
-          total={total}
-        />
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <ConversationDetail
-            conversation={selectedConversation}
-            messages={messages}
-            isLoading={isLoadingMessages}
-            onTakeover={handleTakeover}
-            onEnd={handleEnd}
-            onReopen={handleReopen}
-            onSendMessage={handleSendMessage}
-            onSendInternalNote={handleSendInternalNote}
-            onCreateTicket={handleCreateTicket}
+        {isInitialLoading ? (
+          <MonitorListSkeleton count={8} />
+        ) : (
+          <ConversationMonitorList
+            conversations={conversations}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            activeFilter={activeFilter}
+            hasMore={hasMore}
+            isLoadingMore={isLoadingMore}
+            onLoadMore={loadMore}
+            onSearchChange={handleSearchChange}
+            onFilterChange={handleTabFilterChange}
+            isInitialLoading={isInitialLoading}
+            total={total}
           />
-        </div>
+          )}
+        {(isInitialLoading || (!selectedConversation && !isInitialLoading)) ? (
+          <MonitorDetailSkeleton />
+        ) : (
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <ConversationDetail
+              conversation={selectedConversation}
+              messages={messages}
+              isLoading={isLoadingMessages}
+              onTakeover={handleTakeover}
+              onEnd={handleEnd}
+              onReopen={handleReopen}
+              onSendMessage={handleSendMessage}
+              onSendInternalNote={handleSendInternalNote}
+              onCreateTicket={handleCreateTicket}
+            />
+          </div>
+        )}
       </div>
       <AlertBar
         unresolvedAlerts={alertStats.unresolved}
@@ -426,7 +442,7 @@ export function MonitorPage() {
         ticketAlertCount={alertStats.ticket}
         onClick={handleAlertClick}
       />
-      <AlertDrawer open={alertDrawerOpen} onOpenChange={setAlertDrawerOpen} onAlertResolved={loadAlertStats} onConversationClick={(id) => { setSelectedId(id); setAlertDrawerOpen(false); }} />
+      <AlertDrawer open={alertDrawerOpen} onOpenChange={setAlertDrawerOpen} onAlertResolved={() => mutateAlertStats()} onConversationClick={(id) => { setSelectedId(id); setAlertDrawerOpen(false); }} />
     </div>
   );
 }

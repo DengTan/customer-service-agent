@@ -1,15 +1,19 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess } from '@/lib/api-utils';
+import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
 import { CustomerTagService } from '@/server/services/customer-tag-service';
 
 const customerTagService = new CustomerTagService();
 
-export const GET = withErrorHandlerSimple(async () => {
+export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'customers', 'read');
+  if (denied) return denied;
   const tags = await customerTagService.listTags();
   return apiSuccess({ tags });
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'customers', 'write');
+  if (denied) return denied;
   const body = await request.json();
   const name = (body?.name as string) || '';
   const color = (body?.color as string) || '#2F6BFF';
@@ -20,6 +24,8 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'customers', 'write');
+  if (denied) return denied;
   const body = await request.json();
   const id = (body?.id as string) || '';
   const updates: { id: string; name?: string; color?: string; category?: string } = { id };
@@ -32,6 +38,8 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'customers', 'delete');
+  if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id') || '';
   await customerTagService.deleteTag(id);

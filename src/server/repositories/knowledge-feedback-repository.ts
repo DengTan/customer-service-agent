@@ -1,11 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
+import { logger } from '@/lib/logger';
 
 export interface KnowledgeFeedbackInput {
   message_id: string;
   conversation_id?: string | null;
   knowledge_item_id?: string | null;
+  /** P2: stable chunk identity — prefer as audit key over knowledge_item_id alone */
+  chunk_id?: string | null;
+  chunk_index?: number;
+  content_hash?: string | null;
   knowledge_name?: string | null;
   knowledge_score?: number | null;
   feedback_type: 'adopted' | 'rejected';
@@ -18,6 +23,10 @@ export interface KnowledgeFeedbackItem {
   message_id: string;
   conversation_id: string | null;
   knowledge_item_id: string | null;
+  // P2: chunk-level citation identity
+  chunk_id: string | null;
+  chunk_index: number | null;
+  content_hash: string | null;
   knowledge_name: string | null;
   knowledge_score: number | null;
   feedback_type: 'adopted' | 'rejected';
@@ -51,6 +60,9 @@ export class KnowledgeFeedbackRepository {
         message_id: input.message_id,
         conversation_id: input.conversation_id ?? null,
         knowledge_item_id: input.knowledge_item_id ?? null,
+        chunk_id: input.chunk_id ?? null,
+        chunk_index: input.chunk_index ?? null,
+        content_hash: input.content_hash ?? null,
         knowledge_name: input.knowledge_name ?? null,
         knowledge_score: input.knowledge_score ?? null,
         feedback_type: input.feedback_type,
@@ -68,13 +80,16 @@ export class KnowledgeFeedbackRepository {
         message_id: input.message_id,
         conversation_id: input.conversation_id ?? null,
         knowledge_item_id: input.knowledge_item_id ?? null,
+        chunk_id: input.chunk_id ?? null,
+        chunk_index: input.chunk_index ?? null,
+        content_hash: input.content_hash ?? null,
         knowledge_name: input.knowledge_name ?? null,
         knowledge_score: input.knowledge_score ?? null,
         feedback_type: input.feedback_type,
         reason: input.reason ?? null,
         comment: input.comment ?? null,
       })
-      .select('id, message_id, conversation_id, knowledge_item_id, knowledge_name, knowledge_score, feedback_type, reason, comment, created_at')
+      .select('id, message_id, conversation_id, knowledge_item_id, chunk_id, chunk_index, content_hash, knowledge_name, knowledge_score, feedback_type, reason, comment, created_at')
       .single();
 
     if (error) {
@@ -178,7 +193,7 @@ export class KnowledgeFeedbackRepository {
         .update({ [field]: current + 1, last_hit_at: new Date().toISOString() })
         .eq('id', itemId);
     } catch (error) {
-      console.error('[KnowledgeFeedbackRepository] Failed to increment counter:', error);
+      logger.error('[KnowledgeFeedbackRepository] Failed to increment counter', { error });
     }
   }
 }

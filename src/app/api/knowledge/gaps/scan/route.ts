@@ -23,7 +23,6 @@ const MIN_LENGTH = 4;
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const forbidden = requireRole(request, ADMIN_ONLY);
   if (forbidden) return forbidden;
-  console.log('[gaps/scan] HIT');
 
   const { data: body } = await parseJsonBody<ScanBody>(request);
   const windowDays = Math.min(Math.max(body?.windowDays ?? 7, 1), 30);
@@ -39,7 +38,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     .from('conversations')
     .select('id, status, handoff_reason, message_count, updated_at')
     .gte('updated_at', since);
-  console.log('[gaps/scan] since:', since, 'convs:', convs?.length, 'err:', convErr?.message);
   if (convErr) {
     return apiSuccess({ scanned: 0, gaps_found: 0, error: convErr.message });
   }
@@ -116,4 +114,3 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
   return apiSuccess({ scanned, gaps_found: gapsFound, window_days: windowDays, dry_run: dryRun });
 });
-/* HMR trigger Mon Jun 15 16:57:44 CST 2026 */

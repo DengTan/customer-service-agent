@@ -201,9 +201,9 @@ export function RichMessageCard({ type, content, onAction }: RichMessageCardProp
                 key={i}
                 className={`text-xs px-3 py-1 rounded-md transition-colors ${
                   action.action === 'confirm_refund'
-                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                    ? 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400 hover:bg-green-300 dark:hover:bg-green-800'
                     : action.action === 'cancel_refund'
-                    ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                     : 'bg-primary/10 text-primary hover:bg-primary/20'
                 }`}
                 onClick={() => onAction?.({

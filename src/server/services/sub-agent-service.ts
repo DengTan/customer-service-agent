@@ -1,4 +1,6 @@
 import { BotConfigRepository, type BotConfigRow } from '@/server/repositories/bot-config-repository';
+import { LLMClientAdapter } from './llm-client-adapter';
+import { ToolExecutionService } from './tool-execution-service';
 import {
   SubAgentRepository,
   type AgentDelegationRow,
@@ -6,24 +8,9 @@ import {
   type CreateDelegationInput,
   type CreateCollaborationInput,
 } from '@/server/repositories/sub-agent-repository';
+import { SettingsRepository } from '@/server/repositories/settings-repository';
+import { ServiceError } from './service-error';
 import { logger } from '@/lib/logger';
-
-// Local error class for service-level errors
-class ServiceError extends Error {
-  public readonly status: number;
-  public readonly code: string;
-  constructor(message: string, opts: { status: number; code: string }) {
-    super(message);
-    this.status = opts.status;
-    this.code = opts.code;
-  }
-}
-
-function toServiceError(error: unknown, fallbackMessage: string, fallbackCode: string): ServiceError {
-  if (error instanceof ServiceError) return error;
-  const message = error instanceof Error ? error.message : fallbackMessage;
-  return new ServiceError(message, { status: 500, code: fallbackCode });
-}
 
 // Normalize text to prevent zero-width character bypass attacks
 function normalizeText(text: string): string {
@@ -33,12 +20,38 @@ function normalizeText(text: string): string {
     .replace(/[\u200B-\u200F\uFEFF\u00AD]/g, '');
 }
 
+function toServiceError(error: unknown, fallbackMessage: string, fallbackCode: string): ServiceError {
+  if (error instanceof ServiceError) return error;
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  return new ServiceError(message, { status: 500, code: fallbackCode });
+}
+
 // Intent categories for sub-agent routing
 const INTENT_CATEGORIES: Record<string, string[]> = {
   order_query: ['订单', '查询订单', '订单状态', '到哪了', '物流', '快递', '发货', '收货', '订单号', '修改地址', '取消订单'],
   refund_request: ['退款', '退钱', '退款进度', '退款状态', '退款查询'],
   after_sales: ['换货', '退货', '维权', '投诉', '质量问题', '破损', '瑕疵', '假货', '维修', '售后'],
 };
+
+// Tool-call protocol prompt segment (mirrors llm-streaming-service.ts)
+const TOOL_CALLS_GUIDE = `[TOOL_CALL]工具名|参数JSON[/TOOL_CALL]
+
+当需要执行操作时，在回复末尾添加工具调用，格式如下：
+
+[TOOL_CALL]工具名|参数JSON[/TOOL_CALL]
+
+可用工具：
+1. query_order_status - 查询订单状态（参数：order_id）
+2. query_logistics - 查询物流进度（参数：tracking_number）
+3. apply_refund - 申请退款（参数：order_id, reason, amount?）
+4. modify_shipping_address - 修改收货地址（参数：order_id, new_address, new_name?, new_phone?）
+5. query_product_detail - 查询商品详情（参数：sku?/name?/product_id?）
+6. query_size_chart - 查询尺码表（参数：sku?/category?/name?/size_chart_id?）
+
+重要提示：
+- 只在确实需要执行操作时才使用工具调用
+- 工具调用会阻塞回复直到获得结果，请等待结果后再继续回复
+- 如果用户只是询问信息，可以直接回答，不需要使用工具`;
 
 export interface DelegationResult {
   delegation: AgentDelegationRow;
@@ -56,9 +69,97 @@ export interface CollaborationRequest {
   context?: Record<string, unknown>;
 }
 
+const MAX_SUB_AGENTS_PER_BOT = 10;
+const DEFAULT_MAX_MAIN_BOTS = 10;
+const MAX_MAIN_BOTS_SETTING_KEY = 'max_main_bots';
+
+/**
+ * Read the configured main-bot cap from the settings table. Mirrors the
+ * DB trigger (20260710_main_bot_cap_trigger.sql): a missing or non-numeric
+ * value falls back to the factory default of 10. Range-clamped to
+ * [1, 1000] to prevent typos from disabling the cap entirely.
+ */
+async function readMainBotCap(): Promise<number> {
+  try {
+    const settingsRepo = new SettingsRepository();
+    const raw = await settingsRepo.get(MAX_MAIN_BOTS_SETTING_KEY);
+    if (raw == null || raw === '') return DEFAULT_MAX_MAIN_BOTS;
+    const parsed = parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_MAX_MAIN_BOTS;
+    return Math.min(Math.max(parsed, 1), 1000);
+  } catch (err) {
+    logger.warn('[SubAgentService] Failed to read max_main_bots setting, using default', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return DEFAULT_MAX_MAIN_BOTS;
+  }
+}
+
 export class SubAgentService {
   private readonly botConfigRepo = new BotConfigRepository();
   private readonly subAgentRepo = new SubAgentRepository();
+  private readonly toolExecution = new ToolExecutionService();
+
+  /**
+   * Count sub-agents whose status is "active" under a parent bot.
+   * Disabled sub-agents do not count against the per-parent quota so admins
+   * can re-enable / replace them without bumping into the cap.
+   */
+  async countActiveSubAgents(parentBotId: string): Promise<number> {
+    try {
+      const all = await this.botConfigRepo.listSubAgents(parentBotId);
+      return all.filter((a) => a.status === 'active').length;
+    } catch (error) {
+      throw toServiceError(error, '查询子Agent数量失败', 'DB_ERROR');
+    }
+  }
+
+  /**
+   * Assert that the global main-bot count has not yet reached the cap.
+   * Throws ServiceError(MAX_MAIN_BOTS_EXCEEDED) when the total active
+   * main-bot count already equals or exceeds the configured cap.
+   *
+   * The cap is read from `settings.max_main_bots` so operators can raise
+   * or lower the limit without a code change. The DB trigger enforces the
+   * same rule as defense-in-depth, so a missed settings refresh here is
+   * still caught at INSERT time.
+   */
+  async assertMainBotQuotaAvailable(): Promise<void> {
+    const cap = await readMainBotCap();
+    const count = await this.botConfigRepo.countMainBots();
+    if (count >= cap) {
+      // Use the shared ServiceError so cross-module `instanceof` checks
+      // (e.g. BotConfigService) recognize this throw without re-wrapping.
+      throw new ServiceError(
+        `系统最多只能创建 ${cap} 个主Bot，当前已有 ${count} 个，请删除或停用现有主Bot后再试`,
+        { status: 400, code: 'MAX_MAIN_BOTS_EXCEEDED' }
+      );
+    }
+  }
+
+  /**
+   * Throws ServiceError(MAX_SUB_AGENTS_EXCEEDED) when the active sub-agent
+   * count for `parentBotId` has already reached the per-parent cap.
+   * Reused by every sub-agent creation entry point (sub-agent POST, generic
+   * bot POST with is_sub_agent=true, and PUT that flips a bot into a
+   * sub-agent) so the cap cannot be bypassed via the alternate API path.
+   */
+  async assertSubAgentQuotaAvailable(parentBotId: string): Promise<void> {
+    const parentBot = await this.botConfigRepo.findById(parentBotId);
+    if (!parentBot) {
+      throw new ServiceError('父Bot不存在', { status: 404, code: 'NOT_FOUND' });
+    }
+    if (parentBot.is_sub_agent) {
+      throw new ServiceError('子Agent不能作为父Bot', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    const activeCount = await this.countActiveSubAgents(parentBotId);
+    if (activeCount >= MAX_SUB_AGENTS_PER_BOT) {
+      throw new ServiceError(
+        `每个主Bot最多只能创建 ${MAX_SUB_AGENTS_PER_BOT} 个子Agent，当前已有 ${activeCount} 个`,
+        { status: 400, code: 'MAX_SUB_AGENTS_EXCEEDED' }
+      );
+    }
+  }
 
   /**
    * List all sub-agents under a parent bot
@@ -91,14 +192,9 @@ export class SubAgentService {
     collaboration_config?: Record<string, unknown>;
   }): Promise<{ subAgent: BotConfigRow }> {
     try {
-      // Verify parent bot exists
-      const parentBot = await this.botConfigRepo.findById(input.parent_bot_id);
-      if (!parentBot) {
-        throw new ServiceError('父Bot不存在', { status: 404, code: 'NOT_FOUND' });
-      }
-      if (parentBot.is_sub_agent) {
-        throw new ServiceError('子Agent不能作为父Bot', { status: 400, code: 'VALIDATION_ERROR' });
-      }
+      // Quota + parent validity checks (active-only) live in the shared helper
+      // so the /api/bot-configs POST bypass gets the same enforcement.
+      await this.assertSubAgentQuotaAvailable(input.parent_bot_id);
 
       const subAgent = await this.botConfigRepo.create({
         name: input.name,
@@ -294,7 +390,11 @@ export class SubAgentService {
       await this.subAgentRepo.updateDelegationStatus(delegation.id, 'processing');
 
       // Build the sub-agent response prompt
-      const responseContent = await this.generateSubAgentResponse(childBot, input.input_message);
+      const responseContent = await this.generateSubAgentResponse(
+        childBot,
+        input.conversation_id,
+        input.input_message,
+      );
 
       // Calculate confidence based on sub-agent's configuration and actual response quality
       const confidence = this.calculateSubAgentConfidence(childBot, input.input_message, responseContent);
@@ -329,63 +429,160 @@ export class SubAgentService {
   }
 
   /**
-   * Generate a response from a sub-agent using the LLM
-   * Uses the coze-coding-dev-sdk to call the LLM with the sub-agent's system_prompt
+   * Generate a response from a sub-agent using the LLM.
+   * Full pipeline: LLM → parse [TOOL_CALL] → execute via ToolExecutionService → second-pass LLM explanation.
    */
-  private async generateSubAgentResponse(childBot: BotConfigRow, userMessage: string): Promise<string> {
-    // Validate required environment variable
-    const botId = process.env.COZE_BOT_ID;
-    if (!botId) {
-      throw new Error('Sub-agent LLM 调用失败: COZE_BOT_ID 环境变量未配置');
+  private async generateSubAgentResponse(
+    childBot: BotConfigRow,
+    conversationId: string,
+    userMessage: string,
+  ): Promise<string> {
+    const baseUrl = process.env.COZE_BASE_URL || 'https://api.coze.cn';
+    const apiKey = process.env.COZE_API_KEY;
+
+    if (!apiKey) {
+      throw new Error('Sub-agent LLM 调用失败: COZE_API_KEY 环境变量未配置');
     }
 
+    const adapter = new LLMClientAdapter({ baseUrl, apiKey });
+    const model = process.env.COZE_SUB_AGENT_MODEL || 'doubao-seed-2-0-lite-260215';
+
+    const systemPrompt = childBot.system_prompt || '你是一个专业的客服助手。';
+    const hasTools = Array.isArray(childBot.tools) && childBot.tools.length > 0;
+
+    // Build system prompt with tool definitions (if tools are configured)
+    const toolDefinitions = this.buildToolDefinitions(childBot.tools);
+    const systemContent = toolDefinitions
+      ? `${systemPrompt}\n\n${TOOL_CALLS_GUIDE}\n\n${toolDefinitions}`
+      : systemPrompt;
+
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userMessage },
+    ];
+
+    // First-pass LLM call
+    let llmContent = '';
     try {
-      const { LLMClient, Config } = await import('coze-coding-dev-sdk');
-      const config = new Config();
-      const client = new LLMClient(config);
-
-      const systemPrompt = childBot.system_prompt || '你是一个专业的客服助手。';
-      const toolInfo = Array.isArray(childBot.tools) && childBot.tools.length > 0
-        ? `\n\n你可使用的工具：${childBot.tools.map((t: unknown) => String(t)).join('、')}`
-        : '';
-
-      const messages = [
-        { role: 'system' as const, content: systemPrompt + toolInfo },
-        { role: 'user' as const, content: userMessage },
-      ];
-
-      // Use the LLMClient.stream API (same as llm-streaming-service.ts)
-      const stream = client.stream(
-        messages as Parameters<typeof client.stream>[0],
-        { model: botId, temperature: 0.7 },
-      );
-
-      let responseContent = '';
+      const stream = adapter.stream(messages, { model, temperature: 0.7 });
       for await (const chunk of stream) {
-        if (chunk.content) {
-          responseContent += chunk.content.toString();
-        }
+        if (chunk.content) llmContent += chunk.content;
       }
-
-      if (!responseContent.trim()) {
-        return `[子Agent「${childBot.name}」处理中]\n${childBot.description}\n\n抱歉，专家正在处理您的问题，请稍候。`;
-      }
-
-      return responseContent;
     } catch (error) {
-      logger.error('[SubAgentService] Failed to generate sub-agent response via LLM', { error: error instanceof Error ? error.message : String(error) });
-      const toolList = Array.isArray(childBot.tools) ? childBot.tools.map((t: unknown) => {
-        const toolName = String(t);
-        const toolLabels: Record<string, string> = {
-          order_query: '查询订单',
-          logistics_query: '查询物流',
-          refund_action: '申请退款',
-        };
-        return toolLabels[toolName] || toolName;
-      }).join('、') : '无';
-
-      return `[子Agent「${childBot.name}」处理]\n${childBot.description}\n\n可用工具：${toolList}\n\n⚠️ LLM调用失败，已降级为模板回复。`;
+      logger.error('[SubAgentService] LLM first-pass failed', { error: error instanceof Error ? error.message : String(error) });
+      return this.buildFallbackResponse(childBot);
     }
+
+    if (!llmContent.trim()) {
+      return this.buildFallbackResponse(childBot);
+    }
+
+    // If no tools are configured, return raw LLM response
+    if (!hasTools) {
+      return llmContent;
+    }
+
+    // Parse and execute tool calls
+    const toolExecutions = await this.parseAndExecuteToolCalls(llmContent, conversationId);
+
+    if (toolExecutions.length === 0) {
+      return llmContent;
+    }
+
+    // Build second-pass LLM call with tool results
+    const toolResultsSummary = toolExecutions
+      .map((te) => `工具 ${te.name} 执行结果：${te.result}`)
+      .join('\n\n');
+
+    messages.push({ role: 'assistant', content: llmContent });
+    messages.push({
+      role: 'user',
+      content: `以下是工具执行结果：\n\n${toolResultsSummary}\n\n请根据工具执行结果，用自然语言向用户总结并解释这些结果。`,
+    });
+
+    // Second-pass LLM call for natural language explanation
+    let finalContent = '';
+    try {
+      const stream2 = adapter.stream(messages, { model, temperature: 0.7 });
+      for await (const chunk of stream2) {
+        if (chunk.content) finalContent += chunk.content;
+      }
+    } catch (error) {
+      logger.warn('[SubAgentService] LLM second-pass failed, returning raw response', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Graceful degradation: return first-pass LLM content + raw tool results
+      return `${llmContent}\n\n---\n${toolResultsSummary}`;
+    }
+
+    return finalContent.trim() || llmContent;
+  }
+
+  private buildFallbackResponse(childBot: BotConfigRow): string {
+    const toolList = Array.isArray(childBot.tools)
+      ? childBot.tools.map((t) => {
+          const toolLabels: Record<string, string> = {
+            query_order_status: '查询订单',
+            query_logistics: '查询物流',
+            apply_refund: '申请退款',
+            query_product_detail: '查询商品',
+            query_size_chart: '查询尺码表',
+          };
+          return toolLabels[String(t)] || String(t);
+        }).join('、')
+      : '无';
+
+    return `[子Agent「${childBot.name}」处理中]\n${childBot.description}\n\n抱歉，专家正在处理您的问题，请稍候。`;
+  }
+
+  private buildToolDefinitions(tools: unknown[]): string | null {
+    if (!Array.isArray(tools) || tools.length === 0) return null;
+
+    const toolDefs = this.toolExecution.getAvailableTools();
+    const availableNames = new Set(tools.map((t) => String(t)));
+    const relevant = toolDefs.filter((def) => availableNames.has(def.name));
+
+    if (relevant.length === 0) return null;
+
+    const lines = relevant.map((def) => {
+      const paramLines = Object.entries(def.parameters)
+        .map(([key, info]) => `  - ${key}: ${(info as { description: string }).description}`)
+        .join('\n');
+      return `- ${def.name}: ${def.description}\n${paramLines}`;
+    });
+
+    return `【可用工具】（如需要请在回复末尾使用）：\n${lines.join('\n\n')}`;
+  }
+
+  private async parseAndExecuteToolCalls(
+    content: string,
+    conversationId: string,
+  ): Promise<Array<{ name: string; args: Record<string, unknown>; result: string }>> {
+    const results: Array<{ name: string; args: Record<string, unknown>; result: string }> = [];
+    const toolCallRegex = /\[TOOL_CALL\](\w+)\|(.+?)\[\/TOOL_CALL\]/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = toolCallRegex.exec(content)) !== null) {
+      const toolName = match[1];
+      const argsStr = match[2];
+      try {
+        const args = JSON.parse(argsStr);
+        // Verify authorization for sensitive tools
+        try {
+          await this.toolExecution.verifyToolAuthorization(conversationId, toolName, args);
+        } catch (authError) {
+          const authMsg = authError instanceof Error ? authError.message : '授权失败';
+          results.push({ name: toolName, args, result: `工具 ${toolName} 执行被拒绝：${authMsg}` });
+          continue;
+        }
+        const execResult = await this.toolExecution.executeTool(toolName, args);
+        results.push({ name: toolName, args, result: execResult.result });
+      } catch (err) {
+        logger.warn('[SubAgentService] Tool call parse/execute failed', { toolName, error: String(err) });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -476,10 +673,13 @@ export class SubAgentService {
       return collaborations;
     }
 
-    // Check if any collaboration targets have relevant info
+    // Batch-fetch all collaboration targets in one query (P2-2)
+    const targetBots = await this.botConfigRepo.findByIds(config.can_collaborate_with);
+    const activeMap = new Map(targetBots.filter(b => b.status === 'active').map(b => [b.id, b]));
+
+    // Create collaboration requests only for active targets
     for (const targetBotId of config.can_collaborate_with) {
-      const targetBot = await this.botConfigRepo.findById(targetBotId);
-      if (!targetBot || targetBot.status !== 'active') continue;
+      if (!activeMap.has(targetBotId)) continue;
 
       // Create collaboration request
       const collabInput: CreateCollaborationInput = {
@@ -561,18 +761,12 @@ export class SubAgentService {
   }
 
   /**
-   * Get all main bots with their sub-agent counts
+   * Get all main bots with their sub-agent counts.
+   * Uses single-query aggregation to avoid N+1 (P2-1).
    */
   async listMainBotsWithSubAgents(): Promise<Array<BotConfigRow & { sub_agent_count: number }>> {
     try {
-      const mainBots = await this.botConfigRepo.listMainBots();
-      const results = await Promise.all(
-        mainBots.map(async (bot) => {
-          const subAgents = await this.botConfigRepo.listSubAgents(bot.id);
-          return { ...bot, sub_agent_count: subAgents.length };
-        }),
-      );
-      return results;
+      return await this.botConfigRepo.listMainBotsWithCounts();
     } catch (error) {
       throw toServiceError(error, '获取主Bot列表失败', 'DB_ERROR');
     }

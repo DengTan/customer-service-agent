@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import {
   Search, Plus, Ticket, X, Play, MessageCircle, CheckCircle,
   Archive, Send, Clock, User, Link2, Loader2, UserCheck, AlertTriangle, Timer
@@ -12,6 +13,7 @@ import {
   TICKET_CATEGORY_LABELS, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS,
   TICKET_STATUS_COLORS, TICKET_PRIORITY_COLORS, TICKET_CATEGORY_COLORS,
 } from '@/lib/types';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface TicketWithExtras extends TicketType {
   assignee_name?: string | null;
@@ -57,7 +59,7 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
           setSubProgress(data.sub_ticket_progress || { total: 0, closed: 0, resolved: 0, in_progress: 0 });
         }
       })
-      .catch((err) => console.error('[TicketRelationsPanel] Failed to fetch relations:', err))
+      .catch((err) => logger.error('[TicketRelationsPanel] Failed to fetch relations', { error: err }))
       .finally(() => setIsLoading(false));
   }, [ticketId]);
 
@@ -212,6 +214,9 @@ export default function TicketsPage() {
     setSelectedIds(new Set<string>());
     setCurrentPage(newPage);
   };
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const pageSize = DEFAULT_PAGE_SIZE;
 
@@ -336,9 +341,15 @@ export default function TicketsPage() {
   }, [loadTickets]);
 
   const handleCloseTicket = useCallback(async (ticketId: string) => {
-    if (!confirm('确认关闭此工单？')) return;
+    const confirmed = await confirm({
+      title: '关闭工单',
+      description: '确认关闭此工单？',
+      confirmText: '关闭',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
     await handleStatusChange(ticketId, 'closed');
-  }, [handleStatusChange]);
+  }, [handleStatusChange, confirm]);
 
   const handleAutoAssign = useCallback(async (ticketId: string) => {
     try {

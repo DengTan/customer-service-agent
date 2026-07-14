@@ -1,23 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { apiError, parseJsonBody, HttpStatus, withErrorHandler, checkRateLimit } from '@/lib/api-utils';
 import { logger } from '@/lib/logger';
-import { HeaderUtils } from 'coze-coding-dev-sdk';
 import { ConversationService } from '@/server/services/conversation-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
-import { KnowledgeSearchService } from '@/server/services/knowledge-search-service';
 import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { SubAgentService } from '@/server/services/sub-agent-service';
 import { SettingsService } from '@/server/services/settings-service';
 import { HandoffService } from '@/server/services/handoff-service';
 import { RoutingService } from '@/server/services/routing-service';
-import { ProductDetailService } from '@/server/services/product-detail-service';
-import { SizeChartService } from '@/server/services/size-chart-service';
-import { AlertRepository } from '@/server/repositories/alert-repository';
+import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
+import { evaluateMaxTurns } from '@/server/services/max-turns';
+import type { KnowledgeSearchResult } from '@/server/services/knowledge-search-service';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { BotConfigRepository } from '@/server/repositories/bot-config-repository';
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { HTTP } from '@/lib/constants';
 import { z } from 'zod';
+
+const FORWARD_HEADER_KEYS = new Set([
+  'x-request-id',
+  'x-correlation-id',
+  'x-b3-traceid',
+  'x-b3-spanid',
+  'x-b3-parentspanid',
+  'x-b3-sampled',
+  'x-b3-flags',
+  'x-ot-span-context',
+  'x-real-ip',
+  'x-forwarded-for',
+]);
+
+function extractForwardHeaders(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of headers.entries()) {
+    const lower = key.toLowerCase();
+    if (FORWARD_HEADER_KEYS.has(lower) || lower.startsWith('cf-')) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
 
 // Zod schema for message input validation
 const MessageSchema = z.object({
@@ -79,7 +101,6 @@ export const POST = withErrorHandler(async (
   // Initialize services
   const conversationService = new ConversationService();
   const autoReplyService = new AutoReplyService();
-  const knowledgeSearchService = new KnowledgeSearchService();
   const llmStreamingService = new LLMStreamingService();
   const subAgentService = new SubAgentService();
 
@@ -138,6 +159,7 @@ export const POST = withErrorHandler(async (
     providerBaseUrl?: string;
     providerApiKey?: string;
     providerType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom';
+    defaultModel?: string;
   } = {};
   
   // Try to load from LLM providers table
@@ -146,14 +168,25 @@ export const POST = withErrorHandler(async (
     try {
       const { LlmProviderService } = await import('@/server/services/llm-provider-service');
       const llmService = new LlmProviderService();
-      const provider = await llmService.getProvider(llmProviderId);
+
+      // First try UUID lookup, then fall back to name lookup
+      let provider = await llmService.getProvider(llmProviderId);
+      if (!provider) {
+        provider = await llmService.getProviderByName(llmProviderId);
+      }
+      if (!provider) {
+        provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
+      }
+
       if (provider && provider.is_enabled) {
+        // Get decrypted API key for actual API calls
+        const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
         llmProviderConfig = {
           providerId: provider.id,
           providerBaseUrl: provider.base_url,
-          // API Key 不暴露到客户端，仅传 mask 值供调试用途
-          providerApiKey: provider.api_key ? '********' : '',
+          providerApiKey: providerWithKey?.api_key || provider.api_key || '',
           providerType: provider.api_type as 'openai_compatible' | 'anthropic' | 'custom',
+          defaultModel: provider.default_model || undefined,
         };
       }
     } catch (error) {
@@ -161,7 +194,8 @@ export const POST = withErrorHandler(async (
     }
   }
 
-  // 1.6 Check session timeout and max turns from settings
+  // 1.6 Check session timeout from settings (max_turns check moved below — uses
+  // role='user' exact count which we cannot read until the conversation exists)
 
   const sessionInfo = await conversationService.getSessionInfo(conversationId);
   if (sessionInfo) {
@@ -181,15 +215,24 @@ export const POST = withErrorHandler(async (
         });
       }
     }
+  }
 
-    // Check max turns
-    const maxTurns = parseInt(appSettings.max_turns || '0', 10);
-    if (maxTurns > 0 && sessionInfo.message_count >= maxTurns) {
+  // 1.6.1 Check max_turns against exact role='user' count.
+  // The route reads existing user turns BEFORE inserting this user message.
+  // This keeps the semantic: max_turns=N allows the first N user messages and
+  // rejects the (N+1)th, regardless of how many assistant/system/agent rows
+  // exist. countUserMessages falls back to 0 on DB failure so the intake is
+  // not blocked by a transient DB error (logged inside the service).
+  const maxTurns = parseInt(appSettings.max_turns || '0', 10);
+  if (maxTurns > 0) {
+    const existingUserTurns = await conversationService.countUserMessages(conversationId);
+    const verdict = evaluateMaxTurns({ existingUserTurns, maxTurns });
+    if (verdict.blocked) {
       await conversationService.updateConversation(conversationId, { status: 'ended' });
       return NextResponse.json({
         message: {
           role: 'system',
-          content: `对话已达到最大轮次限制（${maxTurns} 条消息），已自动结束。如需继续请创建新对话。`,
+          content: verdict.message,
         },
       });
     }
@@ -205,37 +248,6 @@ export const POST = withErrorHandler(async (
 
   // 3. Update conversation message count and title
   await conversationService.updateMessageCountAfterUserMessage(conversationId, userMessage);
-
-  // 3.5 Check unhandled conversations reminder (fire-and-forget, with 1-hour dedup)
-  try {
-    const unhandledMinutes = parseInt(appSettings.unhandled_remind || '0', 10);
-    if (unhandledMinutes > 0) {
-      const convRepo = new ConversationRepository();
-      const alertRepo = new AlertRepository();
-      // Run in background — don't block message processing
-      (async () => {
-        try {
-          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-          const unhandled = await convRepo.findUnhandledConversations(unhandledMinutes);
-          for (const conv of unhandled) {
-            const existing = await alertRepo.findRecentUnresolved(conv.id, 'unhandled_remind', oneHourAgo);
-            if (!existing) {
-              await alertRepo.create({
-                conversation_id: conv.id,
-                type: 'unhandled_remind',
-                severity: 'warning',
-                message: `对话 "${conv.title || '无标题'}" 已超过 ${unhandledMinutes} 分钟未处理`,
-              });
-            }
-          }
-        } catch {
-          // Non-critical background task
-        }
-      })();
-    }
-  } catch {
-    // Unhandled reminder check is non-critical
-  }
 
   // 4. Check auto-reply rules (using filtered content for matching)
   const autoReply = await autoReplyService.matchReply(processedMessage);
@@ -266,19 +278,37 @@ export const POST = withErrorHandler(async (
   // 6. Get message history for context
   const historyMessages = await conversationService.listMessageHistory(conversationId, 20);
 
-  // 7. Search knowledge base with relevance filtering (using filtered content)
-  const knowledgeResult = await knowledgeSearchService.search(processedMessage);
+  // P0/P1: Use shared RetrievalOrchestrator — same gating + evidence contract as
+  // the simulation route. This replaces the old pattern of calling
+  // KnowledgeSearchService + ProductDetailService + SizeChartService in parallel
+  // and then letting the LLM streaming service auto-publish raw knowledgeSources
+  // as final citations.
+  const orchestrator = new RetrievalOrchestrator();
+  const recentMessages = historyMessages.slice(-10).map(m => ({
+    role: (m as unknown as { role: string }).role,
+    content: (m as unknown as { content: string }).content,
+  }));
 
-  // 7.5 Search product details for relevant product information
-  const productService = new ProductDetailService();
-  const { productContext } = await productService.searchProductsForLLM(processedMessage);
+  const retrievalResult = await orchestrator.retrieve(processedMessage, recentMessages, { useHybrid: true });
+  const { evidence: evidenceBundle } = retrievalResult;
+  const orchestratorCitations = evidenceBundle.citations;
 
-  // 7.6 Search size charts for relevant size information
-  const sizeChartService = new SizeChartService();
-  const { sizeChartContext } = await sizeChartService.searchSizeChartsForLLM(processedMessage);
+  // Normalize orchestrator output to legacy LLM context shape. The LLM still
+  // receives the accepted context (for generation), but public citations are
+  // pinned to evidenceCitations — no more regex-driven or auto-promotion paths.
+  const knowledgeResult: KnowledgeSearchResult = retrievalResult.knowledgeContext
+    ? {
+        context: retrievalResult.knowledgeContext.context,
+        sources: retrievalResult.knowledgeContext.knowledgeSources,
+        confidence: retrievalResult.knowledgeContext.confidence,
+        images: retrievalResult.knowledgeContext.images,
+      }
+    : { context: '', sources: [], confidence: 0, images: [] };
+  const productContext = retrievalResult.productContext?.productContext ?? '';
+  const sizeChartContext = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
 
   // 8. Extract custom headers for LLM
-  const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+  const customHeaders = extractForwardHeaders(request.headers);
 
   // 9. Get conversation's shop (platform_connection_id) to determine which Bot to use
   const botConfigRepo = new BotConfigRepository();
@@ -402,19 +432,34 @@ export const POST = withErrorHandler(async (
   let stream: ReadableStream<Uint8Array>;
   try {
     stream = llmStreamingService.createStream(conversationId, processedMessage, historyMessages, {
+      // Knowledge context — orchestrator-graded (P0). Used for LLM generation only,
+      // NOT auto-published as citations.
       knowledgeContext: knowledgeResult.context || undefined,
       knowledgeConfidence: knowledgeResult.confidence,
-      knowledgeSources: knowledgeResult.sources,
+      // CANONICAL public citations. These become SSE done.sources AND the
+      // persisted Message.sources (in handlePostStreamOperations).
+      evidenceCitations: orchestratorCitations,
       knowledgeImages: knowledgeResult.images,
       productContext: productContext || undefined,
       sizeChartContext: sizeChartContext || undefined,
       imageUrl: imageUrl || null,
       customHeaders,
-      knowledgeMinScore: await knowledgeSearchService.getMinScore(),
+      knowledgeMinScore: retrievalResult.minScore,
+      // Provenance trace for observability (consumed by handlePostStreamOperations → metadata)
+      retrievalTrace: {
+        action: retrievalResult.decision.action,
+        reasonCode: retrievalResult.decision.reasonCode,
+        provenanceVersion: retrievalResult.evidence.trace.provenanceVersion,
+        rerankDegraded: retrievalResult.evidence.trace.rerankDegraded,
+        candidateCount: retrievalResult.evidence.candidates.length,
+        citationCount: retrievalResult.evidence.citations.length,
+      },
       parentBotId,
       parentBotName: shopBotName,
       enableSubAgentDelegation: !!parentBotId,
-      aiModel: appSettings.ai_model,
+      aiModel: appSettings.ai_model_enabled === 'false'
+        ? undefined  // Will fall back to multimodal model
+        : appSettings.ai_model,
       multimodalModel: appSettings.multimodal_model,
       multimodalEnabled: appSettings.multimodal_enabled !== 'false',
       multimodalDisabledAction: (appSettings.multimodal_disabled_action === 'handoff' ? 'handoff' : 'fixed_message') as 'fixed_message' | 'handoff',
@@ -427,6 +472,7 @@ export const POST = withErrorHandler(async (
       llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
       llmProviderApiKey: llmProviderConfig.providerApiKey,
       llmProviderType: llmProviderConfig.providerType,
+      llmProviderDefaultModel: llmProviderConfig.defaultModel,
     });
   } catch (streamInitError) {
     logger.api.error('Failed to create LLM stream', { error: streamInitError, conversationId });

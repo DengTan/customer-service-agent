@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import {
   AlertTriangle, Scan, CheckCircle, X, ExternalLink,
   ChevronLeft, ChevronRight, Search, MessageSquare,
 } from 'lucide-react';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface KnowledgeGap {
   id: string;
@@ -74,6 +76,9 @@ export function KnowledgeGapTab() {
   const [loadingMessages, setLoadingMessages] = useState<string | null>(null);
   const pageSize = 20;
 
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
+
   const loadStats = useCallback(async () => {
     try {
       const res = await fetch('/api/knowledge/gaps/stats', {
@@ -82,7 +87,7 @@ export function KnowledgeGapTab() {
       const json = await res.json();
       if (json?.stats) setStats(json.stats);
     } catch (err) {
-      console.error('Failed to load gap stats', err);
+      logger.error('Failed to load gap stats', { error: err });
     }
   }, []);
 
@@ -105,7 +110,7 @@ export function KnowledgeGapTab() {
         [conversationId]: messages,
       }));
     } catch (err) {
-      console.error('Failed to load conversation messages', err);
+      logger.error('Failed to load conversation messages', { error: err });
     } finally {
       setLoadingMessages(null);
     }
@@ -126,7 +131,7 @@ export function KnowledgeGapTab() {
       setGaps(json.gaps || []);
       setTotal(json.total ?? json.gaps?.length ?? 0);
     } catch (err) {
-      console.error('Failed to load gaps', err);
+      logger.error('Failed to load gaps', { error: err });
       toast.error('加载知识缺口失败');
     } finally {
       setLoading(false);
@@ -185,7 +190,13 @@ export function KnowledgeGapTab() {
   };
 
   const handleDismiss = async (gap: KnowledgeGap) => {
-    if (!window.confirm(`确认忽略「${gap.sample_question.slice(0, 30)}...」？`)) return;
+    const confirmed = await confirm({
+      title: '忽略知识缺口',
+      description: `确认忽略「${gap.sample_question.slice(0, 30)}...」？`,
+      confirmText: '忽略',
+      cancelText: '取消',
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/knowledge/gaps/${gap.id}/dismiss`, {
         method: 'POST',
@@ -268,7 +279,7 @@ export function KnowledgeGapTab() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="总缺口" value={stats.total} icon={AlertTriangle} color="text-amber-600" />
           <StatCard label="待处理" value={stats.open} icon={AlertTriangle} color="text-red-600" />
-          <StatCard label="已解决" value={stats.resolved} icon={CheckCircle} color="text-emerald-600" />
+          <StatCard label="已解决" value={stats.resolved} icon={CheckCircle} color="text-emerald-700" />
           <StatCard label="已忽略" value={stats.dismissed} icon={X} color="text-zinc-500" />
         </div>
       )}
@@ -398,7 +409,7 @@ export function KnowledgeGapTab() {
                           </button>
                           <button
                             onClick={() => handleResolve(gap)}
-                            className="text-xs px-2 py-1 rounded border border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                            className="text-xs px-2 py-1 rounded border border-emerald-500 text-emerald-700 hover:bg-emerald-50"
                             title="标记为已解决"
                           >
                             解决
@@ -475,7 +486,7 @@ export function KnowledgeGapTab() {
                                     <div className="flex items-center gap-2 mb-1">
                                       <span className={`text-xs font-medium ${
                                         msg.role === 'user' ? 'text-blue-600' : 
-                                        msg.role === 'assistant' ? 'text-emerald-600' : 'text-gray-500'
+                                        msg.role === 'assistant' ? 'text-emerald-700' : 'text-gray-600'
                                       }`}>
                                         {msg.role === 'user' ? '用户' : msg.role === 'assistant' ? '客服' : '系统'}
                                       </span>

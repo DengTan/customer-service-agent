@@ -198,34 +198,21 @@ pnpm lint --quiet     # 代码风格检查
 
 | 变量 | 值 |
 |------|-----|
-| `COZE_SUPABASE_URL` | `https://br-alive-kea-4152cf8a.supabase2.aidap-global.cn-beijing.volces.com` |
-| `COZE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIs...`（JWT，role=anon） |
-| `COZE_SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs...`（JWT，role=service_role） |
+| `SUPABASE_URL` | `https://avmregjnnsmshwxrwjie.supabase.co` |
+| `SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`（JWT，role=anon） |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`（JWT，role=service_role） |
 
 #### Custom API Gateway
 
-```
-https://br-alive-kea-4152cf8a.ap-w5.volcengineapi.com
-```
+> 已切换至独立 Supabase，不再使用 Custom API Gateway
 
 #### PostgreSQL 直连（用于迁移/运维）
 
-| 参数 | 值 |
-|------|-----|
-| 主机 | `cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com` |
-| 端口 | `5432` |
-| 数据库 | `postgres` |
-| 用户名 | `postgres` |
-| 密码 | `$POSTGRES_PASSWORD`（环境变量，见 `.env.local`） |
-| 连接字符串 | `postgresql://postgres:$POSTGRES_PASSWORD@cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com:5432/postgres?sslmode=require&channel_binding=require` |
+Supabase 托管项目，PostgreSQL 直连通过 Supabase Dashboard → Settings → Connection Pooling 获取连接字符串。
 
 #### Connection Pooling（连接池）
 
-| 参数 | 值 |
-|------|-----|
-| Pooled Host | `br-alive-kea-4152cf8a.pooler.aidap-global.cn-beijing.volces.com` |
-| Pooled Port | `5432` |
-| Auto-generated | true |
+Supabase 托管项目，连接池配置通过 Supabase Dashboard → Settings → Connection Pooling 获取。
 
 > 连接池适用于高并发场景，可有效减少数据库连接开销。
 
@@ -1371,9 +1358,6 @@ src/server/services/tool-providers/
 | `welcome_message` | 新会话开场白 | 应在 `conversations/route.ts` 创建会话时读取并写入 messages |
 | `session_timeout` | 会话超时时间（分钟） | 应在 `messages/route.ts` 检测用户最后活跃时间，超时则结束会话 |
 | `max_turns` | 最大对话轮次 | 应在 `messages/route.ts` 检测 `message_count`，达到上限后拒绝继续 |
-| `rating_enabled` | 允许用户评价 | 应在 `conversations/[id]/rating/route.ts` 读取设置后决定是否展示评价入口 |
-| `new_conversation_notify` | 新对话时通知坐席 | 应在 `conversations/route.ts` 创建会话后调用通知服务 |
-| `unhandled_remind` | 未处理会话超时提醒 | 应有定时任务扫描超长未回复会话并产生告警 |
 
 ### Demo 模式 vs 真实模式
 
@@ -1382,14 +1366,14 @@ src/server/services/tool-providers/
 ```typescript
 // 判断逻辑（supabase-client.ts）
 function isDemoMode(): boolean {
-  return !process.env.COZE_SUPABASE_URL || !process.env.COZE_SUPABASE_ANON_KEY;
+  return !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
 }
 ```
 
 - **Demo 模式**：返回静态假数据，CRUD 操作不持久化（适合 UI 展示）
 - **真实模式**：所有 CRUD 操作真实写入 Supabase 数据库
 
-当前 Coze 平台已自动注入 `COZE_SUPABASE_URL`、`COZE_SUPABASE_ANON_KEY`、`COZE_SUPABASE_SERVICE_ROLE_KEY`，项目运行在真实模式下。
+当前 Coze 平台已自动注入 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`，项目运行在真实模式下。
 
 ### Coze 平台 Supabase 配置详解
 
@@ -1399,19 +1383,13 @@ function isDemoMode(): boolean {
 
 | 变量 | 值 |
 |------|-----|
-| `COZE_SUPABASE_URL` | `https://br-alive-kea-4152cf8a.supabase2.aidap-global.cn-beijing.volces.com` |
-| `COZE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIs...` |
-| `COZE_SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIs...` |
+| `SUPABASE_URL` | `https://avmregjnnsmshwxrwjie.supabase.co` |
+| `SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...` |
 
 **PostgreSQL 直连（迁移/运维）**
 
-| 参数 | 值 |
-|------|-----|
-| 主机 | `cp-pure-gust-6827df3b.pg2.aidap-global.cn-beijing.volces.com` |
-| 端口 | `5432` |
-| 数据库 | `postgres` |
-| 用户名 | `postgres` |
-| 密码 | `tLk6MwE1qBEt55E57n` |
+Supabase 托管项目，PostgreSQL 直连通过 Supabase Dashboard → Settings → Connection Pooling 获取连接字符串。
 
 #### 数据库管理命令
 

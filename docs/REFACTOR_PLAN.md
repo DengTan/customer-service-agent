@@ -246,7 +246,7 @@ const agentId = user?.id;
 ```typescript
 // src/lib/auth/jwt.ts
 function getResolvedSecret(): string {
-  const envSecret = process.env.JWT_SECRET || process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
+  const envSecret = process.env.JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!envSecret) {
     throw new Error(

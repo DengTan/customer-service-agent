@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot } from 'lucide-react';
+import { Bot, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import type { UserRole } from '@/lib/types';
 
 interface LoginForm {
@@ -19,6 +20,7 @@ export default function LoginPage() {
   const [form, setForm] = useState<LoginForm>({ email: '', password: '' });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,16 +31,14 @@ export default function LoginPage() {
       const result = await login(form.email, form.password);
 
       if (result.success) {
-        // Use window.location for reliable full-page navigation
-        // This ensures cookies are sent with the next request and middleware runs correctly
-        const redirectPath = result.user?.role === 'observer' ? '/dashboard' : '/';
-        window.location.href = redirectPath;
+        // 所有用户登录后跳转到数据分析页面
+        router.push('/dashboard');
       } else {
         setError(result.error || '登录失败');
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setError('登录过程中发生错误: ' + errMsg);
+      logger.error('[Login] unexpected error', { error: err });
+      setError('登录过程中发生错误，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -95,17 +95,34 @@ export default function LoginPage() {
               <label htmlFor="password" className="text-sm font-medium">
                 密码
               </label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="请输入密码"
-                value={form.password}
-                onChange={handleChange}
-                required
-                autoComplete="current-password"
-                disabled={loading}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="请输入密码"
+                  value={form.password}
+                  onChange={handleChange}
+                  required
+                  autoComplete="current-password"
+                  disabled={loading}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  aria-pressed={showPassword}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Submit Button */}

@@ -16,6 +16,7 @@ import { GorgiasRepository } from '@/server/repositories/gorgias-repository';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { CustomerRepository } from '@/server/repositories/customer-repository';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
+import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
 
 // 静态初始化 supabase 客户端
 const supabase = getSupabaseClient();
@@ -1317,12 +1318,16 @@ export class GorgiasSyncService {
         },
       });
   }
-  
+
   /**
    * 触发 AI 回复（可选功能）
-   * 
+   *
    * 当收到客户消息时，可以触发 SmartAssist AI 自动回复
    * 目前是 fire-and-forget 实现
+   *
+   * P1 FIX: 使用 RetrievalOrchestrator 替代直接调用 KnowledgeSearchService。
+   * 这确保三条路径（模拟/正式对话/Gorgias）共享同一套查询门控和引用契约，
+   * 不会将未分级的候选引用自动附加为引用。
    */
   private async triggerAIReply(conversationId: string): Promise<void> {
     // 去重检查：如果同一对话在去重窗口内已经触发过 AI 回复，跳过
@@ -1357,7 +1362,6 @@ export class GorgiasSyncService {
 
     const { ConversationService } = await import('@/server/services/conversation-service');
     const { AutoReplyService } = await import('@/server/services/auto-reply-service');
-    const { KnowledgeSearchService } = await import('@/server/services/knowledge-search-service');
     const { LLMStreamingService } = await import('@/server/services/llm-streaming-service');
     const { SettingsService } = await import('@/server/services/settings-service');
     const { ConversationRepository } = await import('@/server/repositories/conversation-repository');
@@ -1385,7 +1389,7 @@ export class GorgiasSyncService {
 
       const userMessage = (lastUserMsg as { content: string }).content;
 
-      // 3. Check auto-reply rules
+      // 3. Check auto-reply rules FIRST (short-circuit before expensive retrieval)
       const autoReplyService = new AutoReplyService();
       const autoReply = await autoReplyService.matchReply(userMessage);
       if (autoReply) {
@@ -1400,26 +1404,65 @@ export class GorgiasSyncService {
         return;
       }
 
-      // 4. Search knowledge base
-      const knowledgeSearchService = new KnowledgeSearchService();
-      const knowledgeResult = await knowledgeSearchService.search(userMessage);
+      // 4. P1 FIX: Use RetrievalOrchestrator for shared gate + evidence contract.
+      //    This is the same orchestrator used by simulation and conversation routes,
+      //    ensuring three-way consistency and preventing ungraded candidates from
+      //    becoming false citations.
+      const orchestrator = new RetrievalOrchestrator();
+      const historyMessages = await conversationService.listMessageHistory(conversationId, 20);
+      const recentMessages = historyMessages.slice(-10).map(m => ({
+        role: (m as unknown as { role: string }).role,
+        content: (m as unknown as { content: string }).content,
+      }));
+      const retrievalResult = await orchestrator.retrieve(userMessage, recentMessages, { useHybrid: true });
+      const { evidence: evidenceBundle } = retrievalResult;
+      const orchestratorCitations = evidenceBundle.citations;
 
-      // 5. Get settings
+      // 5. Normalize orchestrator output to legacy LLM context shape (for LLMStreamingService)
+      const knowledgeResult = retrievalResult.knowledgeContext
+        ? {
+            context: retrievalResult.knowledgeContext.context,
+            sources: retrievalResult.knowledgeContext.knowledgeSources,
+            confidence: retrievalResult.knowledgeContext.confidence,
+            images: retrievalResult.knowledgeContext.images,
+          }
+        : { context: '', sources: [], confidence: 0, images: [] };
+      const productContext = retrievalResult.productContext?.productContext ?? '';
+      const sizeChartContext = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
+
+      // 6. Get settings
       const settingsService = new SettingsService();
       const appSettings = await settingsService.getSettingsMap();
 
-      // 6. Get message history
-      const historyMessages = await conversationService.listMessageHistory(conversationId, 20);
-
-      // 7. Create LLM stream and collect full response
+      // 7. Create LLM stream and collect full response.
+      //    P0: Pass orchestrator-graded evidenceCitations as the canonical source list.
+      //    Raw knowledgeSources are NOT forwarded to avoid false citation attribution.
       const llmStreamingService = new LLMStreamingService();
       const stream = llmStreamingService.createStream(conversationId, userMessage, historyMessages, {
+        // LLM context (for generation) — still useful even if citations are empty
         knowledgeContext: knowledgeResult.context || undefined,
         knowledgeConfidence: knowledgeResult.confidence,
-        knowledgeSources: knowledgeResult.sources,
+        // CANONICAL citations from orchestrator — these are the ONLY public sources
+        evidenceCitations: orchestratorCitations.length > 0
+          ? orchestratorCitations
+          : undefined,
         knowledgeImages: knowledgeResult.images,
-        knowledgeMinScore: await knowledgeSearchService.getMinScore(),
-        aiModel: appSettings.ai_model,
+        productContext: productContext || undefined,
+        sizeChartContext: sizeChartContext || undefined,
+        knowledgeMinScore: retrievalResult.minScore,
+        retrievalTrace: evidenceBundle.trace
+          ? {
+              action: retrievalResult.decision.action,
+              reasonCode: retrievalResult.decision.reasonCode,
+              provenanceVersion: evidenceBundle.trace.provenanceVersion,
+              rerankDegraded: evidenceBundle.trace.rerankDegraded,
+              candidateCount: evidenceBundle.candidates.length,
+              citationCount: evidenceBundle.citations.length,
+            }
+          : undefined,
+        aiModel: appSettings.ai_model_enabled === 'false'
+          ? undefined
+          : appSettings.ai_model,
         systemPrompt: appSettings.system_prompt || undefined,
         temperature: appSettings.ai_temperature ? parseFloat(appSettings.ai_temperature) : undefined,
         maxTokens: appSettings.ai_max_tokens ? parseInt(appSettings.ai_max_tokens, 10) : undefined,

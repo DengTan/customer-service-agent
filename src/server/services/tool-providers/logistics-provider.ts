@@ -5,6 +5,7 @@
 
 import { BaseToolProvider, ToolResult, ToolParams, ValidationResult, LogisticsInfo } from './types';
 import { generateMockLogistics, getMockLogisticsStatusText } from './mock-data';
+import { logger } from '@/lib/logger';
 
 export class LogisticsProvider extends BaseToolProvider {
   readonly type = 'logistics' as const;
@@ -75,13 +76,13 @@ export class LogisticsProvider extends BaseToolProvider {
             isMockData: false,
           };
         }
-        console.log(`[LogisticsProvider] Real API returned no data for ${identifier}, falling back to mock`);
+        logger.debug(`[LogisticsProvider] Real API returned no data for ${identifier}, falling back to mock`);
       }
 
       // Use mock data
       return this.getMockResult(identifier);
     } catch (error) {
-      console.error(`[LogisticsProvider] Error querying logistics ${identifier}:`, error);
+      logger.error(`[LogisticsProvider] Error querying logistics ${identifier}:`, { error });
       return this.getMockResult(identifier, true);
     }
   }
@@ -95,7 +96,7 @@ export class LogisticsProvider extends BaseToolProvider {
     const apiKey = process.env.LOGISTICS_API_KEY;
 
     if (!apiUrl || !apiKey) {
-      console.log('[LogisticsProvider] Real API not configured, using mock data');
+      logger.debug('[LogisticsProvider] Real API not configured, using mock data');
       return null;
     }
 

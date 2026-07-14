@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { UserRole } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 /**
  * User type for authenticated users
@@ -47,9 +48,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
  * checked on mount by calling /api/auth/me. This component handles that.
  */
 
-// Store original fetch (used in auth calls below)
-const _originalFetch = globalThis.fetch;
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -64,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function checkAuthInternal(): Promise<boolean> {
     try {
-      const res = await _originalFetch('/api/auth/me', {
+      const res = await fetch('/api/auth/me', {
         credentials: 'include',  // Important: include cookies
       });
       
@@ -89,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; user?: AuthUser; error?: string }> => {
     try {
-      const res = await _originalFetch('/api/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -105,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: data.error || '登录失败' };
       }
     } catch (err) {
-      console.error('[Auth] Login fetch error:', err);
+      logger.error('[Auth] Login fetch error', { error: err });
       return { success: false, error: '网络错误，请稍后重试' };
     }
   }, []);
@@ -115,7 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const logout = useCallback(async (): Promise<void> => {
     try {
-      await _originalFetch('/api/auth/logout', {
+      await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
       });

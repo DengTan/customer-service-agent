@@ -32,7 +32,7 @@ describe('HTTP', () => {
     expect(HTTP.KNOWLEDGE_MIN_SCORE).toBe(0.75);
     expect(HTTP.MAX_MESSAGE_LENGTH).toBe(10000);
     expect(HTTP.MAX_UPLOAD_SIZE_BYTES).toBe(20 * 1024 * 1024);
-    expect(HTTP.JWT_COOKIE_NAME).toBe('sa_jwt');
+    expect(HTTP.JWT_COOKIE_NAME).toBe('auth_token');
     expect(HTTP.JWT_EXPIRES_IN).toBe(8 * 60 * 60);
   });
 });

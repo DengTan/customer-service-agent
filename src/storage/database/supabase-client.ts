@@ -1,5 +1,4 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { getReportBuffer, createWrappedFetch } from 'coze-coding-dev-sdk';
 
 /**
  * Supabase client factory
@@ -8,7 +7,7 @@ import { getReportBuffer, createWrappedFetch } from 'coze-coding-dev-sdk';
  * All required variables MUST be set before deployment.
  * See .env.example for the full list.
  *
- * Demo mode: When COZE_SUPABASE_URL is not set, the app runs in demo mode
+ * Demo mode: When SUPABASE_URL is not set, the app runs in demo mode
  * with mock data, allowing UI testing without database configuration.
  */
 
@@ -18,8 +17,8 @@ interface SupabaseCredentials {
 }
 
 function getSupabaseCredentials(): SupabaseCredentials {
-  const url = process.env.COZE_SUPABASE_URL;
-  const anonKey = process.env.COZE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
 
   if (!url || !anonKey) {
     return { url: '', anonKey: '' };
@@ -29,11 +28,11 @@ function getSupabaseCredentials(): SupabaseCredentials {
 }
 
 function isDemoMode(): boolean {
-  return !process.env.COZE_SUPABASE_URL || !process.env.COZE_SUPABASE_ANON_KEY;
+  return !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
 }
 
 function getSupabaseServiceRoleKey(): string | undefined {
-  return process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
+  return process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
 // Cache Supabase client instances to avoid creating new ones on every request
@@ -67,14 +66,6 @@ function getSupabaseClient(token?: string): SupabaseClient {
   const globalOptions: Record<string, unknown> = {};
   if (token) {
     globalOptions.headers = { Authorization: `Bearer ${token}` };
-  }
-  try {
-    const buffer = getReportBuffer();
-    if (buffer) {
-      globalOptions.fetch = createWrappedFetch(buffer, 'supabase');
-    }
-  } catch {
-    // Silent — reporting setup failure should not block client creation
   }
 
   const client = createClient(url, key, {

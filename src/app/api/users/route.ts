@@ -103,11 +103,11 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
   const targetId = searchParams.get('id') || '';
   const idsParam = searchParams.get('ids') || '';
 
-  // Batch deletion
+    // Batch deletion
   if (idsParam) {
     const ids = idsParam.split(',').filter(Boolean);
     // Filter out current user first
-    let idsToDelete = ids.filter(id => id !== currentUserId);
+    const idsToDelete = ids.filter(id => id !== currentUserId);
 
     // Check for last admin protection via service layer
     try {

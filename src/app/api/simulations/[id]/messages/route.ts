@@ -1,106 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withErrorHandler, parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { withErrorHandler, parseJsonBody, apiSuccess, apiError, HttpStatus, getAuthenticatedUserId, extractUserRole } from '@/lib/api-utils';
 import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
-import type { SimulationMessage } from '@/lib/types';
 import { logger } from '@/lib/logger';
+import { SettingsService } from '@/server/services/settings-service';
+import { type KnowledgeSearchResult } from '@/server/services/knowledge-search-service';
+import { HTTP } from '@/lib/constants';
+import { botConfigRepository } from '@/server/repositories/bot-config-repository';
+import { detectHandoffIntent } from '@/lib/confidence-calculator';
+import { parseSSEStream } from '@/lib/sse-parser';
+import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
 
-// Scenario-specific system prompts for simulation
-const SCENARIO_PROMPTS: Record<string, string> = {
-  order_inquiry: `你是订单咨询专员，专注于帮助用户查询订单状态、发货时间、物流进度等信息。请：
-1. 主动提供订单状态信息
-2. 解释发货和物流流程
-3. 对延迟表示歉意并提供解决方案
-4. 使用友好的客服口吻`,
-  refund_request: `你是退款处理专员，负责处理用户的退款申请和退货流程。请：
-1. 耐心听取用户的退款原因
-2. 说明退款流程和时间
-3. 提供必要的退款账户信息收集
-4. 表达对用户不便的理解`,
-  product_question: `你是产品顾问，负责解答用户关于产品规格、使用方法、注意事项等问题。请：
-1. 提供准确的产品信息
-2. 使用通俗易懂的语言
-3. 主动提供使用建议和注意事项
-4. 如有不确定的信息，坦诚告知`,
-  complaint: `你是投诉处理专员，需要妥善处理用户投诉。请：
-1. 首先表达歉意和理解
-2. 认真倾听用户的问题
-3. 不辩解、不推诿
-4. 提供具体的解决方案和补偿措施
-5. 保持耐心和同理心`,
-  multi_turn: `你是智能客服，需要进行流畅的多轮对话。请：
-1. 记住对话上下文
-2. 主动询问下一步需求
-3. 提供连贯的服务
-4. 在适当时机推荐相关产品或服务`,
-  general: `你是智能客服助手，专注于为用户提供优质的服务。请：
-1. 准确理解用户问题
-2. 提供专业、耐心的回答
-3. 主动提供帮助和建议
-4. 如无法解决，及时转接人工`,
-  custom: `你是智能客服助手，专注于为用户提供优质的服务。请：
-1. 准确理解用户问题
-2. 提供专业、耐心的回答
-3. 主动提供帮助和建议
-4. 如无法解决，及时转接人工`,
-  logistics_query: `你是物流查询专员，负责帮助用户查询物流轨迹、快递公司和签收状态。请：
-1. 快速准确地提供物流信息
-2. 解释各快递公司的特点
-3. 提醒签收注意事项
-4. 对异常物流主动预警`,
-  address_modify: `你是地址修改专员，负责协助用户修改收货地址和联系人信息。请：
-1. 确认用户身份后进行操作
-2. 告知地址修改的条件和限制
-3. 提醒修改后的配送影响
-4. 确认并复述新的地址信息`,
-  invoice_request: `你是发票专员，负责处理电子发票和纸质发票申请。请：
-1. 确认发票类型和开票信息
-2. 说明发票申请流程和时间
-3. 提醒发票抬头和税号的准确性
-4. 告知发票送达方式和时间`,
-  partial_refund: `你是退款计算专员，负责处理部分退款金额计算。请：
-1. 明确说明退款金额的计算方式
-2. 列出可能影响金额的因素
-3. 预估退款到账时间
-4. 提供退款进度查询方式`,
-  exchange_goods: `你是换货专员，负责处理换货申请和流程指导。请：
-1. 了解用户换货原因
-2. 说明换货流程和所需材料
-3. 告知换货时限和运费规则
-4. 提供换货进度查询方式`,
-  size_recommend: `你是尺码顾问，负责根据用户的身高体重推荐合适尺码。请：
-1. 询问用户的身高体重信息
-2. 根据商品尺码表进行推荐
-3. 考虑版型特点给出建议
-4. 提醒尺码可能存在偏差`,
-  product_compare: `你是商品对比顾问，负责帮助用户对比多个商品的规格。请：
-1. 客观列出各商品的参数
-2. 突出各产品的优缺点
-3. 根据用户需求给出建议
-4. 不偏袒任何特定商品`,
-  escalation: `你是投诉升级处理专员，负责跟进投诉升级事项。请：
-1. 认真听取用户的诉求
-2. 确认投诉升级的原因
-3. 说明当前处理进度
-4. 提供预计解决时间`,
-  combined: `你是综合服务专员，负责引导用户完成咨询到下单的完整流程。请：
-1. 专业解答用户的各种咨询
-2. 根据需求推荐合适的商品
-3. 协助用户完成下单流程
-4. 处理下单过程中的各种问题`,
-};
+/**
+ * Check if user has permission to access a simulation conversation
+ * - Admin can access all
+ * - Creator (created_by) can access their own
+ * - null created_by (legacy) only accessible by admin
+ */
+function canAccessConversation(
+  simulation: { created_by?: string | null },
+  userId: string | null,
+  role: string | null
+): boolean {
+  // Admin can access all
+  if (role === 'admin') return true;
+
+  // Must be logged in to access
+  if (!userId) return false;
+
+  // If created_by is null (legacy data), only admin can access
+  if (simulation.created_by === null || simulation.created_by === undefined) {
+    return false;
+  }
+
+  // Creator can access their own
+  return simulation.created_by === userId;
+}
 
 // GET /api/simulations/[id]/messages - Get messages
 export const GET = withErrorHandler(async (
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id } = await params;
+  const userId = getAuthenticatedUserId(request);
+  const role = extractUserRole(request);
+
   const simulation = await simulationRepository.getById(id);
-  
+
   if (!simulation) {
     return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
+  }
+
+  if (!canAccessConversation(simulation, userId, role)) {
+    return apiError('无权限查看此会话', { status: HttpStatus.FORBIDDEN });
   }
 
   const messages = await simulationRepository.listMessages(id);
@@ -113,30 +67,116 @@ export const POST = withErrorHandler(async (
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id: conversationId } = await params;
-  const { data: body, error: parseError } = await parseJsonBody<{ content: string }>(request);
-  if (parseError) return parseError;
-  
-  const userMessage = body?.content;
-  if (!userMessage || typeof userMessage !== 'string') {
-    return apiError('消息内容不能为空', { status: HttpStatus.BAD_REQUEST });
+
+  // Permission check: require login and access permission
+  const userId = getAuthenticatedUserId(request);
+  const role = extractUserRole(request);
+  if (!userId) {
+    return apiError('请先登录', { status: HttpStatus.UNAUTHORIZED });
   }
 
-  // Find simulation
   const simulation = await simulationRepository.getById(conversationId);
   if (!simulation) {
     return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
   }
 
+  if (!canAccessConversation(simulation, userId, role)) {
+    return apiError('无权限向此会话发送消息', { status: HttpStatus.FORBIDDEN });
+  }
+
+  const { data: body, error: parseError } = await parseJsonBody<{ content: string; bot_id?: string }>(request);
+  if (parseError) return parseError;
+
+  const userMessage = body?.content;
+  if (!userMessage || typeof userMessage !== 'string') {
+    return apiError('消息内容不能为空', { status: HttpStatus.BAD_REQUEST });
+  }
+
+  // P0: Get bot configuration - prioritize request bot_id, fallback to conversation's bot_id
+  // P2: Validate bot exists and log warning if not found
+  const requestedBotId = body?.bot_id || simulation.bot_id;
+  let systemPrompt = '';
+  if (requestedBotId) {
+    const bot = await botConfigRepository.findById(requestedBotId);
+    if (bot && bot.system_prompt) {
+      systemPrompt = bot.system_prompt;
+      logger.info('[Simulation] Using bot system prompt', { botId: requestedBotId, botName: bot.name, source: body?.bot_id ? 'request' : 'conversation' });
+
+      // P0: Sync bot_name if changed
+      if (bot.name && simulation.bot_name !== bot.name) {
+        simulationRepository.updateBotName(conversationId, bot.name).catch((err) => {
+          logger.warn('[Simulation] Failed to sync bot name', { conversationId, botId: requestedBotId, error: err });
+        });
+      }
+    } else {
+      // P2: Bot not found or has no system_prompt
+      logger.warn('[Simulation] Bot not found or has no system prompt', { botId: requestedBotId, found: !!bot });
+    }
+  }
+
+  // P1-2: Message length limit
+  if (userMessage.length > HTTP.MAX_MESSAGE_LENGTH) {
+    return apiError(`消息内容不能超过 ${HTTP.MAX_MESSAGE_LENGTH} 个字符`, {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'MESSAGE_TOO_LONG',
+    });
+  }
+
   // Get existing messages
   const existingMessages = await simulationRepository.listMessages(conversationId);
 
-  // Add user message
+  // Add user message (using crypto.randomUUID)
   const userMsg = await simulationRepository.createMessage({
-    id: `msg-user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    id: crypto.randomUUID(),
     conversation_id: conversationId,
     role: 'user',
     content: userMessage,
   });
+
+  // Load settings for system_prompt fallback (通用模式 fallback 到系统设置)
+  const settingsService = new SettingsService();
+  const appSettings = await settingsService.getSettingsMap();
+
+  // Fallback: if no bot system_prompt, use system settings system_prompt
+  if (!systemPrompt && appSettings.system_prompt) {
+    systemPrompt = appSettings.system_prompt;
+    logger.info('[Simulation] Using system settings system prompt (generic mode)');
+  }
+
+  // P0: Validate system prompt exists - user must have either bot or system settings configured
+  if (!systemPrompt) {
+    return apiError('请先在 Bot 配置或系统设置中配置系统提示词', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'NO_SYSTEM_PROMPT',
+    });
+  }
+
+  // P0: Use shared RetrievalOrchestrator — single gate + retrieval + evidence contract
+  // This replaces the old parallel search + raw source merge pattern.
+  // The orchestrator applies query gating (SKIP/RETRIEVE/CLARIFY) and returns graded evidence.
+  const orchestrator = new RetrievalOrchestrator();
+  const recentMessages = existingMessages
+    .slice(-10)
+    .map(m => ({ role: m.role as string, content: m.content as string }));
+
+  const retrievalResult = await orchestrator.retrieve(userMessage, recentMessages, { useHybrid: true });
+  const { evidence: evidenceBundle } = retrievalResult;
+
+  // Normalize orchestrator output for downstream LLM context injection.
+  // We keep the legacy { knowledgeContext, productContext, sizeChartContext } shape
+  // so LLMStreamingService and confidence calculation are unchanged in behavior,
+  // but we use orchestrator-graded context, not raw knowledge search results.
+  const knowledgeContextForLLM: KnowledgeSearchResult = retrievalResult.knowledgeContext
+    ? {
+        context: retrievalResult.knowledgeContext.context,
+        sources: retrievalResult.knowledgeContext.knowledgeSources,
+        confidence: retrievalResult.knowledgeContext.confidence,
+        images: retrievalResult.knowledgeContext.images,
+      }
+    : { context: '', sources: [], confidence: 0, images: [] };
+  const productContextForLLM = retrievalResult.productContext?.productContext ?? '';
+  const sizeChartContextForLLM = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
+  const orchestratorCitations = evidenceBundle.citations;
 
   // Check auto-reply first
   const autoReplyService = new AutoReplyService();
@@ -152,27 +192,53 @@ export const POST = withErrorHandler(async (
         // If auto-reply matched, return it directly
         if (autoReply) {
           responseText = autoReply.content;
+          // P0: Auto-reply sources must NOT include knowledge sources.
+          // Auto-reply is a deterministic content response — the KB did not contribute
+          // to the answer. Previously the route merged knowledgeResult.sources into
+          // auto-reply messages, which caused "1" to surface refund KB as citation.
           const assistantMsg = await simulationRepository.createMessage({
-            id: `msg-ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: crypto.randomUUID(),
             conversation_id: conversationId,
             role: 'assistant',
             content: responseText,
             sources: [{ type: 'auto_reply', keyword: autoReply.rule.keyword }],
             confidence: 1.0,
+            confidence_breakdown: { knowledge_score: 0, tool_score: 0, llm_self_score: 1.0, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 1.0 },
           });
+
+          // Get updated message count for frontend (graceful degradation: if count fails, omit the field)
+          let autoReplyMessageCount: number | undefined;
+          try {
+            autoReplyMessageCount = await simulationRepository.safeCountMessages(conversationId);
+          } catch (countErr) {
+            logger.api.warn('[Simulation Messages] Auto-reply count failed', {
+              countErr,
+              simulationId: conversationId,
+            });
+          }
 
           // Stream the response
           for (const char of responseText) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: char })}\n`));
             await new Promise(resolve => setTimeout(resolve, 15));
           }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources: assistantMsg.sources ?? null, confidence: 1.0 })}\n`));
+          const donePayload: Record<string, unknown> = {
+            done: true,
+            sources: assistantMsg.sources ?? null,
+            confidence: assistantMsg.confidence ?? 1.0,
+            source: 'auto_reply',
+            reason: '匹配自动回复',
+          };
+          if (autoReplyMessageCount !== undefined) {
+            donePayload.message_count = autoReplyMessageCount;
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(donePayload)}\n`));
           controller.close();
           return;
         }
 
-        // Get scenario-specific system prompt
-        const systemPrompt = SCENARIO_PROMPTS[simulation.scenario_id ?? 'order_inquiry'] || SCENARIO_PROMPTS.order_inquiry;
+        // P0-1: Use bot's system prompt if provided
+        const effectiveSystemPrompt = systemPrompt;
 
         // Build conversation history for context (include newly added user message)
         const allMessages = [...existingMessages, userMsg];
@@ -187,65 +253,256 @@ export const POST = withErrorHandler(async (
         // Initialize LLM streaming service
         const llmStreamingService = new LLMStreamingService();
 
+        // Load LLM provider configuration if set
+        let llmProviderConfig: {
+          providerId?: string;
+          providerBaseUrl?: string;
+          providerApiKey?: string;
+          providerType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom';
+          defaultModel?: string;
+        } = {};
+
+        const llmProviderId = appSettings.llm_provider_id;
+        if (llmProviderId && llmProviderId !== 'coze') {
+          try {
+            const { LlmProviderService } = await import('@/server/services/llm-provider-service');
+            const llmService = new LlmProviderService();
+
+            // First try UUID lookup, then fall back to name lookup
+            let provider = await llmService.getProvider(llmProviderId);
+            if (!provider) {
+              provider = await llmService.getProviderByName(llmProviderId);
+            }
+            if (!provider) {
+              provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
+            }
+
+            if (provider && provider.is_enabled) {
+              // Get decrypted API key for actual API calls
+              const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
+              llmProviderConfig = {
+                providerId: provider.id,
+                providerBaseUrl: provider.base_url,
+                providerApiKey: providerWithKey?.api_key || provider.api_key || '',
+                providerType: provider.api_type as 'openai_compatible' | 'anthropic' | 'custom',
+                defaultModel: provider.default_model || undefined,
+              };
+              logger.api.info('Using extended LLM provider', {
+                providerId: provider.id,
+                name: provider.name,
+                baseUrl: provider.base_url,
+                apiKeyLength: llmProviderConfig.providerApiKey?.length || 0,
+              });
+            } else {
+              logger.api.warn('Provider not enabled or not found', { providerId: llmProviderId });
+            }
+          } catch (error) {
+            logger.api.warn('Failed to load LLM provider config for simulation', {
+              error,
+              providerId: llmProviderId,
+              conversationId,
+            });
+          }
+        } else {
+          logger.api.info('Using default Coze provider', { llmProviderId: llmProviderId || '(not set)' });
+        }
+
         // Get the LLM stream
         const llmStream = llmStreamingService.createStream(
           conversationId,
           userMessage,
           chatHistory,
           {
-            systemPrompt: systemPrompt,
+            systemPrompt: effectiveSystemPrompt,
+            // Knowledge context — orchestrator-graded (P0: no longer raw candidates).
+            // P1: Knowledge context IS passed to the model (for generation), but
+            // the public citation list comes from `evidenceCitations`, never from
+            // raw `knowledgeSources`.
+            knowledgeContext: knowledgeContextForLLM.context || undefined,
+            knowledgeConfidence: knowledgeContextForLLM.confidence,
+            // CANONICAL public citations. These become the SSE done.sources AND
+            // the persisted Message.sources. NOT auto-derived from context regex.
+            evidenceCitations: orchestratorCitations,
+            knowledgeImages: knowledgeContextForLLM.images,
+            // Product context
+            productContext: productContextForLLM || undefined,
+            // Size chart context
+            sizeChartContext: sizeChartContextForLLM || undefined,
+            knowledgeMinScore: retrievalResult.minScore,
+            // Provenance trace for observability
+            retrievalTrace: retrievalResult.evidence.trace
+              ? {
+                  action: retrievalResult.decision.action,
+                  reasonCode: retrievalResult.decision.reasonCode,
+                  provenanceVersion: retrievalResult.evidence.trace.provenanceVersion,
+                  rerankDegraded: retrievalResult.evidence.trace.rerankDegraded,
+                  candidateCount: retrievalResult.evidence.candidates.length,
+                  citationCount: retrievalResult.evidence.citations.length,
+                }
+              : undefined,
+            // Existing params
+            aiModel: appSettings.ai_model_enabled === 'false'
+              ? undefined
+              : appSettings.ai_model,
+            temperature: appSettings.ai_temperature ? parseFloat(appSettings.ai_temperature) : undefined,
+            maxTokens: appSettings.ai_max_tokens ? parseInt(appSettings.ai_max_tokens, 10) : undefined,
+            llmProviderId: llmProviderConfig.providerId,
+            llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
+            llmProviderApiKey: llmProviderConfig.providerApiKey,
+            llmProviderType: llmProviderConfig.providerType,
+            llmProviderDefaultModel: llmProviderConfig.defaultModel,
           }
         );
 
+        let lastDoneChunk: import('@/lib/sse-parser').ParsedSSEChunk | null = null;
+        let streamTimedOut = false;
         let fullContent = '';
-        let sources: Array<{ type: string; content?: string; score?: number; keyword?: string }> | null = null;
 
         const reader = llmStream.getReader();
-        const decoder = new TextDecoder();
 
         try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const text = decoder.decode(value, { stream: true });
-            const lines = text.split('\n');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const parsed = JSON.parse(line.slice(6));
-                  if (parsed.content) {
-                    fullContent += parsed.content;
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: parsed.content })}\n`));
-                  }
-                  if (parsed.done) {
-                    if (parsed.sources) sources = parsed.sources;
-                  }
-                } catch {
-                  // skip malformed chunks
-                }
-              }
+          // Use the shared parser — handles cross-chunk line buffering and AbortSignal.
+          // request.signal propagates browser 60 s abort into the parser's AbortController.
+          await parseSSEStream(reader, (chunk) => {
+            if (chunk.content) {
+              fullContent += chunk.content;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: chunk.content })}\n`));
             }
+            if (chunk.done) lastDoneChunk = chunk as import('@/lib/sse-parser').ParsedSSEChunk;
+          }, request.signal);
+        } catch (parseErr) {
+          const err = parseErr as Error;
+          if (err.name === 'AbortError') {
+            streamTimedOut = true;
+            logger.api.warn('[Simulation Messages] Stream aborted', {
+              simulationId: conversationId,
+              userMessageLength: userMessage.length,
+            });
+          } else {
+            logger.api.error('[Simulation Messages] Stream parse error', { error: err, simulationId: conversationId });
+            throw err;
           }
-        } finally {
-          reader.releaseLock();
         }
+
+        // If stream timed out, send partial response (strip internal markers as safety net)
+        const TOOL_CALL_SIM_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
+        const CONF_SIM_PATTERN = /\[CONF:[0-9]*\.?[0-9]+\]/g;
+        const DELEGATE_SIM_PATTERN = /\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g;
+        const stripSimMarkers = (t: string) => t.replace(TOOL_CALL_SIM_PATTERN, '').replace(CONF_SIM_PATTERN, '').replace(DELEGATE_SIM_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim();
+        const cleanContent = stripSimMarkers(fullContent);
+
+        if (streamTimedOut && cleanContent) {
+          // P2: On timeout, knowledge citations must be cleared.
+          // The LLM did not finish the response — claim verification cannot run, and
+          // we must not publish unverified KB sources for an incomplete answer.
+          const timedOutSources: Array<{ type: string }> = [];
+
+          const assistantMsg = await simulationRepository.createMessage({
+            id: crypto.randomUUID(),
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: cleanContent + '\n\n[响应超时，请刷新页面重试]',
+            sources: timedOutSources.length > 0 ? timedOutSources : undefined,
+            confidence: 0.5,
+            confidence_breakdown: { knowledge_score: 0, tool_score: 0, llm_self_score: 0.5, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 0.5 },
+          });
+
+          // Get message count — count failure is non-fatal so the reply is not lost
+          let timedOutMessageCount: number | undefined;
+          try {
+            timedOutMessageCount = await simulationRepository.safeCountMessages(conversationId);
+          } catch (countErr) {
+            logger.api.warn('[Simulation Messages] Could not get message count after timeout', {
+              countErr,
+              simulationId: conversationId,
+            });
+          }
+
+          const donePayload: Record<string, unknown> = {
+            done: true,
+            sources: assistantMsg.sources ?? null,
+            confidence: assistantMsg.confidence ?? 0.5,
+            timed_out: true,
+            source: 'error',
+            reason: '响应超时',
+          };
+          if (timedOutMessageCount !== undefined) {
+            donePayload.message_count = timedOutMessageCount;
+          }
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(donePayload)}\n`));
+          controller.close();
+          return;
+        }
+
+        // P2: Use the claim-verified confidence/sources from the stream's done event.
+        // The LLMStreamingService already applied claim verification to hasKnowledge and
+        // sources BEFORE sending the done event. Simulation must NOT recalculate these
+        // from raw orchestratorCitations, as that bypasses the fail-closed verifier.
+        // On timeout, the stream service did not run claim verification, so we fall back
+        // to the stream's own confidence (typically 0 since nothing finished).
+        const lc = lastDoneChunk as Record<string, unknown>;
+        const verifiedConfidence = (lc?.confidence as number | undefined) ?? 0.5;
+        const verifiedConfidenceBreakdown = lc?.confidence_breakdown as Record<string, unknown> | null ?? null;
+        // On timeout (streamTimedOut=true), lastDoneChunk will exist but have 0 confidence.
+        // On normal completion, lastDoneChunk.sources contains the verified citations.
+        const verifiedSources: Array<{ type: string }> = (lc?.sources as Array<{ type: string }> | undefined) ?? [];
+        const verifiedHasKnowledge = verifiedSources.some(c => c.type === 'knowledge');
+
+        // Detect handoff intent via semantic pattern matching
+        const handoffIntentDetected = detectHandoffIntent(fullContent);
 
         // Save assistant message
         const assistantMsg = await simulationRepository.createMessage({
-          id: `msg-ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          id: crypto.randomUUID(),
           conversation_id: conversationId,
           role: 'assistant',
           content: fullContent,
-          sources,
-          confidence: 0.85,
+          sources: verifiedSources ?? undefined,
+          confidence: verifiedConfidence,
+          confidence_breakdown: verifiedConfidenceBreakdown ?? null,
         });
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources, confidence: assistantMsg.confidence ?? null })}\n`));
+        // Get updated message count for frontend (graceful degradation: if count fails, omit the field)
+        let messageCount: number | undefined;
+        try {
+          messageCount = await simulationRepository.safeCountMessages(conversationId);
+        } catch (countErr) {
+          logger.api.warn('[Simulation Messages] Could not get final message count', {
+            countErr,
+            simulationId: conversationId,
+          });
+        }
+
+        const donePayload: Record<string, unknown> = {
+          done: true,
+          sources: assistantMsg.sources ?? null,
+          confidence: assistantMsg.confidence ?? verifiedConfidence,
+        };
+        if (messageCount !== undefined) {
+          donePayload.message_count = messageCount;
+        }
+        if (verifiedConfidenceBreakdown) {
+          donePayload.confidence_breakdown = verifiedConfidenceBreakdown;
+        }
+        // Determine response source
+        if (handoffIntentDetected) {
+          donePayload.source = 'handoff';
+          donePayload.reason = '检测到转人工意图';
+        } else if (verifiedHasKnowledge) {
+          donePayload.source = 'knowledge';
+          donePayload.reason = '知识库检索匹配';
+        } else {
+          donePayload.source = 'llm';
+          donePayload.reason = '纯LLM生成';
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(donePayload)}\n`));
         controller.close();
       } catch (error) {
-        logger.api.error('[Simulation Messages] Stream error', { error, simulationId: conversationId });
+        logger.api.error('[Simulation Messages] Stream error', {
+          error,
+          simulationId: conversationId,
+          userMessage: userMessage.substring(0, 100),
+        });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: '处理消息时发生错误' })}\n`));
         controller.close();
       }

@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Info } from "lucide-react";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
@@ -69,8 +70,8 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 const SCOPE_COLORS: Record<string, string> = {
-  global: "bg-blue-100 text-blue-700",
-  agent: "bg-green-100 text-green-700",
+  global: "bg-blue-200 text-blue-800",
+  agent: "bg-green-200 text-green-800",
   ai: "bg-purple-100 text-purple-700",
 };
 
@@ -141,7 +142,7 @@ export function QuickRepliesPanel({
         setReplies(data.items || []);
       }
     } catch (error) {
-      console.error("加载话术失败:", error);
+      logger.error('加载话术失败', { error });
     } finally {
       setLoading(false);
     }

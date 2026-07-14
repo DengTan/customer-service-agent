@@ -1,22 +1,20 @@
 import { NextRequest } from 'next/server';
 import { extname } from 'path';
-import { S3Storage } from 'coze-coding-dev-sdk';
 import { apiError, apiSuccess, HttpStatus, withErrorHandlerSimple, checkRateLimit } from '@/lib/api-utils';
 import { HTTP } from '@/lib/constants';
-
-const storage = new S3Storage({
-  endpointUrl: process.env.COZE_BUCKET_ENDPOINT_URL,
-  accessKey: '',
-  secretKey: '',
-  bucketName: process.env.COZE_BUCKET_NAME,
-  region: 'cn-beijing',
-});
+import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { logger } from '@/lib/logger';
 
 // Allowed image extensions (case-insensitive)
 const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 
 // Allowed MIME types
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+// Storage bucket name
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'smartassist';
+// URL expire time for chat images (30 days)
+const CHAT_EXPIRE_SECONDS = 30 * 24 * 60 * 60;
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   // Rate limit: 30 uploads per minute per IP
@@ -68,18 +66,35 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const folder = purpose === 'knowledge' ? 'knowledge-images' : 'chat-images';
   const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
 
-  const fileKey = await storage.uploadFile({
-    fileContent: buffer,
-    fileName,
-    contentType: file.type,
-  });
+  // Use Supabase Storage
+  const supabase = getSupabaseClient();
 
-  // Knowledge images need longer-lived URLs (365 days) vs chat images (30 days)
-  const expireTime = purpose === 'knowledge' ? 86400 * 365 : 86400 * 30;
-  const imageUrl = await storage.generatePresignedUrl({
-    key: fileKey,
-    expireTime,
-  });
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(fileName, buffer, {
+      contentType: file.type,
+      upsert: true,
+    });
 
-  return apiSuccess({ url: imageUrl, key: fileKey });
+  if (error) {
+    logger.error('Supabase Storage upload error', { error });
+    return apiError('文件上传失败', { status: HttpStatus.INTERNAL_SERVER_ERROR, code: 'UPLOAD_FAILED' });
+  }
+
+  // Generate public URL
+  const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(data.path);
+
+  // For knowledge images, return the raw public URL (365-day lifetime)
+  // For chat images, generate a signed URL with shorter expiry (30 days)
+  let imageUrl: string;
+  if (purpose === 'knowledge') {
+    imageUrl = urlData.publicUrl;
+  } else {
+    const { data: signedData } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(data.path, CHAT_EXPIRE_SECONDS);
+    imageUrl = signedData?.signedUrl || urlData.publicUrl;
+  }
+
+  return apiSuccess({ url: imageUrl, key: data.path });
 });

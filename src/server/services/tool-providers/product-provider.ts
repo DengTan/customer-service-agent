@@ -6,6 +6,7 @@
 import { ProductDetailService } from '../../services/product-detail-service';
 import { ProductDetail } from '../../repositories/product-detail-repository';
 import { BaseToolProvider, ToolParams, ToolResult } from './types';
+import { logger } from '@/lib/logger';
 
 export class ProductProvider extends BaseToolProvider {
   readonly type = 'product' as const;
@@ -93,7 +94,7 @@ export class ProductProvider extends BaseToolProvider {
         isMockData: false,
       };
     } catch (error) {
-      console.error('[ProductProvider] Error querying product:', error);
+      logger.error('[ProductProvider] Error querying product', { error });
       return {
         message: '查询商品信息失败',
         confidence: 0.3,

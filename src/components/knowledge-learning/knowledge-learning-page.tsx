@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import {
   Search, Scan, Inbox, CheckCircle, XCircle, Target,
   Check, X, Pencil, GraduationCap, ChevronLeft, ChevronRight,
@@ -117,7 +118,7 @@ export function KnowledgeLearningPage() {
         setStats(data.stats);
       }
     } catch (err) {
-      console.error('Failed to fetch learning items:', err);
+      logger.error('Failed to fetch learning items', { error: err });
       toast.error('加载知识学习队列失败，请重试');
     } finally {
       setLoading(false);
@@ -140,7 +141,7 @@ export function KnowledgeLearningPage() {
       }
       alert(data.message || '扫描完成');
     } catch (err) {
-      console.error('Scan failed:', err);
+      logger.error('Scan failed', { error: err });
       alert('扫描失败，请重试');
     } finally {
       setScanning(false);
@@ -162,7 +163,7 @@ export function KnowledgeLearningPage() {
       await fetchItems();
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
     } catch (err) {
-      console.error('Approve failed:', err);
+      logger.error('Approve failed', { error: err });
       toast.error('审核通过失败，请重试');
     }
   };
@@ -181,7 +182,7 @@ export function KnowledgeLearningPage() {
       await fetchItems();
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
     } catch (err) {
-      console.error('Reject failed:', err);
+      logger.error('Reject failed', { error: err });
       toast.error('拒绝失败，请重试');
     }
   };
@@ -202,7 +203,7 @@ export function KnowledgeLearningPage() {
       setSelectedIds(new Set());
       await fetchItems();
     } catch (err) {
-      console.error('Batch approve failed:', err);
+      logger.error('Batch approve failed', { error: err });
       toast.error('批量通过失败，请重试');
     }
   };
@@ -222,7 +223,7 @@ export function KnowledgeLearningPage() {
       setSelectedIds(new Set());
       await fetchItems();
     } catch (err) {
-      console.error('Batch reject failed:', err);
+      logger.error('Batch reject failed', { error: err });
       toast.error('批量拒绝失败，请重试');
     }
   };
@@ -275,7 +276,7 @@ export function KnowledgeLearningPage() {
       setEditModal({ open: false, item: null, question: '', answer: '', category: '' });
       await fetchItems();
     } catch (err) {
-      console.error('Edit & approve failed:', err);
+      logger.error('Edit & approve failed', { error: err });
       toast.error('编辑审核失败，请重试');
     }
   };

@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { apiSuccess, parseJsonBody, withErrorHandler, requirePermission } from '@/lib/api-utils';
 import { ConversationService } from '@/server/services/conversation-service';
+import { SettingsService } from '@/server/services/settings-service';
+import { logger } from '@/lib/logger';
 
 const conversationService = new ConversationService();
 
@@ -19,7 +21,22 @@ export const GET = withErrorHandler(async (
   const messageOrder = searchParams.get('order') === 'desc' ? 'desc' : 'asc';
 
   const detail = await conversationService.getConversationDetail(id, messageLimit, messagePage, messageOffset, messageOrder);
-  return apiSuccess(detail);
+
+  // Phase 4: Surface minimal per-conversation capabilities so the chat page
+  // can avoid reading the admin-only /api/settings endpoint.
+  // rating_enabled defaults to true when the setting is missing or unreadable
+  // — preserving the prior behaviour where the rating UI was always shown.
+  let ratingEnabled = true;
+  try {
+    const settings = await new SettingsService().getSettingsMap();
+    if (settings.rating_enabled === 'false') {
+      ratingEnabled = false;
+    }
+  } catch (err) {
+    logger.api.warn('[ConversationDetail] Failed to read rating_enabled setting', { error: err, conversationId: id });
+  }
+
+  return apiSuccess({ ...detail, capabilities: { rating_enabled: ratingEnabled } });
 });
 
 export const PATCH = withErrorHandler(async (

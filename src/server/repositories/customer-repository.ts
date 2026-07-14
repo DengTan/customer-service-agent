@@ -3,6 +3,7 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import type { Customer } from '@/lib/types';
 import { RepositoryError } from './repository-error';
 import { DEMO_CUSTOMERS } from './demo-data/demo-customers';
+import { logger } from '@/lib/logger';
 export interface CustomerFilters {
   search?: string;
   platform?: string;
@@ -131,7 +132,7 @@ export class CustomerRepository {
         external_id: input.external_id ?? null,
         platform_connection_id: input.platform_connection_id ?? null,
         is_anonymous: input.is_anonymous ?? false,
-        conversation_count: input.conversation_count ?? 1, // 新客户首次进线 → 1
+        conversation_count: input.conversation_count ?? 0, // 新客户初始计数为 0
         tags: input.tags ?? [],
         notes: input.notes ?? null,
         metadata: input.metadata ?? null,
@@ -148,12 +149,18 @@ export class CustomerRepository {
 
   async update(input: UpdateCustomerInput): Promise<unknown> {
     if (isDemoMode()) return { id: input.id, name: input.name, tags: input.tags, notes: input.notes, is_anonymous: input.is_anonymous };
-    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString()
+    };
     if (input.name !== undefined) updates.name = input.name;
     if (input.phone !== undefined) updates.phone = input.phone;
     if (input.email !== undefined) updates.email = input.email;
     if (input.is_anonymous !== undefined && input.is_anonymous !== null) updates.is_anonymous = input.is_anonymous;
-    if (input.tags !== undefined) updates.tags = input.tags;
+    if (input.tags !== undefined) {
+      // 去重：使用 Set 去除重复标签名，保持原顺序
+      updates.tags = [...new Set(input.tags)];
+    }
     if (input.notes !== undefined) updates.notes = input.notes;
     if (input.metadata !== undefined) updates.metadata = input.metadata;
 
@@ -186,7 +193,7 @@ export class CustomerRepository {
       });
     } catch (err) {
       // 静默失败，不阻断主流程，但记录日志便于排查
-      console.error('[CustomerRepository] Failed to sync tag counts:', err);
+      logger.error('[CustomerRepository] Failed to sync tag counts', { error: err });
     }
   }
 
@@ -214,19 +221,15 @@ export class CustomerRepository {
     return data;
   }
 
-  async getWithConversations(id: string): Promise<{ customer: unknown; conversations: unknown[] }> {
+  async getWithConversations(id: string, limit = 10, offset = 0): Promise<{ customer: unknown; conversations: unknown[] }> {
     const { data: customer, error } = await this.client
       .from('customers')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw new RepositoryError('find customer by id', error.message, error.code);
-    }
-
-    if (!customer) {
-      return { customer: null, conversations: [] };
     }
 
     const { data: relations } = await this.client
@@ -234,7 +237,7 @@ export class CustomerRepository {
       .select('conversation_id, conversations(id, title, status, created_at, updated_at)')
       .eq('customer_id', id)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .range(offset, offset + limit - 1);
 
     const conversations = relations
       ?.map((r: Record<string, unknown>) => r.conversations)

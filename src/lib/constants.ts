@@ -30,8 +30,10 @@ export const HTTP = {
   KNOWLEDGE_MIN_SCORE: 0.75,
   MAX_MESSAGE_LENGTH: 10000,
   MAX_UPLOAD_SIZE_BYTES: 20 * 1024 * 1024,
-  JWT_COOKIE_NAME: 'sa_jwt',
+  JWT_COOKIE_NAME: 'auth_token',
   JWT_EXPIRES_IN: 8 * 60 * 60,
+  // P0-3: knowledge items all-ids 硬上限，避免大批量选取撑爆响应
+  KNOWLEDGE_ALL_IDS_MAX: 5000,
 } as const;
 
 // ============================================================
@@ -52,6 +54,18 @@ export const DEMO_ARRAY_MAX_SIZE = 200;
 // ============================================================
 export const KNOWLEDGE_SEARCH_LIMIT = 5;
 export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3;
+
+// ============================================================
+// 安全配置
+// ============================================================
+export const SECURITY = {
+  // 信任的代理前缀，仅在直接部署时使用（如反向代理已剥离 X-Forwarded-*）
+  // 生产环境应通过环境变量配置，留空则不信任任何代理头
+  TRUSTED_PROXY: process.env.TRUSTED_PROXY ?? '',
+  // 强制要求 HTTPS 才设置 Secure cookie，即使 X-Forwarded-Proto 被伪造也无法绕过
+  // 生产部署应设为 true，确保 cookie 在 HTTPS 上才设置 Secure 标志
+  COOKIE_REQUIRE_HTTPS: process.env.COOKIE_REQUIRE_HTTPS === 'true',
+} as const;
 
 // ============================================================
 // 内容过滤

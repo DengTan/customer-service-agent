@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Bot, User, Loader2, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { BotConfig } from './bot-selector';
 import { SourceItem, parseSSEStream } from '@/lib/sse-parser';
+import { logger } from '@/lib/logger';
 
 export interface ABResult {
   botId: string;
@@ -41,6 +42,9 @@ interface StreamState {
   done: boolean;
 }
 
+// P2-13: SSE stream timeout - 60 seconds (consistent with backend)
+const SSE_TIMEOUT_MS = 60_000;
+
 export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABComparisonViewProps) {
   const [bots, setBots] = useState<BotConfig[]>([]);
   const [botNames, setBotNames] = useState<Record<string, string>>({});
@@ -74,7 +78,7 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
       });
       setBotNames(names);
     } catch (err) {
-      console.error('Failed to fetch bot names:', err);
+      logger.error('Failed to fetch bot names', { error: err });
     }
   };
 
@@ -101,6 +105,12 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
   const runScriptOnBot = async (botId: string, script: string, scriptIndex: number) => {
     const controller = new AbortController();
     abortRef.current[`${botId}-${scriptIndex}`] = controller;
+
+    // P2-13: Add SSE timeout
+    const sseTimeoutId = setTimeout(() => {
+      controller.abort();
+      logger.warn('[ABComparisonView] SSE stream timeout', { botId, scriptIndex });
+    }, SSE_TIMEOUT_MS);
 
     setStreamStates(prev => ({
       ...prev,
@@ -168,7 +178,15 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
         success: true,
       });
 
-      await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+      // P0-2: Handle cleanup with error handling
+      try {
+        const deleteRes = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+        if (!deleteRes.ok) {
+          logger.warn('[ABComparisonView] Failed to cleanup test conversation', { convId, status: deleteRes.status });
+        }
+      } catch (deleteErr) {
+        logger.warn('[ABComparisonView] Cleanup failed', { error: deleteErr, convId });
+      }
 
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -194,6 +212,7 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
         error: errorMsg,
       });
     } finally {
+      clearTimeout(sseTimeoutId);
       delete abortRef.current[`${botId}-${scriptIndex}`];
     }
   };
@@ -256,9 +275,21 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
     return '低';
   };
 
+  // P1-5: Calculate diff highlight threshold - mark as different if content differs by more than 10%
+  const DIFF_THRESHOLD = 0.1;
+  const hasSignificantDiff = (contentA: string, contentB: string): boolean => {
+    if (!contentA || !contentB) return false;
+    const lenA = contentA.length;
+    const lenB = contentB.length;
+    if (lenA === 0 && lenB === 0) return false;
+    const maxLen = Math.max(lenA, lenB);
+    const diffRatio = Math.abs(lenA - lenB) / maxLen;
+    return diffRatio > DIFF_THRESHOLD;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-background rounded-xl shadow-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 ab-panel-overlay">
+      <div className="bg-background rounded-xl shadow-xl w-[95vw] h-[90vh] flex flex-col overflow-hidden" style={{ animation: 'panelContentIn 0.25s ease-out 0.05s both' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
           <div>
@@ -387,11 +418,21 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
 
                       {result?.content && (
                         <div className="space-y-2">
-                          <div className={`text-sm whitespace-pre-wrap ${
-                            showDiff && result.success && result.content.length < 50 ? 'bg-warning/10' : ''
-                          }`}>
-                            {result.content}
-                          </div>
+                          {(() => {
+                            let diffClass = '';
+                            if (showDiff && result.success && botIds.length > 1) {
+                              const otherBotId = botIds.find(id => id !== botId);
+                              const otherContent = otherBotId ? resultsRef.current[otherBotId]?.[scriptIdx]?.content : undefined;
+                              if (otherContent && hasSignificantDiff(result.content, otherContent)) {
+                                diffClass = 'bg-warning/10';
+                              }
+                            }
+                            return (
+                              <div className={`text-sm whitespace-pre-wrap ${diffClass}`}>
+                                {result.content}
+                              </div>
+                            );
+                          })()}
 
                           {result.confidence !== null && (
                             <div className="flex items-center gap-2">
@@ -416,7 +457,7 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
 
                           {result.sources && result.sources.length > 0 && (
                             <div className="text-xs text-muted-foreground">
-                              引用: {result.sources.map(s => s.name || '未知').join(', ')}
+                              引用: {result.sources.map(s => s?.name ?? '未知').join(', ')}
                             </div>
                           )}
                         </div>

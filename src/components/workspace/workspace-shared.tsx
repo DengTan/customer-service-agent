@@ -34,13 +34,13 @@ export function shouldShowTimeDivider(msg: ChatMessage, prevMsg: ChatMessage | u
 }
 
 // Stat card component
-export function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+export function StatCard({ icon, label, value, accentColor }: { icon: React.ReactNode; label: string; value: string; accentColor?: string }) {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50">
       {icon}
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold">{value}</p>
+        <p className={accentColor ? `text-lg font-bold ${accentColor}` : 'text-sm font-semibold'}>{value}</p>
       </div>
     </div>
   );

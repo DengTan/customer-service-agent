@@ -15,12 +15,13 @@ import {
 import { ErrorBoundary } from '@/components/common/error-boundary';
 
 import type { PushRecord, PushEventLog } from '@/lib/types';
+import { logger } from '@/lib/logger';
 
 /** Push event type definitions for dashboard */
 const PUSH_EVENT_TYPES: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   order_shipped: { label: '订单已发货', color: 'bg-primary/10 text-primary', icon: <Truck className="w-3 h-3" /> },
   order_delivered: { label: '订单已签收', color: 'bg-success/10 text-success', icon: <Package className="w-3 h-3" /> },
-  refund_completed: { label: '退款已到账', color: 'bg-emerald-500/10 text-emerald-600', icon: <CreditCard className="w-3 h-3" /> },
+  refund_completed: { label: '退款已到账', color: 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400', icon: <CreditCard className="w-3 h-3" /> },
   refund_rejected: { label: '退款已拒绝', color: 'bg-destructive/10 text-destructive', icon: <XCircle className="w-3 h-3" /> },
   logistics_delayed: { label: '物流延迟', color: 'bg-amber-500/10 text-amber-600', icon: <Clock className="w-3 h-3" /> },
 };
@@ -163,7 +164,7 @@ function DashboardPageInner() {
         setPushEvents([]);
       }
     } catch (err) {
-      console.error('加载分析数据失败:', err);
+      logger.error('加载分析数据失败', { error: err });
       toast.error('加载分析数据失败，请刷新重试');
     } finally {
       setLoading(false);
@@ -179,7 +180,7 @@ function DashboardPageInner() {
       const data = await res.json();
       setAlerts(data.recentAlerts || []);
     } catch (err) {
-      console.error('加载告警数据失败:', err);
+      logger.error('加载告警数据失败', { error: err });
       toast.error('加载告警数据失败');
     } finally {
       setAlertsLoading(false);
@@ -344,8 +345,28 @@ function DashboardPageInner() {
                       tickFormatter={(v: number) => `${v}星`}
                       width={36}
                     />
-                    <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: 12 }} />
-                    <Bar dataKey="count" name="数量" radius={[0, 4, 4, 0]} barSize={20}>
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: '1px solid var(--border)', fontSize: 12 }}
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const value = payload[0]?.value;
+                        return (
+                          <div className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground shadow-sm">
+                            {`数量：${value}`}
+                          </div>
+                        );
+                      }}
+                    />
+                    <Bar
+                      dataKey="count"
+                      fill="var(--chart-1)"
+                      radius={[0, 4, 4, 0]}
+                      barSize={20}
+                      isAnimationActive
+                      animationBegin={200}
+                      animationDuration={800}
+                      animationEasing="ease-out"
+                    >
                       {ratingDist.map((entry, index) => (
                         <Cell key={entry.star} fill={RATING_COLORS[index]} />
                       ))}
@@ -376,17 +397,15 @@ function DashboardPageInner() {
                       outerRadius={85}
                       paddingAngle={3}
                       dataKey="value"
-                      onClick={() => {}}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      style={{ pointerEvents: 'none' }}
+                      isAnimationActive
+                      animationBegin={200}
+                      animationDuration={900}
+                      animationEasing="ease-out"
                     >
                       {sourceChartData.map((_, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={SOURCE_COLORS[index % SOURCE_COLORS.length]}
-                          onClick={() => {}}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          style={{ cursor: 'default', pointerEvents: 'none' }}
                         />
                       ))}
                     </Pie>
@@ -525,9 +544,12 @@ function DashboardPageInner() {
                 <div
                   key={alert.id}
                   onClick={() => {
-                    if (!alert.conversation_id) return;
+                    if (!alert.conversation_id) {
+                      toast.error('该告警暂无关联会话');
+                      return;
+                    }
                     const convId = alert.conversation_id;
-                    if (alert.type === 'ticket_created' || alert.type === 'ticket_status_changed' || alert.type === 'ticket_assigned' || alert.type === 'ticket_unassigned' || alert.type === 'ticket_mention' || alert.type === 'ticket_handled') {
+                    if (alert.type === 'ticket_created' || alert.type === 'ticket_status_changed' || alert.type === 'ticket_assigned' || alert.type === 'ticket_unassigned' || alert.type === 'ticket_mention' || alert.type === 'ticket_handled' || alert.type === 'handoff' || alert.type === 'ticket_handed_over') {
                       router.push(`/tickets`);
                     } else {
                       router.push(`/?conversation=${convId}`);
@@ -799,7 +821,7 @@ function MetricCard({
     primary: { bg: 'bg-primary/10', text: 'text-primary' },
     success: { bg: 'bg-success/10', text: 'text-success' },
     amber: { bg: 'bg-amber-50', text: 'text-amber-500' },
-    violet: { bg: 'bg-violet-50', text: 'text-violet-500' },
+    violet: { bg: 'bg-violet-50 dark:bg-violet-950', text: 'text-violet-500' },
   };
   const c = colorMap[color];
 

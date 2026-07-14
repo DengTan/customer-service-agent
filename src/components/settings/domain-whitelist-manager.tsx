@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface AllowedDomain {
   id: string;
@@ -49,9 +50,9 @@ const PATTERN_LABELS: Record<string, string> = {
   suffix: '后缀',
 };
 const PATTERN_COLORS: Record<string, string> = {
-  exact: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  exact: 'bg-blue-200 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
   wildcard: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  suffix: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  suffix: 'bg-green-200 text-green-800 dark:bg-green-900/30 dark:text-green-400',
 };
 
 export default function DomainWhitelistManager({ open, onClose, onCountChange }: DomainWhitelistManagerProps) {
@@ -69,6 +70,9 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     description: '',
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
 
   // Stats
   const stats = {
@@ -175,7 +179,14 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除此域名？')) return;
+    const confirmed = await confirm({
+      title: '删除域名',
+      description: '确定删除此域名？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/content-filter/domains?id=${id}`, {
         method: 'DELETE',
@@ -244,8 +255,15 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
       toast.error('请先选择要删除的域名');
       return;
     }
-    if (!confirm(`确定删除选中的 ${selectedIds.size} 个域名？`)) return;
-    
+    const confirmed = await confirm({
+      title: '批量删除域名',
+      description: `确定删除选中的 ${selectedIds.size} 个域名？`,
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(id =>

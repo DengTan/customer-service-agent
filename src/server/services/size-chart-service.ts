@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { Config, KnowledgeClient, KnowledgeDocument, DataSourceType } from 'coze-coding-dev-sdk';
+import { getEmbeddingService } from './embedding-service';
 import {
   SizeChartRepository,
   type NormalizedSizeChart,
@@ -20,8 +20,7 @@ import {
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { logger } from '@/lib/logger';
-
-const KNOWLEDGE_DATA_SOURCE = 'coze_doc_knowledge';
+import { deleteStorageFile } from '@/lib/storage-cleanup';
 
 // ─── Content Hash ─────────────────────────────────────────────────────────────
 
@@ -340,6 +339,12 @@ export class SizeChartService {
       }
       // Delete vector documents
       await this.deleteVectorDocuments(existing.doc_ids);
+
+      // Delete size chart image from storage (fire-and-forget)
+      if (existing.image_url) {
+        deleteStorageFile(existing.image_url);
+      }
+
       await this.repository.delete(id);
     } catch (error) {
       throw toServiceError(error, '删除尺码表失败', 'DB_ERROR');
@@ -554,6 +559,7 @@ export class SizeChartService {
     size_rows: Array<Record<string, string>>;
     recommend_rules?: string | null;
     description?: string | null;
+    id?: string;
   }): Promise<string[]> {
     const content = buildSizeChartTextContent({
       name: chart.name,
@@ -564,48 +570,18 @@ export class SizeChartService {
       recommend_rules: chart.recommend_rules,
       description: chart.description,
     });
-
     try {
-      const config = new Config();
-      const client = new KnowledgeClient(config);
-
-      const documents: KnowledgeDocument[] = [
-        {
-          source: DataSourceType.TEXT,
-          raw_data: content,
-        },
-      ];
-
-      const result = await client.addDocuments(documents, KNOWLEDGE_DATA_SOURCE, {
-        separator: '\n\n',
-        max_tokens: 2000,
-      });
-
-      if (result.code !== 0) {
-        logger.api.warn('size-chart-vectorize-failed', { name: chart.name, msg: result.msg });
-        return [];
-      }
-
-      return result.doc_ids || [];
+      const embeddingService = getEmbeddingService();
+      const embedding = await embeddingService.embed(content);
+      await this.repository.updateEmbedding(chart.id!, embedding);
+      return [];
     } catch (error) {
-      logger.api.warn('size-chart-vectorize-error', { name: chart.name, error: (error as Error).message });
+      logger.api.warn('size-chart-embed-failed', { name: chart.name, error: (error as Error).message });
       return [];
     }
   }
 
-  private async deleteVectorDocuments(docIds: string[]): Promise<void> {
-    if (!docIds || docIds.length === 0) return;
-    try {
-      const config = new Config();
-      const client = new KnowledgeClient(config);
-      const result = await (client as unknown as {
-        deleteDocuments?: (docIds: string[], dataSource: string) => Promise<{ code: number; msg?: string }>;
-      }).deleteDocuments?.(docIds, KNOWLEDGE_DATA_SOURCE);
-      if (result && result.code !== 0) {
-        logger.api.warn('size-chart-vector-delete-failed', { docIds, msg: result.msg });
-      }
-    } catch (error) {
-      logger.api.warn('size-chart-vector-delete-error', { docIds, error: (error as Error).message });
-    }
+  private async deleteVectorDocuments(_docIds: string[]): Promise<void> {
+    // No-op: embedding stored locally, no external docs to delete
   }
 }

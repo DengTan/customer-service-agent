@@ -2,6 +2,44 @@ import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
 import { createHash } from 'node:crypto';
 
+/**
+ * Normalize extracted text to clean Markdown/structured format:
+ * - Replace consecutive spaces, newlines, tabs with single space
+ * - Preserve document structure (headers, lists, tables)
+ * - Normalize line endings
+ * - Clean up common extraction artifacts
+ */
+export function normalizeToMarkdown(text: string): string {
+  if (!text) return '';
+
+  const result: string[] = [];
+  let lastWasEmpty = false;
+
+  const lines = text
+    // Remove zero-width characters
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    // Normalize line endings
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    // Split into lines
+    .split('\n');
+
+  for (const line of lines) {
+    // Preserve leading/trailing spaces in code blocks (lines starting with spaces)
+    const isCodeBlock = line.trimStart().startsWith('```') || /^\s{4,}/.test(line);
+    const processedLine = isCodeBlock ? line : line.replace(/[ \t]+/g, ' ').trimEnd();
+
+    // Remove consecutive empty lines
+    if (processedLine === '' && lastWasEmpty) {
+      continue;
+    }
+    result.push(processedLine);
+    lastWasEmpty = processedLine === '';
+  }
+
+  return result.join('\n').trim();
+}
+
 export interface ChunkResult {
   index: number;
   content: string;
@@ -72,11 +110,56 @@ function extractExcelText(buffer: Buffer): string {
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
-    const csvContent = XLSX.utils.sheet_to_csv(sheet);
-    textParts.push(`[Sheet: ${sheetName}]\n${csvContent}`);
+    // Convert to markdown table format for better readability
+    const markdownTable = sheetToMarkdown(sheet);
+    textParts.push(`[Sheet: ${sheetName}]\n${markdownTable}`);
   }
 
   return textParts.join('\n\n');
+}
+
+/**
+ * Convert Excel sheet to Markdown table format
+ */
+function sheetToMarkdown(sheet: XLSX.WorkSheet): string {
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  const rows: string[][] = [];
+
+  // Read all cells
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    const row: string[] = [];
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = sheet[cellAddress];
+      const cellValue = cell?.v ?? '';
+      // Escape pipe characters in cell content
+      row.push(String(cellValue).replace(/\|/g, '\\|'));
+    }
+    rows.push(row);
+  }
+
+  if (rows.length === 0) return '';
+
+  // Build markdown table
+  const markdownRows: string[] = [];
+
+  // Header row
+  markdownRows.push('| ' + rows[0].join(' | ') + ' |');
+
+  // Separator row
+  const colCount = rows[0].length;
+  markdownRows.push('| ' + Array(colCount).fill('---').join(' | ') + ' |');
+
+  // Data rows
+  for (let i = 1; i < rows.length; i++) {
+    // Pad row if necessary
+    while (rows[i].length < colCount) {
+      rows[i].push('');
+    }
+    markdownRows.push('| ' + rows[i].slice(0, colCount).join(' | ') + ' |');
+  }
+
+  return markdownRows.join('\n');
 }
 
 function extractCsvText(buffer: Buffer): string {
@@ -85,8 +168,10 @@ function extractCsvText(buffer: Buffer): string {
 
 async function extractDocxText(buffer: Buffer): Promise<string> {
   try {
+    // Use mammoth to extract raw text
     const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    // Normalize the text output
+    return normalizeToMarkdown(result.value);
   } catch {
     throw new Error('DOCX解析失败');
   }

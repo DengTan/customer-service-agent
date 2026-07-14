@@ -10,6 +10,8 @@ import {
 import { CustomerRepository } from '@/server/repositories/customer-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { AlertService } from './alert-service';
+import { QualityService } from './quality-service';
 
 export interface ConversationListItem extends Omit<Conversation, 'last_message'> {
   last_message?: string | null;
@@ -32,10 +34,27 @@ export interface Participant {
 }
 
 export class ConversationService {
+  private _alertService: AlertService | null = null;
+  private _qualityService: QualityService | null = null;
+
   constructor(
     private readonly conversations = new ConversationRepository(),
     private readonly customers = new CustomerRepository(),
   ) {}
+
+  private get alertService(): AlertService {
+    if (!this._alertService) {
+      this._alertService = new AlertService();
+    }
+    return this._alertService;
+  }
+
+  private get qualityService(): QualityService {
+    if (!this._qualityService) {
+      this._qualityService = new QualityService();
+    }
+    return this._qualityService;
+  }
 
   async listConversations(filters: ConversationFilters): Promise<{ conversations: ConversationListItem[]; total: number; statusCounts: Record<string, number> }> {
     try {
@@ -182,7 +201,7 @@ export class ConversationService {
     }
   }
 
-  async getSessionInfo(conversationId: string): Promise<{ id: string; status: string; message_count: number; updated_at: string } | null> {
+  async getSessionInfo(conversationId: string): Promise<{ id: string; status: string; message_count: number; updated_at: string; created_at: string } | null> {
     try {
       return await this.conversations.findSessionInfo(conversationId);
     } catch (error) {
@@ -192,11 +211,33 @@ export class ConversationService {
     }
   }
 
+  async getFirstAssistantReplyAt(conversationId: string): Promise<string | null> {
+    try {
+      return await this.conversations.findFirstAssistantReplyAt(conversationId);
+    } catch (error) {
+      logger.agent.warn('Failed to get first assistant reply time', { error, conversationId });
+      return null;
+    }
+  }
+
   async insertMessage(message: NewMessage): Promise<void> {
     try {
       await this.conversations.insertMessage(message);
     } catch (error) {
       throw toServiceError(error, 'Failed to save message', 'DB_INSERT_ERROR');
+    }
+  }
+
+  /**
+   * Insert a message and return the persisted row (with id).
+   * P3 Phase 1 — used by LLMStreamingService so the retrieval trace can
+   * reference the inserted assistant message id. Failure propagates to caller.
+   */
+  async insertMessageAndReturn(message: NewMessage): Promise<Message> {
+    try {
+      return await this.conversations.insertMessageAndReturn(message);
+    } catch (error) {
+      throw toServiceError(error, 'Failed to save message and return', 'DB_INSERT_ERROR');
     }
   }
 
@@ -249,6 +290,22 @@ export class ConversationService {
     }
   }
 
+  /**
+   * Count messages with `role='user'` for a conversation.
+   * Used by the messages route to enforce `max_turns` against actual user
+   * turns only — assistant / system / agent / internal_note messages are not
+   * counted. Non-critical: returns 0 on failure (the route then treats the
+   * conversation as "no turns used yet" rather than blocking intake).
+   */
+  async countUserMessages(conversationId: string): Promise<number> {
+    try {
+      return await this.conversations.countUserMessages(conversationId);
+    } catch (error) {
+      logger.agent.warn('Failed to count user messages', { error, conversationId });
+      return 0;
+    }
+  }
+
   async getSummary(conversationId: string): Promise<string | null> {
     try {
       return await this.conversations.findSummary(conversationId);
@@ -294,6 +351,19 @@ export class ConversationService {
     }
 
     try {
+      // Run satisfaction_below quality check and create alerts for failures
+      const satisfactionResults = await this.qualityService.checkSatisfactionBelow(conversationId, rating);
+      for (const result of satisfactionResults) {
+        if (result.result === 'fail') {
+          await this.alertService.createQualityFailedAlert(
+            conversationId,
+            result.ruleName,
+            result.ruleType,
+            result.detail,
+          );
+        }
+      }
+
       return await this.conversations.updateAndReturn(conversationId, {
         rating,
         rating_comment: comment || null,

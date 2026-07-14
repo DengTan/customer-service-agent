@@ -3,13 +3,14 @@
  * 
  * Security notes:
  * - JWT_SECRET environment variable is REQUIRED in production
- * - Falls back to COZE_SUPABASE_SERVICE_ROLE_KEY if available
+ * - Falls back to SUPABASE_SERVICE_ROLE_KEY if available
  * - Uses a weak default only for development (with warning)
  */
 
 import jwt from 'jsonwebtoken';
 import type { UserRole } from '@/lib/types';
 import { logger as loggerCollection } from '@/lib/logger';
+import { HTTP } from '@/lib/constants';
 const authLogger = loggerCollection.auth;
 
 export interface JWTPayload {
@@ -42,7 +43,7 @@ function isProduction(): boolean {
 function getResolvedSecret(): string {
   if (_resolvedSecret) return _resolvedSecret;
 
-  const envSecret = process.env.JWT_SECRET || process.env.COZE_SUPABASE_SERVICE_ROLE_KEY || '';
+  const envSecret = process.env.JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const isProd = isProduction();
   _secretWarnings = [];
 
@@ -50,7 +51,7 @@ function getResolvedSecret(): string {
     if (isProd) {
       // Production without secret: FATAL ERROR
       throw new Error(
-        '[Auth] FATAL: No JWT_SECRET or COZE_SUPABASE_SERVICE_ROLE_KEY configured in production.\n' +
+        '[Auth] FATAL: No JWT_SECRET or SUPABASE_SERVICE_ROLE_KEY configured in production.\n' +
         '         Please set JWT_SECRET environment variable to a strong random value (min 32 chars).\n' +
         '         Generate with: node -e "console.log(require("crypto").randomBytes(32).toString("hex"))"'
       );
@@ -106,7 +107,7 @@ export function getJWTSecret(): string {
  * Check if using a strong secret
  */
 export function hasStrongSecret(): boolean {
-  const secret = _resolvedSecret || process.env.JWT_SECRET || process.env.COZE_SUPABASE_SERVICE_ROLE_KEY || '';
+  const secret = _resolvedSecret || process.env.JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   return secret !== DEV_DEFAULT_SECRET && secret.length >= 32;
 }
 
@@ -182,7 +183,7 @@ export function extractTokenFromCookies(cookieHeader: string | null): string | n
     return acc;
   }, {} as Record<string, string>);
   
-  return cookies['auth_token'] || null;
+  return cookies[HTTP.JWT_COOKIE_NAME] || null;
 }
 
 /**
@@ -191,11 +192,12 @@ export function extractTokenFromCookies(cookieHeader: string | null): string | n
  */
 export function getTokenCookieOptions(isHttps: boolean = false, expiresInSeconds: number = 8 * 60 * 60) {
   const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
-  
+
   // Secure cookies are only sent over HTTPS
-  // If we're on HTTPS, always use secure=true for security
+  // When COOKIE_REQUIRE_HTTPS is set, force Secure=true to prevent
+  // attacks where X-Forwarded-Proto is spoofed to bypass secure cookie
   const shouldSecure = isHttps;
-  
+
   return {
     httpOnly: true,
     secure: shouldSecure,

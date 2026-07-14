@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { logger } from '@/lib/logger';
 import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ChatTabBar, type OpenTab } from './chat-tab-bar';
 import { WelcomeScreen } from './welcome-screen';
 import { ErrorBoundary } from '@/components/common/error-boundary';
+import { processRatingSubmit, type RatingSubmitResult } from './rating-gating';
 
 import { Conversation, Message } from '@/lib/types';
 export type { Conversation, Message };
@@ -20,6 +22,13 @@ interface TabState {
   streamingConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null;
   isLoading: boolean;
   isSending: boolean;
+  /**
+   * Per-conversation capability cache (phase 4). Read from the conversation
+   * detail response — the chat page must NOT call the admin /api/settings
+   * endpoint directly. Defaults to `rating_enabled: true` until the first
+   * detail load completes.
+   */
+  ratingEnabled: boolean;
   activeDelegations: Array<{
     child_bot_name: string;
     child_bot_id: string;
@@ -59,7 +68,7 @@ function ChatPageInner() {
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      console.error('加载对话列表失败:', err);
+      logger.error('加载对话列表失败', { error: err });
       toast.error('加载对话列表失败，请刷新重试');
     }
   }, []);
@@ -79,7 +88,17 @@ function ChatPageInner() {
   // Helper: get tab state with defaults
   const getTabState = useCallback(
     (convId: string): TabState =>
-      tabStates[convId] ?? { messages: [], streamingContent: '', streamingSources: null, streamingConfidence: null, streamingConfidenceBreakdown: null, isLoading: false, isSending: false, activeDelegations: [] },
+      tabStates[convId] ?? {
+        messages: [],
+        streamingContent: '',
+        streamingSources: null,
+        streamingConfidence: null,
+        streamingConfidenceBreakdown: null,
+        isLoading: false,
+        isSending: false,
+        ratingEnabled: true,
+        activeDelegations: [],
+      },
     [tabStates],
   );
 
@@ -87,7 +106,20 @@ function ChatPageInner() {
   const updateTabState = useCallback((convId: string, patch: Partial<TabState>) => {
     setTabStates((prev) => ({
       ...prev,
-      [convId]: { ...(prev[convId] ?? { messages: [], streamingContent: '', streamingSources: null, streamingConfidence: null, streamingConfidenceBreakdown: null, isLoading: false, isSending: false, activeDelegations: [] }), ...patch },
+      [convId]: {
+        ...(prev[convId] ?? {
+          messages: [],
+          streamingContent: '',
+          streamingSources: null,
+          streamingConfidence: null,
+          streamingConfidenceBreakdown: null,
+          isLoading: false,
+          isSending: false,
+          ratingEnabled: true,
+          activeDelegations: [],
+        }),
+        ...patch,
+      },
     }));
   }, []);
 
@@ -99,7 +131,13 @@ function ChatPageInner() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.messages) {
-        updateTabState(convId, { messages: data.messages, isLoading: false });
+        const patch: Partial<TabState> = { messages: data.messages, isLoading: false };
+        // Cache the per-conversation rating capability surfaced by the
+        // detail endpoint. The chat page never reads /api/settings directly.
+        if (data.capabilities && typeof data.capabilities.rating_enabled === 'boolean') {
+          patch.ratingEnabled = data.capabilities.rating_enabled;
+        }
+        updateTabState(convId, patch);
       }
       // Sync summary from conversation detail to list state
       if (data.conversation?.summary !== undefined) {
@@ -108,7 +146,7 @@ function ChatPageInner() {
         );
       }
     } catch (err) {
-      console.error('加载消息失败:', err);
+      logger.error('加载消息失败', { error: err });
       toast.error('加载消息失败，请重试');
       updateTabState(convId, { isLoading: false });
     }
@@ -220,10 +258,14 @@ function ChatPageInner() {
           streamingContent: '',
           isLoading: false,
           isSending: false,
+          // New conversation: rating capability defaults to enabled until the
+          // first detail load overrides it (the create endpoint does not yet
+          // surface the capability).
+          ratingEnabled: true,
         });
       }
     } catch (err) {
-      console.error('创建对话失败:', err);
+      logger.error('创建对话失败', { error: err });
       toast.error('创建对话失败，请重试');
     }
   }, [updateTabState]);
@@ -256,14 +298,14 @@ function ChatPageInner() {
             const uploadData = await uploadResp.json();
             finalImageUrl = uploadData.url;
           } else {
-            console.error('图片上传失败');
+            logger.error('图片上传失败');
             toast.error('图片上传失败，请尝试重新上传');
             finalImageUrl = undefined;
           }
           // Revoke the local blob URL
           URL.revokeObjectURL(imageUrl);
         } catch (err) {
-          console.error('图片上传异常:', err);
+          logger.error('图片上传异常', { error: err });
           toast.error('图片上传异常，请尝试重新上传');
           finalImageUrl = undefined;
         }
@@ -464,7 +506,7 @@ function ChatPageInner() {
           }
           return;
         }
-        console.error('发送消息失败:', err);
+        logger.error('发送消息失败', { error: err });
         toast.error('发送消息失败，请重试');
         updateTabState(convId, { isSending: false });
       }
@@ -472,23 +514,40 @@ function ChatPageInner() {
     [activeTabId, getTabState, updateTabState, loadConversations],
   );
 
-  // Submit rating
+  // Submit rating — phase 4: use the centralised submit helper so the UI only
+  // flips to "感谢您的评价！" after a confirmed 2xx. RATING_DISABLED (403 with
+  // code) permanently removes the rating card for this conversation; any
+  // other failure (network / 5xx / 4xx) keeps the card and surfaces an error.
+  // Returns the structured result so ChatWindow can drive its local
+  // ratingSubmitted flag without re-running the request.
   const handleSubmitRating = useCallback(
-    async (rating: number, comment: string) => {
-      if (!activeTabId) return;
-      try {
-        await fetch(`/api/conversations/${activeTabId}/rating`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating, comment }),
-        });
+    async (rating: number, comment: string): Promise<RatingSubmitResult> => {
+      const convId = activeTabId;
+      if (!convId) return { ok: false, code: 'RETRY' };
+      const result = await processRatingSubmit({
+        conversationId: convId,
+        rating,
+        comment,
+      });
+      if (result.ok) {
         loadConversations();
-      } catch (err) {
-        console.error('提交评价失败:', err);
-        toast.error('提交评价失败，请重试');
+        return result;
       }
+      if (result.code === 'RATING_DISABLED') {
+        // Capability flipped to off (admin setting changed). Permanently
+        // hide the rating card by clearing the cached capability.
+        updateTabState(convId, { ratingEnabled: false });
+        toast.error('评价功能已关闭');
+        return result;
+      }
+      // RETRY: keep the card, refresh conversation list (in case the user
+      // already had a stale rating), and surface an error.
+      logger.warn('Rating submission failed; leaving card visible for retry', { convId });
+      loadConversations();
+      toast.error('提交评价失败，请重试');
+      return result;
     },
-    [activeTabId, loadConversations],
+    [activeTabId, loadConversations, updateTabState],
   );
 
   // End conversation
@@ -504,9 +563,9 @@ function ChatPageInner() {
           prev.map((c) => (c.id === convId ? { ...c, status: 'ended' } : c)),
         );
         // Also update tab title if needed
-        setOpenTabs((prev) => prev.map((t) => (t.id === convId ? { ...t, status: 'ended' as const } : t)));
+        setOpenTabs((prev) => prev.map((t) => (t.id === convId ? { ...t, status: 'ended' as const } : t))        );
       } catch (err) {
-        console.error('结束对话失败:', err);
+        logger.error('结束对话失败', { error: err });
         toast.error('结束对话失败，请重试');
       }
     },
@@ -531,7 +590,7 @@ function ChatPageInner() {
         // Reload messages to show the system handoff message
         loadMessages(convId);
       } catch (err) {
-        console.error('转人工失败:', err);
+        logger.error('转人工失败', { error: err });
         toast.error('转人工失败，请重试');
       }
     },
@@ -572,6 +631,7 @@ function ChatPageInner() {
               streamingConfidenceBreakdown={activeTabState?.streamingConfidenceBreakdown ?? null}
               isLoading={activeTabState?.isLoading ?? false}
               isSending={activeTabState?.isSending ?? false}
+              ratingEnabled={activeTabState?.ratingEnabled ?? true}
               activeDelegations={activeTabState?.activeDelegations ?? []}
               allConversations={conversations}
               onSend={handleSendMessage}

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { logger } from '@/lib/logger';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 import {
     Megaphone,
@@ -77,34 +79,34 @@ const TYPE_CONFIG: Record<string, {
     abandoned_cart: {
         label: "购物车挽回",
         icon: ShoppingCart,
-        color: "bg-orange-100 text-orange-700"
+        color: "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
     },
 
     browsing_nurture: {
         label: "浏览培育",
         icon: Eye,
-        color: "bg-blue-100 text-blue-700"
+        color: "bg-blue-200 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400"
     },
 
     win_back: {
         label: "流失召回",
         icon: UserCheck,
-        color: "bg-purple-100 text-purple-700"
+        color: "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400"
     },
     promotion: {
         label: "促销活动",
         icon: Megaphone,
-        color: "bg-red-100 text-red-700"
+        color: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
     },
     announcement: {
         label: "公告通知",
         icon: Send,
-        color: "bg-teal-100 text-teal-700"
+        color: "bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400"
     },
     loyalty: {
         label: "会员关怀",
         icon: Crown,
-        color: "bg-yellow-100 text-yellow-700"
+        color: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400"
     }
 };
 
@@ -114,17 +116,17 @@ const STATUS_CONFIG: Record<string, {
 }> = {
     draft: {
         label: "草稿",
-        color: "bg-blue-100 text-blue-700"
+        color: "bg-blue-200 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400"
     },
 
     running: {
         label: "运行中",
-        color: "bg-green-100 text-green-700"
+        color: "bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400"
     },
 
     paused: {
         label: "已暂停",
-        color: "bg-amber-100 text-amber-700"
+        color: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
     },
 
     completed: {
@@ -134,7 +136,7 @@ const STATUS_CONFIG: Record<string, {
 
     active: {
         label: "进行中",
-        color: "bg-green-100 text-green-700"
+        color: "bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400"
     },
 
     scheduled: {
@@ -145,6 +147,9 @@ const STATUS_CONFIG: Record<string, {
 
 export default function MarketingPage() {
     const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
+
+    // Confirm dialog
+    const { confirm } = useConfirmDialog();
 
     const [stats, setStats] = useState<MarketingStats>({
         total_sent: 0,
@@ -255,7 +260,7 @@ export default function MarketingPage() {
                 });
             }
         } catch (err) {
-            console.error("Failed to fetch analytics:", err);
+            logger.error("Failed to fetch analytics", { error: err });
         } finally {
             setLoadingAnalytics(false);
         }
@@ -318,7 +323,7 @@ export default function MarketingPage() {
                 });
             }
         } catch (err) {
-            console.error("Failed to fetch campaigns:", err);
+            logger.error("Failed to fetch campaigns", { error: err });
         }
     }, []);
 
@@ -399,7 +404,7 @@ export default function MarketingPage() {
             setCreateOpen(false);
             fetchCampaigns();
         } catch (err) {
-            console.error("Failed to save campaign:", err);
+            logger.error("Failed to save campaign", { error: err });
         }
     };
 
@@ -427,14 +432,20 @@ export default function MarketingPage() {
 
             fetchCampaigns();
         } catch (err) {
-            console.error("Failed to toggle campaign status:", err);
+            logger.error("Failed to toggle campaign status", { error: err });
         }
     };
 
     const [executingCampaignId, setExecutingCampaignId] = useState<string | null>(null);
 
     const handleExecuteCampaign = async (campaign: MarketingCampaign) => {
-        if (!confirm(`确定要执行「${campaign.name}」吗？将向匹配的客户发送消息。`)) return;
+        const confirmed = await confirm({
+            title: '执行营销活动',
+            description: `确定要执行「${campaign.name}」吗？将向匹配的客户发送消息。`,
+            confirmText: '执行',
+            cancelText: '取消',
+        });
+        if (!confirmed) return;
         setExecutingCampaignId(campaign.id);
         try {
             const res = await fetch('/api/marketing/execute', {
@@ -451,7 +462,7 @@ export default function MarketingPage() {
             toast.success(`活动已执行：触达 ${result.totalTargeted} 位客户，成功 ${result.successCount}，失败 ${result.failCount}`);
             fetchCampaigns();
         } catch (err) {
-            console.error('Failed to execute campaign:', err);
+            logger.error('Failed to execute campaign', { error: err });
             toast.error('执行失败');
         } finally {
             setExecutingCampaignId(null);
@@ -630,7 +641,7 @@ export default function MarketingPage() {
                             </Card>
                             <Card>
                                 <CardContent className="p-4 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-purple-100"><TrendingUp className="h-5 w-5 text-purple-600" /></div>
+                                    <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30"><TrendingUp className="h-5 w-5 text-purple-600 dark:text-purple-400" /></div>
                                     <div>
                                         <p className="text-xs text-muted-foreground">总转化数</p>
                                         <p className="text-xl font-semibold text-foreground">{(analyticsData?.overall?.total_converted ?? stats.total_converted).toLocaleString()}</p>
@@ -639,7 +650,7 @@ export default function MarketingPage() {
                             </Card>
                             <Card>
                                 <CardContent className="p-4 flex items-center gap-3">
-                                    <div className="p-2 rounded-lg bg-amber-100"><Target className="h-5 w-5 text-amber-600" /></div>
+                                    <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30"><Target className="h-5 w-5 text-amber-600 dark:text-amber-400" /></div>
                                     <div>
                                         <p className="text-xs text-muted-foreground">平均回复率</p>
                                         <p className="text-xl font-semibold text-foreground">{analyticsData?.overall?.reply_rate ?? "0.0"}%</p>
@@ -818,7 +829,7 @@ export default function MarketingPage() {
                                                 </SelectItem>
                                                 <SelectItem value="browsing_nurture">
                                                     <div className="flex items-center gap-2">
-                                                        <Eye className="h-4 w-4 text-blue-500" />
+                                                        <Eye className="h-4 w-4 text-blue-600" />
                                                         <span>浏览培育</span>
                                                     </div>
                                                 </SelectItem>
@@ -898,7 +909,7 @@ export default function MarketingPage() {
                                             <SelectContent>
                                                 <SelectItem value="manual">
                                                     <div className="flex items-center gap-2">
-                                                        <Play className="h-4 w-4 text-green-500" />
+                                                        <Play className="h-4 w-4 text-emerald-600" />
                                                         <span>立即投放（手动启动）</span>
                                                     </div>
                                                 </SelectItem>
@@ -1085,7 +1096,7 @@ export default function MarketingPage() {
                                     <div className="grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                                                <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 h-5 px-1.5">A</Badge>
+                                                <Badge variant="outline" className="bg-blue-200 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-700 h-5 px-1.5">A</Badge>
                                                 对照组
                                             </label>
                                             <textarea
@@ -1096,7 +1107,7 @@ export default function MarketingPage() {
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                                                <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200 h-5 px-1.5">B</Badge>
+                                                <Badge variant="outline" className="bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700 h-5 px-1.5">B</Badge>
                                                 实验组
                                             </label>
                                             <textarea
@@ -1172,7 +1183,7 @@ export default function MarketingPage() {
                                             <p className="text-xs text-muted-foreground">触发方式</p>
                                             <p className="text-sm font-medium flex items-center gap-1.5">
                                                 {viewingCampaign.trigger_type === 'manual' ? (
-                                                    <><Play className="h-3.5 w-3.5 text-green-500" />手动投放</>
+                                                    <><Play className="h-3.5 w-3.5 text-emerald-600" />手动投放</>
                                                 ) : viewingCampaign.trigger_type === 'scheduled' ? (
                                                     <><CalendarDays className="h-3.5 w-3.5 text-orange-500" />定时投放</>
                                                 ) : (
@@ -1267,14 +1278,14 @@ export default function MarketingPage() {
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="bg-blue-50/80 dark:bg-blue-900/30 rounded-lg p-3 border border-blue-200/50 dark:border-blue-800/30">
                                                 <div className="flex items-center gap-1.5 mb-2">
-                                                    <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200">A</Badge>
+                                                    <Badge variant="outline" className="bg-blue-200 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 border-blue-300 dark:border-blue-700">A</Badge>
                                                     <span className="text-xs text-muted-foreground">对照组</span>
                                                 </div>
                                                 <p className="text-sm whitespace-pre-wrap">{viewingCampaign.ab_variants.variant_a}</p>
                                             </div>
                                             <div className="bg-green-50/80 dark:bg-green-900/30 rounded-lg p-3 border border-green-200/50 dark:border-green-800/30">
                                                 <div className="flex items-center gap-1.5 mb-2">
-                                                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-200">B</Badge>
+                                                    <Badge variant="outline" className="bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-300 dark:border-green-700">B</Badge>
                                                     <span className="text-xs text-muted-foreground">实验组</span>
                                                 </div>
                                                 <p className="text-sm whitespace-pre-wrap">{viewingCampaign.ab_variants.variant_b}</p>

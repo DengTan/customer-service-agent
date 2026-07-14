@@ -1,4 +1,4 @@
-import { Config, KnowledgeClient, KnowledgeDocument, DataSourceType } from 'coze-coding-dev-sdk';
+import { getEmbeddingService } from './embedding-service';
 import {
   KnowledgeLearningRepository,
   type KnowledgeLearningFilters,
@@ -203,10 +203,6 @@ export class KnowledgeLearningService {
         throw new ServiceError('未找到指定条目', { status: 404, code: 'NOT_FOUND' });
       }
 
-      // P2 修复: 在循环外创建客户端，避免重复创建
-      const knowledgeConfig = new Config();
-      const knowledgeClient = new KnowledgeClient(knowledgeConfig);
-
       const approvedIds: string[] = [];
       const errors: string[] = [];
 
@@ -218,21 +214,10 @@ export class KnowledgeLearningService {
           const finalCategoryForRepo: string | null = finalCategory ?? null;
 
           const qaContent = `问题：${finalQuestion}\n\n答案：${finalAnswer}`;
-          const documents: KnowledgeDocument[] = [
-            { source: DataSourceType.TEXT, raw_data: qaContent },
-          ];
 
-          const result = await knowledgeClient.addDocuments(documents, 'coze_doc_knowledge', {
-            separator: '\n\n',
-            max_tokens: 2000,
-          });
+          const embeddingService = getEmbeddingService();
+          const embedding = await embeddingService.embed(qaContent);
 
-          if (result.code !== 0) {
-            errors.push(`知识入库失败（${item.question.slice(0, 20)}...）: ${result.msg}`);
-            continue;
-          }
-
-          const docIds = result.doc_ids || [];
           const itemTitle =
             finalQuestion.length > 50 ? finalQuestion.slice(0, 50) + '...' : finalQuestion;
 
@@ -240,11 +225,12 @@ export class KnowledgeLearningService {
             title: itemTitle,
             name: itemTitle,
             type: 'text',
-            content: qaContent.slice(0, 500),
-            doc_ids: docIds,
+            content: qaContent,
+            doc_ids: [],
             category: finalCategoryForRepo,
             status: 'active',
-            chunk_count: docIds.length,
+            chunk_count: 0,
+            embedding,
           });
 
           await this.repo.updateItem(item.id, {

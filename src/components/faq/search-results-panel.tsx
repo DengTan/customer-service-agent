@@ -83,17 +83,17 @@ function highlightTerms(text: string, terms: string[]): React.ReactNode {
 }
 
 function getScoreColor(score: number, minScore: number): string {
-  if (score >= 0.85) return 'text-green-600 dark:text-green-400';
-  if (score >= minScore) return 'text-emerald-600 dark:text-emerald-400';
-  if (score >= 0.6) return 'text-amber-600 dark:text-amber-400';
-  return 'text-red-600 dark:text-red-400';
+  if (score >= 0.85) return 'text-green-700 dark:text-green-400';
+  if (score >= minScore) return 'text-emerald-700 dark:text-emerald-400';
+  if (score >= 0.6) return 'text-amber-700 dark:text-amber-400';
+  return 'text-red-700 dark:text-red-400';
 }
 
 function getScoreBgColor(score: number, minScore: number): string {
-  if (score >= 0.85) return 'bg-green-500';
-  if (score >= minScore) return 'bg-emerald-500';
-  if (score >= 0.6) return 'bg-amber-500';
-  return 'bg-red-500';
+  if (score >= 0.85) return 'bg-green-600';
+  if (score >= minScore) return 'bg-emerald-600';
+  if (score >= 0.6) return 'bg-amber-600';
+  return 'bg-red-600';
 }
 
 function getSourceLabel(source?: string): string {
@@ -295,7 +295,7 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
                   variant={isMatched ? 'default' : 'outline'}
                   className={`text-xs ${
                     isMatched
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200'
                       : 'opacity-50'
                   }`}
                 >

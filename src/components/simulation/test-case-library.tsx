@@ -16,17 +16,13 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  Tag,
-  CheckCircle2,
-  Archive,
-  Filter,
   CheckSquare,
   Square,
 } from 'lucide-react';
 import { logger } from '@/lib/logger';
+import type { TestCaseStatus } from '@/lib/types';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 const simLogger = logger.default;
-
-type TestCaseStatus = 'draft' | 'active' | 'archived';
 
 interface SimulationTestCase {
   id: string;
@@ -65,7 +61,7 @@ const DEFAULT_FORM: TestCaseFormData = {
 
 const STATUS_CONFIG: Record<TestCaseStatus, { label: string; color: string; bgColor: string }> = {
   draft: { label: '草稿', color: 'text-amber-600', bgColor: 'bg-amber-500/15' },
-  active: { label: '启用', color: 'text-emerald-600', bgColor: 'bg-emerald-500/15' },
+  active: { label: '启用', color: 'text-emerald-700', bgColor: 'bg-emerald-200' },
   archived: { label: '归档', color: 'text-muted-foreground', bgColor: 'bg-muted' },
 };
 
@@ -104,6 +100,9 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
   const LIMIT = 12;
 
   // Fetch test cases
@@ -239,7 +238,14 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
 
   // Delete test case
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除此测试用例？')) return;
+    const confirmed = await confirm({
+      title: '删除测试用例',
+      description: '确定删除此测试用例？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/simulation-test-cases?id=${id}`, { method: 'DELETE' });
@@ -295,6 +301,16 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
       const payload = Array.isArray(parsed) ? { test_cases: parsed } : parsed;
       if (!payload.test_cases || !Array.isArray(payload.test_cases)) {
         toast.error('数据格式错误：需要 { test_cases: [...] }');
+        setIsImporting(false);
+        return;
+      }
+
+      // P2-12: Validate each test case has required fields
+      const invalidCases = payload.test_cases.filter(
+        (tc: Record<string, unknown>) => !tc.content || !tc.expected_response
+      );
+      if (invalidCases.length > 0) {
+        toast.error(`检测到 ${invalidCases.length} 个无效用例（缺少 content 或 expected_response 字段）`);
         setIsImporting(false);
         return;
       }

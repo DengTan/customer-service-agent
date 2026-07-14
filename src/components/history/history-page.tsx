@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 
 import { Conversation, Message } from '@/lib/types';
+import { logger } from '@/lib/logger';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 export function HistoryPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -29,6 +31,9 @@ export function HistoryPage() {
   const [totalCount, setTotalCount] = useState(0);
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
   const [jumpPage, setJumpPage] = useState('');
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
 
   // Search debounce
   const [searchInput, setSearchInput] = useState('');
@@ -93,7 +98,7 @@ export function HistoryPage() {
       }
       setConversations(convs);
     } catch (err) {
-      console.error('加载历史记录失败:', err);
+      logger.error('加载历史记录失败', { error: err });
       toast.error('加载历史记录失败，请刷新重试');
     } finally {
       setLoading(false);
@@ -118,15 +123,23 @@ export function HistoryPage() {
   }, [searchInput, statusFilter, sourceFilter, dateRange.start, dateRange.end]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除这条对话记录吗？')) return;
+    const confirmed = await confirm({
+      title: '删除对话记录',
+      description: '确定要删除这条对话记录吗？此操作不可撤销。',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeletingId(id);
     try {
       const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('删除请求失败');
       setConversations((prev) => prev.filter((c) => c.id !== id));
       setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+      setCurrentPage(1);
     } catch (err) {
-      console.error('删除失败:', err);
+      logger.error('删除失败', { error: err });
       toast.error('删除失败，请重试');
     } finally {
       setDeletingId(null);
@@ -135,7 +148,14 @@ export function HistoryPage() {
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedIds.size} 条对话记录吗？`)) return;
+    const confirmed = await confirm({
+      title: '批量删除对话记录',
+      description: `确定要删除选中的 ${selectedIds.size} 条对话记录吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     toast.loading('正在删除...', { id: 'batch-delete' });
     try {
       const results = await Promise.allSettled(
@@ -176,7 +196,7 @@ export function HistoryPage() {
         toast.error(`删除失败：${failedIds.length} 条`, { id: 'batch-delete' });
       }
     } catch (err) {
-      console.error('批量删除失败:', err);
+      logger.error('批量删除失败', { error: err });
       toast.error('批量删除失败，请重试', { id: 'batch-delete' });
     }
   };
@@ -246,7 +266,7 @@ export function HistoryPage() {
             }
           }
         } catch (convErr) {
-          console.error(`获取对话 ${conv.id} 失败:`, convErr);
+          logger.error(`获取对话 ${conv.id} 失败`, { error: convErr });
           exportSuccess = false;
           // Still add a row for this conversation with error info
           rows.push([
@@ -280,7 +300,7 @@ export function HistoryPage() {
         toast.warning(`导出完成，但部分对话获取失败`, { id: 'export' });
       }
     } catch (err) {
-      console.error('批量导出失败:', err);
+      logger.error('批量导出失败', { error: err });
       toast.error('批量导出失败，请重试', { id: 'export' });
     }
   };
@@ -299,7 +319,7 @@ export function HistoryPage() {
       setDetailMessages(data.messages || []);
       setDetailTotalMessages(data.total_messages || data.messages?.length || 0);
     } catch (err) {
-      console.error('加载详情失败:', err);
+      logger.error('加载详情失败', { error: err });
       toast.error('加载对话详情失败');
       setDetailConv(null);
     } finally {
@@ -333,7 +353,7 @@ export function HistoryPage() {
         setDetailTotalMessages(detailMessages.length);
       }
     } catch (err) {
-      console.error('加载更多消息失败:', err);
+      logger.error('加载更多消息失败', { error: err });
       toast.error('加载更多消息失败');
     } finally {
       setDetailLoading(false);
@@ -380,7 +400,7 @@ export function HistoryPage() {
       URL.revokeObjectURL(url);
       toast.success('导出成功');
     } catch (err) {
-      console.error('导出失败:', err);
+      logger.error('导出失败', { error: err });
       toast.error('导出失败，请重试');
     }
   };

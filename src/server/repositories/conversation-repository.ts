@@ -410,25 +410,50 @@ export class ConversationRepository {
 
   /**
    * Get session-related fields for timeout and max-turns checks.
-   * Returns message_count and updated_at without fetching the full conversation.
+   * Returns message_count, created_at, and updated_at without fetching the full conversation.
    */
-  async findSessionInfo(id: string): Promise<{ id: string; status: string; message_count: number; updated_at: string } | null> {
+  async findSessionInfo(id: string): Promise<{ id: string; status: string; message_count: number; updated_at: string; created_at: string } | null> {
     if (isDemoMode()) {
       const conv = DEMO_CONVERSATIONS.find(c => c.id === id);
-      return conv ? { id: conv.id, status: conv.status, message_count: conv.message_count, updated_at: conv.updated_at } : null;
+      return conv ? { id: conv.id, status: conv.status, message_count: conv.message_count, updated_at: conv.updated_at, created_at: conv.created_at } : null;
     }
 
     try {
       const { data, error } = await this.client
         .from('conversations')
-        .select('id, status, message_count, updated_at')
+        .select('id, status, message_count, updated_at, created_at')
         .eq('id', id)
         .maybeSingle();
 
       if (error) throw new RepositoryError('find session info', error.message, error.code);
-      return data as { id: string; status: string; message_count: number; updated_at: string } | null;
+      return data as { id: string; status: string; message_count: number; updated_at: string; created_at: string } | null;
     } catch (err) {
       logger.error('Database query failed in findSessionInfo', { error: err });
+      return null;
+    }
+  }
+
+  /**
+   * Get the timestamp of the first assistant message in a conversation.
+   * Used for first-response-timeout quality checks.
+   */
+  async findFirstAssistantReplyAt(conversationId: string): Promise<string | null> {
+    if (isDemoMode()) return null;
+
+    try {
+      const { data, error } = await this.client
+        .from('messages')
+        .select('created_at')
+        .eq('conversation_id', conversationId)
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw new RepositoryError('find first assistant reply', error.message, error.code);
+      return data ? (data.created_at as string) : null;
+    } catch (err) {
+      logger.error('Database query failed in findFirstAssistantReplyAt', { error: err });
       return null;
     }
   }
@@ -670,6 +695,37 @@ export class ConversationRepository {
       return count ?? 0;
     } catch (err) {
       logger.error('[ConversationRepository] Database query failed', { operation: 'countMessages', error: String(err) });
+      return 0;
+    }
+  }
+
+  /**
+   * Count messages with `role='user'` for a conversation.
+   *
+   * Used by the messages route to enforce `max_turns` against actual user
+   * turns only — assistant / system / agent / internal_note messages are not
+   * counted toward the limit.
+   *
+   * Demo mode applies the same rule against `DEMO_MESSAGES` so behaviour is
+   * identical in offline development.
+   */
+  async countUserMessages(conversationId: string): Promise<number> {
+    if (isDemoMode()) {
+      return DEMO_MESSAGES.filter(
+        m => m.conversation_id === conversationId && m.role === 'user',
+      ).length;
+    }
+    try {
+      const { count, error } = await this.client
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId)
+        .eq('role', 'user');
+
+      if (error) throw new RepositoryError('count user messages', error.message, error.code);
+      return count ?? 0;
+    } catch (err) {
+      logger.error('[ConversationRepository] Database query failed', { operation: 'countUserMessages', error: String(err) });
       return 0;
     }
   }

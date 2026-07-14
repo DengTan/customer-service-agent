@@ -33,7 +33,7 @@ export class CustomerService {
     }
   }
 
-  async getCustomer(id: string): Promise<{ customer: unknown; conversations: unknown[] }> {
+  async getCustomer(id: string, limit = 10, offset = 0): Promise<{ customer: unknown; conversations: unknown[] }> {
     if (!id) {
       throw new ServiceError('缺少客户 ID', {
         status: 400,
@@ -42,7 +42,7 @@ export class CustomerService {
     }
 
     try {
-      const result = await this.customers.getWithConversations(id);
+      const result = await this.customers.getWithConversations(id, limit, offset);
       if (!result.customer) {
         throw new ServiceError('客户不存在', {
           status: 404,

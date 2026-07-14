@@ -1,7 +1,10 @@
-import { LLMClient, Config } from 'coze-coding-dev-sdk';
+import { LLMClientAdapter } from '@/server/services/llm-client-adapter';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+
+const COZE_BASE_URL = process.env.COZE_BASE_URL || 'https://api.coze.cn';
+const COZE_API_KEY = process.env.COZE_API_KEY || '';
 
 export class SummaryService {
   private readonly conversations = new ConversationRepository();
@@ -36,15 +39,18 @@ ${existingSummary ? `【之前的对话摘要】\n${existingSummary}\n` : ''}【
 用户: ${userMessage}
 客服: ${assistantReply}`;
 
-      const summaryConfig = new Config();
-      const summaryClient = new LLMClient(summaryConfig, customHeaders);
+      const adapter = new LLMClientAdapter({
+        baseUrl: COZE_BASE_URL,
+        apiKey: COZE_API_KEY,
+        customHeaders,
+      });
 
       const summaryMessages: Array<{ role: 'system' | 'user'; content: string }> = [
         { role: 'user', content: summaryPrompt },
       ];
 
       let newSummary = '';
-      const summaryStream = summaryClient.stream(summaryMessages, {
+      const summaryStream = adapter.stream(summaryMessages, {
         model: 'doubao-seed-2-0-lite-260215',
         temperature: 0.3,
       });

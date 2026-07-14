@@ -22,13 +22,15 @@ export interface ChunkDiffSummary {
 
 const DEFAULT_CHUNK_SIZE = 500;       // 目标 chunk 字符数
 const MIN_CHUNK_SIZE = 100;            // 最小 chunk 字符数（避免切得太碎）
+const OVERLAP_SIZE = 50;               // 重叠字符数
 
 /**
  * 切分文本为 chunks。
  * 规则：
  *  1. 优先按段落（双换行）切分
- *  2. 段落过长则按目标 chunk 字符数滑动切分（保留重叠区以提升向量检索质量）
- *  3. 最后做 SHA-256 哈希去重
+ *  2. 段落过长：先按句子边界切分，再按目标字符数累积
+ *  3. 单句过长：按逗号/分号/冒号等子句边界切分
+ *  4. 决不在句子中间截断
  *
  * 确定性：相同输入 → 相同输出（顺序+索引+内容）。这保证 diff 算法有效。
  */
@@ -46,23 +48,86 @@ export function chunkText(text: string, chunkSize = DEFAULT_CHUNK_SIZE): ChunkRe
   const paragraphs = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
   if (paragraphs.length === 0) return [];
 
-  // 2) 段落 → 切到 chunk 字符数
+  // 2) 段落 → 句子级切分
   const records: ChunkRecord[] = [];
   let buffer = '';
+
   for (const para of paragraphs) {
-    // 段落本身超过 chunkSize → 滑动切分
+    // Long paragraph: split by sentences, then accumulate
     if (para.length > chunkSize) {
       if (buffer.length >= MIN_CHUNK_SIZE) {
         records.push(makeRecord(records.length, buffer));
         buffer = '';
       }
-      for (let i = 0; i < para.length; i += chunkSize - 50) {
-        const slice = para.slice(i, i + chunkSize);
-        records.push(makeRecord(records.length, slice));
+
+      // 按句末标点切分（中文句号/问号/感叹号，英文 .!?）
+      const sentenceRegex = /(?<=[。！？.!?；;])/g;
+      const sentences = para.split(sentenceRegex).map(s => s.trim()).filter(Boolean);
+      let currentChunk = '';
+
+      for (const sentence of sentences) {
+        if (!sentence) continue;
+
+        // 超长单句：按逗号/冒号等子句边界切分
+        if (sentence.length > chunkSize) {
+          // Flush 当前累积
+          if (currentChunk.length >= MIN_CHUNK_SIZE) {
+            records.push(makeRecord(records.length, currentChunk));
+            // 携带重叠：保留末尾部分内容
+            currentChunk = currentChunk.slice(-Math.min(OVERLAP_SIZE, Math.floor(currentChunk.length / 2)));
+          } else {
+            currentChunk = '';
+          }
+
+          // 子句级切分
+          const clauseRegex = /(?<=[，,：:])/g;
+          const clauses = sentence.split(clauseRegex).map(c => c.trim()).filter(Boolean);
+          let subChunk = '';
+
+          for (const clause of clauses) {
+            if (!clause) continue;
+            if (subChunk.length + clause.length + 1 > chunkSize) {
+              if (subChunk.length >= MIN_CHUNK_SIZE) {
+                records.push(makeRecord(records.length, subChunk));
+                subChunk = subChunk.slice(-Math.min(OVERLAP_SIZE, Math.floor(subChunk.length / 2)));
+              } else {
+                subChunk = '';
+              }
+            }
+            subChunk += (subChunk ? '，' : '') + clause;
+          }
+
+          // 剩余子句并入
+          if (subChunk.length >= MIN_CHUNK_SIZE) {
+            records.push(makeRecord(records.length, subChunk));
+          } else if (subChunk.length > 0) {
+            currentChunk += (currentChunk ? '。' : '') + subChunk;
+          }
+          continue;
+        }
+
+        // 普通句子：尝试累积
+        if (currentChunk.length + sentence.length + 1 > chunkSize) {
+          if (currentChunk.length >= MIN_CHUNK_SIZE) {
+            records.push(makeRecord(records.length, currentChunk));
+            currentChunk = currentChunk.slice(-Math.min(OVERLAP_SIZE, Math.floor(currentChunk.length / 2)));
+          } else {
+            currentChunk = '';
+          }
+        }
+        currentChunk += (currentChunk ? '。' : '') + sentence;
+      }
+
+      // 当前段落剩余句子
+      if (currentChunk.length >= MIN_CHUNK_SIZE) {
+        records.push(makeRecord(records.length, currentChunk));
+      } else if (currentChunk.length > 0) {
+        buffer += (buffer ? '\n\n' : '') + currentChunk;
       }
       continue;
     }
-    // 累积段落，达到目标大小则 flush
+
+    // Short paragraph: accumulate with buffer
     if (buffer.length + para.length + 2 > chunkSize) {
       if (buffer.length >= MIN_CHUNK_SIZE) {
         records.push(makeRecord(records.length, buffer));
@@ -71,6 +136,7 @@ export function chunkText(text: string, chunkSize = DEFAULT_CHUNK_SIZE): ChunkRe
     }
     buffer += (buffer ? '\n\n' : '') + para;
   }
+
   if (buffer.length >= MIN_CHUNK_SIZE) {
     records.push(makeRecord(records.length, buffer));
   } else if (buffer.length > 0 && records.length > 0) {

@@ -7,7 +7,6 @@ export interface KnowledgeChunk {
   chunk_index: number;
   content: string;
   content_hash: string;
-  doc_id: string | null;
   version_added: number;
   version_removed: number | null;
   created_at: string;
@@ -81,20 +80,8 @@ export class KnowledgeChunkRepository {
           content_hash: c.content_hash,
           version_added: c.version_added,
           version_removed: null,
-          doc_id: c.doc_id ?? null,
         })),
       );
-    if (error) throw error;
-  }
-
-  /**
-   * 更新某 chunk 的向量库 doc_id（embedding 完成后回调）
-   */
-  async setChunkDocId(chunkId: string, docId: string): Promise<void> {
-    const { error } = await this.client
-      .from('knowledge_chunks')
-      .update({ doc_id: docId })
-      .eq('id', chunkId);
     if (error) throw error;
   }
 

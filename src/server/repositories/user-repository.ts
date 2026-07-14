@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/auth/password';
 import crypto from 'crypto';
 import type { UserRow, UserWithPassword } from './types';
 import { toUserRow } from './types';
+import { logger } from '@/lib/logger';
 
 export interface UserFilters {
   role?: string;
@@ -37,6 +38,24 @@ export interface PaginationOptions {
   page: number;
   pageSize: number;
 }
+
+/**
+ * Result of `findByEmailWithPassword`. `wasAutoCreated` is true if the
+ * caller should treat this as a first-time login (e.g. fire-and-forget
+ * `UserService.seedDefaultSettings`). The default-admin path is the only
+ * known auto-create case.
+ */
+export interface FindByEmailWithPasswordResult {
+  user: UserWithPassword;
+  wasAutoCreated: boolean;
+}
+
+/**
+ * Built-in default user that should always be available even on a fresh DB.
+ * Returned by `findByEmailWithPassword` and auto-inserted on first login.
+ */
+export const DEFAULT_ADMIN_ID = 'default-admin';
+export const DEFAULT_ADMIN_EMAIL = 'admin@smartassist.com';
 
 /**
  * Generate a secure random password that meets strength requirements
@@ -73,7 +92,7 @@ export class UserRepository {
       if (filters.role) filtered = filtered.filter(u => u.role === filters.role);
       if (filters.status) filtered = filtered.filter(u => u.status === filters.status);
       if (filters.search) { const q = filters.search.toLowerCase(); filtered = filtered.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)); }
-      
+
       // Apply pagination in demo mode
       if (pagination) {
         const start = (pagination.page - 1) * pagination.pageSize;
@@ -82,7 +101,7 @@ export class UserRepository {
       }
       return { users: filtered, total: demoUsers.length };
     }
-    
+
     let query = this.client
       .from('users')
       .select('*', { count: 'exact' })
@@ -234,9 +253,16 @@ export class UserRepository {
   }
 
   /**
-   * Find user by email including password_hash (for authentication)
+   * Find user by email including password_hash (for authentication).
+   *
+   * If the user does not exist in the database but matches a built-in
+   * default account (currently the default admin), it is auto-inserted so
+   * that operators always have a way in on a fresh deploy. The returned
+   * `wasAutoCreated` flag lets the caller (login route) trigger side-effects
+   * like seeding default system settings without polluting this layer with
+   * cross-repository dependencies.
    */
-  async findByEmailWithPassword(email: string): Promise<UserWithPassword | null> {
+  async findByEmailWithPassword(email: string): Promise<FindByEmailWithPasswordResult | null> {
     // First, try to find user in database
     const { data, error } = await this.client
       .from('users')
@@ -248,45 +274,60 @@ export class UserRepository {
       throw new RepositoryError('find user by email with password', error.message, error.code);
     }
 
-    // If user exists in database, return it
+    // If user exists in database, return it (no auto-create happened)
     if (data) {
-      return data as UserWithPassword | null;
+      return { user: data as UserWithPassword, wasAutoCreated: false };
     }
 
     // User not found in database - check if it's a predefined default user
     // This provides a seamless demo experience in production environments
     const defaultUsers: UserWithPassword[] = [
-      { id: 'default-admin', email: 'admin@smartassist.com', name: '管理员', role: 'admin', status: 'active', avatar: null, password_hash: '$2b$12$msD8Rfc1NocnaeImZFvhuug0OpjVHusSp9wTjX5Vy4vnmqNunoiCS', last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
+      { id: DEFAULT_ADMIN_ID, email: DEFAULT_ADMIN_EMAIL, name: '管理员', role: 'admin', status: 'active', avatar: null, password_hash: '$2b$12$msD8Rfc1NocnaeImZFvhuug0OpjVHusSp9wTjX5Vy4vnmqNunoiCS', last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
     ];
 
     const defaultUser = defaultUsers.find(u => u.email === email);
-    if (defaultUser) {
-      // Auto-create this user in the database with the default password
-      try {
-        const { error: insertError } = await this.client
-          .from('users')
-          .insert({
-            id: defaultUser.id,
-            email: defaultUser.email,
-            name: defaultUser.name,
-            role: defaultUser.role,
-            status: defaultUser.status,
-            avatar: defaultUser.avatar,
-            password_hash: defaultUser.password_hash,
-            last_active_at: defaultUser.last_active_at,
-            created_at: defaultUser.created_at,
-          });
-        
-        if (!insertError) {
-          return defaultUser;
-        }
-      } catch {
-        // If auto-create fails, still return the default user for authentication
-        return defaultUser;
-      }
+    if (!defaultUser) {
+      return null;
     }
 
-    return null;
+    // Auto-create this user in the database with the default password
+    try {
+      const { error: insertError } = await this.client
+        .from('users')
+        .insert({
+          id: defaultUser.id,
+          email: defaultUser.email,
+          name: defaultUser.name,
+          role: defaultUser.role,
+          status: defaultUser.status,
+          avatar: defaultUser.avatar,
+          password_hash: defaultUser.password_hash,
+          last_active_at: defaultUser.last_active_at,
+          created_at: defaultUser.created_at,
+        });
+
+      if (!insertError) {
+        return { user: defaultUser, wasAutoCreated: true };
+      }
+      // If the auto-create insert itself failed (e.g. unique violation from a
+      // concurrent request that won the race), still authenticate using the
+      // default credentials but report `wasAutoCreated: false` so the caller
+      // doesn't double-seed.
+      logger.warn('[UserRepository] Default admin auto-create insert failed', {
+        email,
+        error: insertError.message,
+        code: insertError.code,
+      });
+      return { user: defaultUser, wasAutoCreated: false };
+    } catch (err) {
+      logger.error('[UserRepository] Default admin auto-create threw', {
+        email,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Fall back to authenticating with the default credentials so the
+      // operator is not locked out.
+      return { user: defaultUser, wasAutoCreated: false };
+    }
   }
 
   /**

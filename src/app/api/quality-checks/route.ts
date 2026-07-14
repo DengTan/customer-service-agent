@@ -1,6 +1,15 @@
 import { NextRequest } from 'next/server';
 import { QualityService } from '@/server/services/quality-service';
 import { apiError, apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, requirePermission } from '@/lib/api-utils';
+import type { QualityRuleType } from '@/lib/types';
+
+const QUALITY_RULE_TYPES: QualityRuleType[] = [
+  'first_response_timeout',
+  'keyword_violation',
+  'satisfaction_below',
+  'high_turn_count',
+  'negative_sentiment',
+];
 
 const service = new QualityService();
 
@@ -26,6 +35,8 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     const result = await service.listCheckRecords(
       searchParams.get('result'),
       searchParams.get('rule_type'),
+      searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined,
+      searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : undefined,
     );
     return apiSuccess(result);
   }
@@ -42,8 +53,19 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   if (parseError) return parseError;
 
   const { name, type, config, is_enabled } = (body ?? {}) as Record<string, unknown>;
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return apiError('规则名称不能为空', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+  if (name.trim().length > 100) {
+    return apiError('规则名称不能超过100个字符', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+  if (!type || !QUALITY_RULE_TYPES.includes(type as QualityRuleType)) {
+    return apiError(`无效的规则类型，支持的类型: ${QUALITY_RULE_TYPES.join(', ')}`, { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+
   const result = await service.createRule({
-    name: name as string,
+    name: name.trim(),
     type: type as string,
     config: config as Record<string, unknown> | undefined,
     is_enabled: is_enabled as boolean | undefined,
@@ -60,8 +82,22 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   if (parseError) return parseError;
 
   const { id, name, type, config, is_enabled } = (body ?? {}) as Record<string, unknown>;
+
+  if (!id) {
+    return apiError('缺少规则ID', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+  if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+    return apiError('规则名称不能为空', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+  if (name !== undefined && name.trim().length > 100) {
+    return apiError('规则名称不能超过100个字符', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+  if (type !== undefined && !QUALITY_RULE_TYPES.includes(type as QualityRuleType)) {
+    return apiError(`无效的规则类型，支持的类型: ${QUALITY_RULE_TYPES.join(', ')}`, { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  }
+
   const result = await service.updateRule(id as string, {
-    name: name as string | undefined,
+    name: name !== undefined ? (name as string).trim() : undefined,
     type: type as string | undefined,
     config: config as Record<string, unknown> | undefined,
     is_enabled: is_enabled as boolean | undefined,

@@ -3,6 +3,7 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import { trimDemoArray } from '@/lib/api-utils';
 import { DEMO_CAMPAIGNS } from './demo-data/demo-marketing';
+import { logger } from '@/lib/logger';
 
 export interface MarketingCampaignRow {
   id: string;
@@ -89,7 +90,7 @@ export class MarketingRepository {
       if (error) throw new RepositoryError('list marketing campaigns', error.message, error.code);
       return (data ?? []) as MarketingCampaignRow[];
     } catch (error) {
-      console.error('Database query failed for list marketing campaigns, falling back to demo data:', error);
+      logger.error('Database query failed for list marketing campaigns, falling back to demo data', { error });
       let campaigns = _demoCampaigns;
       if (filters.status) campaigns = campaigns.filter(c => c.status === filters.status);
       if (filters.type) campaigns = campaigns.filter(c => c.type === filters.type);
@@ -239,7 +240,7 @@ export class MarketingRepository {
         totalConverted: totalConverted ?? 0,
       };
     } catch (error) {
-      console.error('Database query failed for countAllLogs, returning fallback:', error);
+      logger.error('Database query failed for countAllLogs, returning fallback', { error });
       return { totalSent: 0, totalReplied: 0, totalConverted: 0 };
     }
   }
@@ -304,7 +305,7 @@ export class MarketingRepository {
       if (error) throw new RepositoryError('find customers by segment', error.message, error.code);
       return (data ?? []) as Array<{ id: string; name: string; source_platform: string | null; tags: string[] | null }>;
     } catch (error) {
-      console.error('Database query failed for findCustomersBySegment:', error);
+      logger.error('Database query failed for findCustomersBySegment', { error });
       return [];
     }
   }
@@ -376,7 +377,7 @@ export class MarketingRepository {
       const samples = (sampleResult.data ?? []) as Array<{ id: string; name: string; source_platform: string | null; tags: string[] | null }>;
       return { total, samples };
     } catch (error) {
-      console.error('Database query failed for previewSegment:', error);
+      logger.error('Database query failed for previewSegment', { error });
       return { total: 0, samples: [] };
     }
   }
@@ -470,7 +471,7 @@ export class MarketingRepository {
       }
       return result;
     } catch (error) {
-      console.error('getDailyStats failed:', error);
+      logger.error('getDailyStats failed', { error });
       return [];
     }
   }
@@ -520,7 +521,7 @@ export class MarketingRepository {
         conversion_rate: stats.sent > 0 ? ((stats.converted / stats.sent) * 100).toFixed(1) : '0.0',
       }));
     } catch (error) {
-      console.error('getVariantStats failed:', error);
+      logger.error('getVariantStats failed', { error });
       return [];
     }
   }
@@ -555,7 +556,7 @@ export class MarketingRepository {
       }
       return byType;
     } catch (error) {
-      console.error('getStatsByType failed:', error);
+      logger.error('getStatsByType failed', { error });
       return {};
     }
   }
@@ -623,7 +624,7 @@ export class MarketingRepository {
         };
       });
     } catch (error) {
-      console.error('getTopCampaigns failed:', error);
+      logger.error('getTopCampaigns failed', { error });
       return [];
     }
   }

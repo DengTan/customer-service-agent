@@ -151,8 +151,12 @@ export class AnalyticsService {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const dayLabel = `${d.getMonth() + 1}/${d.getDate()}`;
-      const count =
-        recentConversations.filter((c) => c.created_at.startsWith(dateStr)).length || 0;
+      // 使用日期范围比较（避免 UTC 时区偏差）
+      const dayStart = `${dateStr}T00:00:00`;
+      const dayEnd = `${dateStr}T23:59:59.999`;
+      const count = recentConversations.filter((c) =>
+        c.created_at >= dayStart && c.created_at <= dayEnd
+      ).length;
       trendData.push({ date: dayLabel, count });
     }
     return trendData;
@@ -167,7 +171,12 @@ export class AnalyticsService {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const dayLabel = `${d.getMonth() + 1}/${d.getDate()}`;
-      const dayMsgs = recentMessages.filter((m) => m.created_at.startsWith(dateStr));
+      // 使用日期范围比较（避免 UTC 时区偏差）
+      const dayStart = `${dateStr}T00:00:00`;
+      const dayEnd = `${dateStr}T23:59:59.999`;
+      const dayMsgs = recentMessages.filter((m) =>
+        m.created_at >= dayStart && m.created_at <= dayEnd
+      );
       messageTrendData.push({
         date: dayLabel,
         user: dayMsgs.filter((m) => m.role === 'user').length,
@@ -195,7 +204,12 @@ export class AnalyticsService {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const dayLabel = `${d.getMonth() + 1}/${d.getDate()}`;
-      const dayRatings = ratingsWithDate.filter((r) => r.created_at.startsWith(dateStr));
+      // 使用日期范围比较（避免 UTC 时区偏差）
+      const dayStart = `${dateStr}T00:00:00`;
+      const dayEnd = `${dateStr}T23:59:59.999`;
+      const dayRatings = ratingsWithDate.filter((r) =>
+        r.created_at >= dayStart && r.created_at <= dayEnd
+      );
       // Only include valid ratings (rating > 0), rating=0 is treated as invalid
       const validRatings = dayRatings.filter((r) => r.rating !== null && r.rating > 0);
       const dayAvg =

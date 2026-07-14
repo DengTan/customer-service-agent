@@ -1,6 +1,7 @@
 import { KnowledgeFeedbackRepository, type KnowledgeFeedbackInput, type KnowledgeQualityStat } from '@/server/repositories/knowledge-feedback-repository';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import { logger } from '@/lib/logger';
 
 export class KnowledgeFeedbackService {
   constructor(private readonly feedback = new KnowledgeFeedbackRepository()) {}
@@ -21,7 +22,7 @@ export class KnowledgeFeedbackService {
       // 原子更新知识条目自身计数（fire-and-forget 不阻塞主流程）
       if (input.knowledge_item_id) {
         this.feedback.incrementAdoptionCounter(input.knowledge_item_id, input.feedback_type).catch((err) => {
-          console.error('[KnowledgeFeedbackService] Failed to increment adoption counter:', err, { knowledgeItemId: input.knowledge_item_id });
+          logger.error('[KnowledgeFeedbackService] Failed to increment adoption counter', { error: err, knowledgeItemId: input.knowledge_item_id });
         });
       }
       return { id: record.id };

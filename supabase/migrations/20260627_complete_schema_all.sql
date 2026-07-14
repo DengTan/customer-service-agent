@@ -161,6 +161,7 @@ BEGIN
     
     CREATE TABLE IF NOT EXISTS platform_connections (
       id varchar(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      name varchar(255),
       platform varchar(50) NOT NULL,
       app_key varchar(100) NOT NULL,
       app_secret varchar(200) NOT NULL,
@@ -504,13 +505,17 @@ BEGIN
       status varchar(20) NOT NULL DEFAULT 'open',
       assignee_id varchar(36) REFERENCES users(id) ON DELETE SET NULL,
       creator_id varchar(36) REFERENCES users(id) ON DELETE SET NULL,
-      related_conversation_id varchar(36) REFERENCES conversations(id) ON DELETE SET NULL,
+      conversation_id varchar(36) REFERENCES conversations(id) ON DELETE SET NULL,
+      parent_ticket_id varchar(36) REFERENCES tickets(id) ON DELETE SET NULL,
+      custom_fields jsonb DEFAULT '{}',
       created_at timestamptz DEFAULT NOW() NOT NULL,
       updated_at timestamptz
     );
     CREATE INDEX IF NOT EXISTS tickets_status_idx ON tickets(status);
     CREATE INDEX IF NOT EXISTS tickets_priority_idx ON tickets(priority);
     CREATE INDEX IF NOT EXISTS tickets_assignee_id_idx ON tickets(assignee_id);
+    CREATE INDEX IF NOT EXISTS tickets_conversation_id_idx ON tickets(conversation_id);
+    CREATE INDEX IF NOT EXISTS tickets_parent_ticket_id_idx ON tickets(parent_ticket_id);
     
     CREATE TABLE IF NOT EXISTS ticket_comments (
       id varchar(36) PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1115,7 +1120,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_assignment_config_is_enabled ON agent_assig
 
 -- RLS for agent_assignment_config
 ALTER TABLE agent_assignment_config ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Allow all for authenticated users" ON agent_assignment_config
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON agent_assignment_config;
+CREATE POLICY "Allow all for authenticated users" ON agent_assignment_config
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
@@ -1137,7 +1143,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_assignment_stats_active_conversations ON ag
 
 -- RLS for agent_assignment_stats
 ALTER TABLE agent_assignment_stats ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Allow all for authenticated users" ON agent_assignment_stats
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON agent_assignment_stats;
+CREATE POLICY "Allow all for authenticated users" ON agent_assignment_stats
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
@@ -1157,7 +1164,8 @@ CREATE INDEX IF NOT EXISTS idx_shop_agent_bindings_user ON shop_agent_bindings(u
 
 -- RLS for shop_agent_bindings
 ALTER TABLE shop_agent_bindings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY IF NOT EXISTS "Allow all for authenticated users" ON shop_agent_bindings
+DROP POLICY IF EXISTS "Allow all for authenticated users" ON shop_agent_bindings;
+CREATE POLICY "Allow all for authenticated users" ON shop_agent_bindings
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- =============================================================================

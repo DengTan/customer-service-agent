@@ -1,13 +1,20 @@
 import type { Alert } from '@/lib/types';
+import { logger } from '@/lib/logger';
 import {
   AlertRepository,
   type AlertFilters,
   type CreateAlertInput,
 } from '@/server/repositories/alert-repository';
+import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
-import { ConversationService } from './conversation-service';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+
+// Alert type constants
+export const ALERT_TYPE_LOW_CONFIDENCE = 'low_confidence';
+export const ALERT_TYPE_HIGH_ROUNDS = 'high_rounds';
+export const ALERT_TYPE_QUALITY_CHECK_FAILED = 'quality_check_failed';
+export const ALERT_TYPE_SATISFACTION_BELOW = 'satisfaction_below';
 
 // Default thresholds (used when settings are not available)
 export const DEFAULT_ALERT_SETTINGS = {
@@ -39,7 +46,7 @@ export interface AlertStats {
 export class AlertService {
   constructor(
     private readonly alerts = new AlertRepository(),
-    private readonly conversations = new ConversationService(),
+    private readonly conversations = new ConversationRepository(),
     private readonly settingsRepo = new SettingsRepository(),
   ) {}
 
@@ -154,12 +161,14 @@ export class AlertService {
     }
 
     if (confidence !== null && confidence < config.confidenceThreshold && messageCount > config.autoHandoffRounds) {
-      const conversation = await this.conversations.ensureCanReceiveAiMessage(conversationId);
-      if (conversation.status === 'active') {
-        await this.conversations.markHandoff(
-          conversationId,
-          `AI confidence is low (${(confidence * 100).toFixed(0)}%) after ${messageCount} messages.`,
-        );
+      // Use repository directly to avoid circular dependency with ConversationService
+      const conversation = await this.conversations.findStatus(conversationId);
+      if (conversation && conversation.status === 'active') {
+        await this.conversations.update(conversationId, {
+          status: 'handoff',
+          handoff_reason: `AI confidence is low (${(confidence * 100).toFixed(0)}%) after ${messageCount} messages.`,
+          updated_at: new Date().toISOString(),
+        });
         await this.conversations.insertMessage({
           conversation_id: conversationId,
           role: 'system',
@@ -172,5 +181,70 @@ export class AlertService {
   private async findRecentUnresolved(conversationId: string, type: string): Promise<{ id: string } | null> {
     const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     return this.alerts.findRecentUnresolved(conversationId, type, thirtyMinAgo);
+  }
+
+  /**
+   * Create an alert when a quality check fails.
+   * @param conversationId - The conversation ID
+   * @param ruleName - The name of the failed rule
+   * @param ruleType - The type of the rule (e.g., negative_sentiment, keyword_violation)
+   * @param detail - The detail message from the quality check
+   */
+  async createQualityFailedAlert(
+    conversationId: string,
+    ruleName: string,
+    ruleType: string,
+    detail?: string | null,
+  ): Promise<void> {
+    try {
+      await this.createAlert({
+        conversation_id: conversationId,
+        type: ALERT_TYPE_QUALITY_CHECK_FAILED,
+        severity: 'warning',
+        message: `质检失败: ${ruleName}${detail ? ` - ${detail}` : ''}`,
+        metadata: {
+          rule_type: ruleType,
+          rule_name: ruleName,
+          detail: detail || null,
+        },
+      });
+    } catch (error) {
+      logger.warn('[AlertService] Failed to create quality failed alert', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId,
+        ruleName,
+      });
+    }
+  }
+
+  /**
+   * Create an alert when satisfaction rating is below threshold.
+   * @param conversationId - The conversation ID
+   * @param rating - The actual rating value
+   * @param threshold - The threshold that was not met
+   */
+  async createSatisfactionBelowAlert(
+    conversationId: string,
+    rating: number,
+    threshold: number = 3,
+  ): Promise<void> {
+    try {
+      await this.createAlert({
+        conversation_id: conversationId,
+        type: ALERT_TYPE_SATISFACTION_BELOW,
+        severity: 'warning',
+        message: `满意度评分过低: ${rating}星（阈值: ${threshold}星）`,
+        metadata: {
+          rating,
+          threshold,
+        },
+      });
+    } catch (error) {
+      logger.warn('[AlertService] Failed to create satisfaction below alert', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId,
+        rating,
+      });
+    }
   }
 }

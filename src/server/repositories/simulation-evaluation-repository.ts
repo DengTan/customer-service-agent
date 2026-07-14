@@ -92,7 +92,11 @@ export class SimulationEvaluationRepository {
       logger.info('Created simulation evaluation', { id: data.id, simulation_id: data.simulation_id });
       return this.mapRow(data);
     } catch (error) {
-      logger.errorWithException('Failed to create simulation evaluation', error, { simulation_id: input.simulation_id });
+      logger.errorWithException('Failed to create simulation evaluation', error, {
+        simulation_id: input.simulation_id,
+        message_id: input.message_id,
+        rating: input.rating,
+      });
       throw error;
     }
   }
@@ -127,16 +131,20 @@ export class SimulationEvaluationRepository {
       const { data, error } = await query;
       if (error) throw new RepositoryError('list simulation evaluations', error.message, error.code);
 
-      logger.debug('Listed simulation evaluations', { simulationId, count: data?.length ?? 0 });
+      logger.debug('Listed simulation evaluations', { simulationId, count: data?.length ?? 0, filters });
       return (data ?? []).map(row => this.mapRow(row as SimulationEvaluationRow));
     } catch (error) {
-      logger.errorWithException('Failed to list simulation evaluations', error, { simulationId });
+      logger.errorWithException('Failed to list simulation evaluations', error, {
+        simulationId,
+        filters,
+      });
       throw error;
     }
   }
 
   /**
-   * Get aggregated rating for a simulation
+   * Get aggregated rating for a simulation.
+   * Optimized: fetches only the rating column (not all columns) in a single query.
    */
   async getAggregatedRating(simulationId: string): Promise<{ avg_rating: number | null; count: number }> {
     if (isDemoMode()) {
@@ -152,6 +160,7 @@ export class SimulationEvaluationRepository {
     }
 
     try {
+      // Single query: select only rating column (avoids fetching unnecessary data)
       const { data, error } = await this.client
         .from('simulation_evaluations')
         .select('rating')
@@ -223,10 +232,13 @@ export class SimulationEvaluationRepository {
         .single();
 
       if (error) throw new RepositoryError('update simulation evaluation', error.message, error.code);
-      logger.info('Updated simulation evaluation', { id });
+      logger.info('Updated simulation evaluation', { id, updates });
       return this.mapRow(data);
     } catch (error) {
-      logger.errorWithException('Failed to update simulation evaluation', error, { id });
+      logger.errorWithException('Failed to update simulation evaluation', error, {
+        id,
+        updates: input,
+      });
       throw error;
     }
   }

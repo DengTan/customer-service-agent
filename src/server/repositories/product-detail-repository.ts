@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
 import { escapeLikePattern } from '@/lib/api-utils';
+import { logger } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,7 @@ export interface ProductDetail {
   status: 'on_sale' | 'off_sale' | 'discontinued';
   doc_ids: string[];
   content_hash: string | null;
+  embedding?: number[];
   tags: string[];
   platform_connection_id: string | null;
   external_product_id: string | null;
@@ -48,6 +50,7 @@ export interface NormalizedProductDetail extends ProductDetail {
   image_urls: string[];
   doc_ids: string[];
   content_hash: string | null;
+  embedding?: number[];
   tags: string[];
   platform_connection_id: string | null;
   external_product_id: string | null;
@@ -84,6 +87,7 @@ export interface CreateProductInput {
   sync_source?: string;
   doc_ids?: string[];
   content_hash?: string | null;
+  embedding?: number[];
 }
 
 export interface UpdateProductInput {
@@ -105,6 +109,7 @@ export interface UpdateProductInput {
   content_hash?: string | null;
   tags?: string[];
   platform_connection_id?: string | null;
+  embedding?: number[];
 }
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
@@ -421,6 +426,10 @@ export class ProductDetailRepository {
       sync_source: input.sync_source ?? 'manual',
     };
 
+    if (input.embedding !== undefined) {
+      insertData.embedding = input.embedding ? JSON.stringify(input.embedding) : null;
+    }
+
     const { data, error } = await this.client
       .from('product_details')
       .insert(insertData)
@@ -457,6 +466,7 @@ export class ProductDetailRepository {
     if (input.content_hash !== undefined) updateData.content_hash = input.content_hash;
     if (input.tags !== undefined) updateData.tags = input.tags;
     if (input.platform_connection_id !== undefined) updateData.platform_connection_id = input.platform_connection_id;
+    if (input.embedding !== undefined) updateData.embedding = input.embedding;
 
     const { error } = await this.client
       .from('product_details')
@@ -499,7 +509,7 @@ export class ProductDetailRepository {
       .update({ hit_count: newCount, last_hit_at: new Date().toISOString() })
       .eq('id', id);
     if (error) {
-      console.warn('[ProductDetailRepo] incrementHitCount failed:', error.message);
+      logger.warn('[ProductDetailRepo] incrementHitCount failed', { message: error.message });
     }
   }
 
@@ -536,5 +546,16 @@ export class ProductDetailRepository {
       throw new RepositoryError('batch update product category', error.message, error.code);
     }
     return { count: ids.length };
+  }
+
+  async updateEmbedding(id: string, embedding: number[]): Promise<void> {
+    if (isDemoMode()) return;
+    const { error } = await this.client
+      .from('product_details')
+      .update({ embedding: JSON.stringify(embedding), updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      throw new RepositoryError('update product embedding', error.message, error.code);
+    }
   }
 }

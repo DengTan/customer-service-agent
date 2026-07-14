@@ -93,6 +93,39 @@ export class LlmProviderRepository {
   }
 
   /**
+   * Get provider by name with decrypted API key (for internal use only)
+   */
+  async getByNameWithDecryptedKey(name: string): Promise<LlmProviderRow | null> {
+    if (isDemoMode()) {
+      const providers = this.getDemoProviders();
+      return providers.find(p => p.name === name) ?? null;
+    }
+
+    const { data, error } = await this.client
+      .from('llm_providers')
+      .select('*')
+      .eq('name', name)
+      .maybeSingle();
+
+    if (error) throw new RepositoryError(`get llm_provider by name ${name}`, error.message, error.code);
+    if (!data) return null;
+
+    const provider = data as LlmProviderRow;
+    // Skip decryption for masked values (display-only) or URLs
+    if (provider.api_key && !provider.api_key.includes('***') && !provider.api_key.startsWith('http')) {
+      try {
+        return {
+          ...provider,
+          api_key: safeDecrypt(provider.api_key),
+        };
+      } catch {
+        return provider;
+      }
+    }
+    return provider;
+  }
+
+  /**
    * Get the default provider (is_default = true)
    */
   async getDefault(): Promise<LlmProviderRow | null> {
@@ -279,8 +312,8 @@ export class LlmProviderRepository {
     if (!data) return null;
 
     const provider = data as LlmProviderRow;
-    // Decrypt API key for internal use
-    if (provider.api_key && !provider.api_key.startsWith('http')) {
+    // Skip decryption for masked values (display-only) or URLs
+    if (provider.api_key && !provider.api_key.includes('***') && !provider.api_key.startsWith('http')) {
       try {
         return {
           ...provider,

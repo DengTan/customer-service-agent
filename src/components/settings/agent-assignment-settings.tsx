@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Users, RefreshCw, Trash2, Plus, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { FRONTEND } from '@/lib/constants';
+import { logger } from '@/lib/logger';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 // ============================================
 // Types
@@ -81,6 +83,9 @@ export function AgentAssignmentSettings() {
   // Polling interval for agents status
   const POLL_INTERVAL = FRONTEND.AGENT_STATUS_POLL_MS;
 
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
+
   // ============================================
   // Data Fetching
   // ============================================
@@ -95,7 +100,7 @@ export function AgentAssignmentSettings() {
         }
       }
     } catch (error) {
-      console.error('Failed to fetch current strategy:', error);
+      logger.error('Failed to fetch current strategy', { error });
     }
   }, []);
 
@@ -107,7 +112,7 @@ export function AgentAssignmentSettings() {
         setBindings(data.bindings || []);
       }
     } catch (error) {
-      console.error('Failed to fetch bindings:', error);
+      logger.error('Failed to fetch bindings', { error });
     }
   }, []);
 
@@ -120,7 +125,7 @@ export function AgentAssignmentSettings() {
         setSummary(data.summary || { total: 0, online: 0, away: 0, offline: 0, disconnected: 0 });
       }
     } catch (error) {
-      console.error('Failed to fetch agents:', error);
+      logger.error('Failed to fetch agents', { error });
     }
   }, []);
 
@@ -132,7 +137,7 @@ export function AgentAssignmentSettings() {
         setShops(data.shops || []);
       }
     } catch (error) {
-      console.error('Failed to fetch shops:', error);
+      logger.error('Failed to fetch shops', { error });
     }
   }, []);
 
@@ -144,7 +149,7 @@ export function AgentAssignmentSettings() {
         setUsers((data.users || []).filter((u: User) => u.role === 'agent' || u.role === 'admin'));
       }
     } catch (error) {
-      console.error('Failed to fetch users:', error);
+      logger.error('Failed to fetch users', { error });
     }
   }, []);
 
@@ -190,7 +195,7 @@ export function AgentAssignmentSettings() {
         toast.error('保存失败');
       }
     } catch (error) {
-      console.error('Failed to save strategy:', error);
+      logger.error('Failed to save strategy', { error });
       toast.error('保存失败');
     } finally {
       setIsSaving(false);
@@ -235,7 +240,7 @@ export function AgentAssignmentSettings() {
       await fetchBindings();
       closeBindingModal();
     } catch (error) {
-      console.error('Failed to save binding:', error);
+      logger.error('Failed to save binding', { error });
       toast.error('保存失败');
     } finally {
       setSavingBinding(false);
@@ -243,7 +248,14 @@ export function AgentAssignmentSettings() {
   };
 
   const handleDeleteBinding = async (id: string) => {
-    if (!confirm('确定要删除这个绑定吗？')) return;
+    const confirmed = await confirm({
+      title: '删除绑定',
+      description: '确定要删除这个绑定吗？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/agent-assignment/shop-bindings?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
@@ -253,7 +265,7 @@ export function AgentAssignmentSettings() {
       }
       await fetchBindings();
     } catch (error) {
-      console.error('Failed to delete binding:', error);
+      logger.error('Failed to delete binding', { error });
       toast.error('删除失败');
     }
   };
@@ -273,10 +285,10 @@ export function AgentAssignmentSettings() {
 
   const getStatusBadge = (status: AgentStatus['status']) => {
     const colors = {
-      online: 'bg-green-100 text-green-800',
-      away: 'bg-yellow-100 text-yellow-800',
-      offline: 'bg-red-100 text-red-800',
-      disconnected: 'bg-gray-100 text-gray-500',
+      online: 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400',
+      away: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400',
+      offline: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400',
+      disconnected: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400',
     };
     const labels = {
       online: '在线',

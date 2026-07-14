@@ -9,11 +9,21 @@
  * Note: In a multi-instance deployment, this should use Redis or database.
  */
 
+import crypto from 'crypto';
 import { getIPFromRequest } from './ip-utils';
 import { logger as loggerCollection } from '@/lib/logger';
 import { AUTH } from '@/lib/constants';
 
 const securityLogger = loggerCollection.security;
+
+// ─── Helpers ────────────────────────────────────────────────
+
+/**
+ * Hash email for logging purposes to avoid storing PII in logs
+ */
+function hashEmail(email: string): string {
+  return crypto.createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
+}
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -199,16 +209,19 @@ export class LoginSecurityService {
       recentLoginEvents.shift();
     }
 
+    // Hash email for logging to avoid storing PII
+    const emailHash = hashEmail(event.email);
+
     // Also log to structured logger for server-side visibility
     if (event.success) {
       securityLogger.info('Login success', {
-        email: event.email,
+        emailHash,
         ip: event.ip,
         userAgent: event.userAgent,
       });
     } else {
       securityLogger.warn('Login failed', {
-        email: event.email,
+        emailHash,
         ip: event.ip,
         reason: event.reason,
         userAgent: event.userAgent,

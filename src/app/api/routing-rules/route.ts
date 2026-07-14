@@ -1,8 +1,40 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { RoutingService } from '@/server/services/routing-service';
 import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
 
 const service = new RoutingService();
+
+const UuidSchema = z.string().uuid({ message: '必须是合法 UUID' });
+
+const ConditionConfigSchema = z.union([
+  z.object({
+    keywords: z.array(z.string().min(1).max(100)).min(1).max(20),
+    match_mode: z.enum(['exact', 'fuzzy']).optional(),
+  }),
+  z.object({}).strict(),
+  z.null(),
+  z.undefined(),
+]);
+
+const CreateRuleSchema = z.object({
+  name: z.string().min(1).max(100),
+  condition_type: z.enum(['keyword', 'default']).optional(),
+  condition_config: ConditionConfigSchema.optional(),
+  target_bot_id: UuidSchema,
+  priority: z.number().int().min(0).max(100).optional(),
+  is_enabled: z.boolean().optional(),
+});
+
+const UpdateRuleSchema = z.object({
+  id: UuidSchema,
+  name: z.string().min(1).max(100).optional(),
+  condition_type: z.enum(['keyword', 'default']).optional(),
+  condition_config: ConditionConfigSchema.optional(),
+  target_bot_id: UuidSchema.optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  is_enabled: z.boolean().optional(),
+});
 
 // GET /api/routing-rules - List all routing rules
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
@@ -21,16 +53,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  const result = await service.createRule({
-    name: body?.name as string,
-    condition_type: body?.condition_type as string | undefined,
-    condition_config: body?.condition_config as unknown | undefined,
-    target_bot_id: body?.target_bot_id as string,
-    priority: body?.priority as number | undefined,
-    is_enabled: body?.is_enabled as boolean | undefined,
-  });
+  const parsed = CreateRuleSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '参数校验失败', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'VALIDATION_ERROR',
+    });
+  }
 
-  return apiSuccess(result);
+  const result = await service.createRule(parsed.data);
+  return apiSuccess(result, HttpStatus.CREATED);
 });
 
 // PUT /api/routing-rules - Update a routing rule
@@ -41,16 +73,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
-  const result = await service.updateRule({
-    id: body?.id as string,
-    name: body?.name as string | undefined,
-    condition_type: body?.condition_type as string | undefined,
-    condition_config: body?.condition_config as unknown | undefined,
-    target_bot_id: body?.target_bot_id as string | undefined,
-    priority: body?.priority as number | undefined,
-    is_enabled: body?.is_enabled as boolean | undefined,
-  });
+  const parsed = UpdateRuleSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '参数校验失败', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'VALIDATION_ERROR',
+    });
+  }
 
+  const { id, ...rest } = parsed.data;
+  const result = await service.updateRule({ id, ...rest });
   return apiSuccess(result);
 });
 
@@ -62,10 +94,14 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
-  if (!id) {
-    return apiError('缺少规则ID', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+  const parsed = UuidSchema.safeParse(id);
+  if (!parsed.success) {
+    return apiError(parsed.error.issues[0]?.message ?? '缺少规则ID 或格式不合法', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'VALIDATION_ERROR',
+    });
   }
 
-  await service.deleteRule(id);
+  await service.deleteRule(parsed.data);
   return apiSuccess({ success: true });
 });

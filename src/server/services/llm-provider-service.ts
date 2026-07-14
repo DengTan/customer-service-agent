@@ -40,6 +40,18 @@ export class LlmProviderService {
   }
 
   /**
+   * Get provider by ID with decrypted API key (for internal use only)
+   */
+  async getProviderWithDecryptedKey(id: string): Promise<LlmProviderRow | null> {
+    try {
+      return await this.repository.getByIdWithDecryptedKey(id);
+    } catch (error) {
+      logger.error('Failed to get LLM provider with decrypted key', { id, error });
+      throw this.toServiceError(error, 'Failed to get provider');
+    }
+  }
+
+  /**
    * Get provider by name
    */
   async getProviderByName(name: string): Promise<LlmProviderRow | null> {
@@ -47,6 +59,18 @@ export class LlmProviderService {
       return await this.repository.getByName(name);
     } catch (error) {
       logger.error('Failed to get LLM provider by name', { name, error });
+      throw this.toServiceError(error, 'Failed to get provider');
+    }
+  }
+
+  /**
+   * Get provider by name with decrypted API key (for internal use only)
+   */
+  async getProviderByNameWithDecryptedKey(name: string): Promise<LlmProviderRow | null> {
+    try {
+      return await this.repository.getByNameWithDecryptedKey(name);
+    } catch (error) {
+      logger.error('Failed to get LLM provider by name with decrypted key', { name, error });
       throw this.toServiceError(error, 'Failed to get provider');
     }
   }
@@ -323,19 +347,27 @@ export class LlmProviderService {
         return { success: false, message: 'API key not configured' };
       }
 
-      // Simple test: try to call the provider's models endpoint
-      const response = await fetch(`${provider.base_url}/models`, {
+      // Test connection by calling /v1/chat/completions with a minimal request
+      // Note: /models endpoint is not supported by all providers (e.g. Sensenova returns 404)
+      const testResponse = await fetch(`${provider.base_url}/v1/chat/completions`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${provider.api_key}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          model: provider.default_model || provider.models?.[0] || 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5,
+          stream: false,
+        }),
       });
 
-      if (response.ok) {
+      if (testResponse.ok) {
         return { success: true, message: 'Connection successful' };
       } else {
-        const errorText = await response.text();
-        return { success: false, message: `Connection failed: ${response.status} ${errorText}` };
+        const errorText = await testResponse.text();
+        return { success: false, message: `Connection failed: ${testResponse.status} ${errorText}` };
       }
     } catch (error) {
       logger.error('Failed to test LLM provider connection', { id, error });

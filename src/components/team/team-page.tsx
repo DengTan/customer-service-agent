@@ -21,7 +21,7 @@ import { DEFAULT_PERMISSIONS } from '@/config/default-permissions';
 
 const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-primary/10 text-primary',
-  agent: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  agent: 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
   observer: 'bg-muted text-muted-foreground',
 };
 

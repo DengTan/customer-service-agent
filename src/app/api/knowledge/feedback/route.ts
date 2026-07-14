@@ -6,12 +6,28 @@ const feedbackService = new KnowledgeFeedbackService();
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const body = await request.json();
-  const { message_id, conversation_id, knowledge_item_id, knowledge_name, knowledge_score, feedback_type, reason, comment } = body ?? {};
+  const {
+    message_id,
+    conversation_id,
+    knowledge_item_id,
+    chunk_id,
+    chunk_index,
+    content_hash,
+    knowledge_name,
+    knowledge_score,
+    feedback_type,
+    reason,
+    comment,
+  } = body ?? {};
 
   const result = await feedbackService.recordFeedback({
     message_id,
     conversation_id: conversation_id ?? null,
     knowledge_item_id: knowledge_item_id ?? null,
+    // P2: pass through stable chunk identity
+    chunk_id: chunk_id ?? null,
+    chunk_index: chunk_index ?? 0,
+    content_hash: content_hash ?? null,
     knowledge_name: knowledge_name ?? null,
     knowledge_score: knowledge_score ?? null,
     feedback_type,

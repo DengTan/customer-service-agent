@@ -3,6 +3,7 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import { trimDemoArray } from '@/lib/api-utils';
 import { DEMO_PUSH_TEMPLATES, DEMO_EVENT_LOGS } from './demo-data/demo-push';
+import { logger } from '@/lib/logger';
 
 export interface PushTemplate {
   id: string;
@@ -209,7 +210,7 @@ export class PushRepository {
       if (error) throw new RepositoryError('list push records', error.message, error.code);
       return { records: (data ?? []) as PushRecord[], total: count };
     } catch (error) {
-      console.error('[PushRepository] Database query failed in listRecords, falling back to demo data:', error);
+      logger.error('[PushRepository] Database query failed in listRecords, falling back to demo data', { error });
       return { records: [], total: 0 };
     }
   }
@@ -229,7 +230,7 @@ export class PushRepository {
       if (error) throw new RepositoryError('list push event logs', error.message, error.code);
       return (data ?? []) as PushEventLog[];
     } catch (error) {
-      console.error('[PushRepository] Database query failed in listEventLogs, falling back to demo data:', error);
+      logger.error('[PushRepository] Database query failed in listEventLogs, falling back to demo data', { error });
       return this._demoEventLogs;
     }
   }

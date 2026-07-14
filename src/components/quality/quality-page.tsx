@@ -3,14 +3,44 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import AppLayout from '@/components/app-layout';
-import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw, Loader2 } from 'lucide-react';
+import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw, Loader2, BarChart3, TrendingUp, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import type { ConversationTagDef, QualityRule, QualityCheck } from '@/lib/types';
+import { QUALITY_RULE_TYPE_LABELS } from '@/lib/types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
+import { logger } from '@/lib/logger';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
+
+// Quality stats interface
+interface QualityStats {
+  overall: {
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  };
+  by_date: Array<{
+    date: string;
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  }>;
+  by_rule: Array<{
+    rule_type: string | null;
+    rule_name: string | null;
+    total: number;
+    pass_count: number;
+    fail_count: number;
+    pass_rate: number;
+  }>;
+}
 
 const TAG_CATEGORY_LABELS: Record<string, string> = {
   question_type: '问题类型',
@@ -24,18 +54,124 @@ const TAG_CATEGORY_COLORS: Record<string, string> = {
   business_line: 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400',
 };
 
-const RULE_TYPE_LABELS: Record<string, string> = {
-  first_response_timeout: '首响超时',
-  keyword_violation: '关键词违规',
-  satisfaction_below: '满意度低于阈值',
-  high_turn_count: '高轮次告警',
-  negative_sentiment: '负面情绪检测',
-};
-
 const TAG_COLORS = ['#2F6BFF', '#DC2626', '#F97316', '#16A37B', '#8B5CF6', '#06B6D4', '#D4A017', '#E11D48'];
 
+// Chart colors
+const CHART_COLORS = ['#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899'];
+
+// Quality stats date range options
+const DATE_RANGE_OPTIONS = [
+  { label: '最近7天', value: '7' },
+  { label: '最近30天', value: '30' },
+  { label: '最近90天', value: '90' },
+];
+
+// Rule type configuration for dynamic forms
+interface RuleTypeConfig {
+  label: string;
+  description: string;
+  fields: Array<{
+    key: string;
+    label: string;
+    type: 'text' | 'number' | 'tags' | 'select';
+    placeholder?: string;
+    required?: boolean;
+    options?: Array<{ label: string; value: string }>;
+    defaultValue?: string | number | string[];
+  }>;
+  defaultConfig: Record<string, unknown>;
+}
+
+const RULE_TYPE_CONFIGS: Record<string, RuleTypeConfig> = {
+  first_response_timeout: {
+    label: '首响超时',
+    description: '检测AI首次回复是否超过指定时间',
+    fields: [
+      {
+        key: 'threshold_minutes',
+        label: '超时阈值（分钟）',
+        type: 'number',
+        placeholder: '5',
+        required: true,
+        defaultValue: 5,
+      },
+    ],
+    defaultConfig: { threshold_minutes: 5 },
+  },
+  keyword_violation: {
+    label: '关键词违规',
+    description: '检测AI回复中是否包含禁止关键词',
+    fields: [
+      {
+        key: 'forbidden_keywords',
+        label: '禁止关键词（用逗号分隔）',
+        type: 'tags',
+        placeholder: '输入关键词后按回车添加',
+        required: true,
+        defaultValue: [],
+      },
+    ],
+    defaultConfig: { forbidden_keywords: [] },
+  },
+  satisfaction_below: {
+    label: '满意度低于阈值',
+    description: '当用户满意度评分低于指定阈值时触发',
+    fields: [
+      {
+        key: 'threshold',
+        label: '评分阈值（1-5星）',
+        type: 'number',
+        placeholder: '3',
+        required: true,
+        defaultValue: 3,
+      },
+    ],
+    defaultConfig: { threshold: 3 },
+  },
+  high_turn_count: {
+    label: '高轮次告警',
+    description: '对话轮次超过指定数量时触发',
+    fields: [
+      {
+        key: 'threshold',
+        label: '轮次阈值',
+        type: 'number',
+        placeholder: '20',
+        required: true,
+        defaultValue: 20,
+      },
+    ],
+    defaultConfig: { threshold: 20 },
+  },
+  negative_sentiment: {
+    label: '负面情绪检测',
+    description: '检测AI回复中是否包含负面情绪关键词',
+    fields: [
+      {
+        key: 'negative_keywords',
+        label: '负面关键词（用逗号分隔）',
+        type: 'tags',
+        placeholder: '输入关键词后按回车添加',
+        required: true,
+        defaultValue: [],
+      },
+    ],
+    defaultConfig: { negative_keywords: [] },
+  },
+};
+
+// Helper to build config from rule type
+function buildConfigFromRuleType(ruleType: string, ruleForm: { type: string }): Record<string, unknown> {
+  const config = RULE_TYPE_CONFIGS[ruleType]?.defaultConfig || {};
+  // Preserve existing config values if editing
+  return { ...config };
+}
+
 export function QualityPage() {
-  const [activeTab, setActiveTab] = useState<'tags' | 'rules' | 'checks'>('tags');
+  const [activeTab, setActiveTab] = useState<'tags' | 'rules' | 'checks' | 'stats'>('tags');
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
 
   // Tags state
   const [tags, setTags] = useState<ConversationTagDef[]>([]);
@@ -49,11 +185,26 @@ export function QualityPage() {
   const [ruleFilter, setRuleFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<QualityRule | null>(null);
-  const [ruleForm, setRuleForm] = useState({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+  const [ruleForm, setRuleForm] = useState({ 
+    name: '', 
+    type: 'first_response_timeout', 
+    config: {} as Record<string, unknown>,
+    is_enabled: true 
+  });
+  
+  // State for dynamic keyword tags input
+  const [keywordInput, setKeywordInput] = useState('');
 
   // Checks state
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [checkFilter, setCheckFilter] = useState({ result: 'all', type: 'all' });
+  const [checkDetailDialogOpen, setCheckDetailDialogOpen] = useState(false);
+  const [selectedCheck, setSelectedCheck] = useState<QualityCheck | null>(null);
+
+  // Stats state
+  const [stats, setStats] = useState<QualityStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [dateRange, setDateRange] = useState('30');
 
   // Loading states for delete operations
   const [deletingTagId, setDeletingTagId] = useState<string | null>(null);
@@ -65,7 +216,7 @@ export function QualityPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setTags(data.tags || []);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
   }, []);
 
   const fetchRules = useCallback(async () => {
@@ -74,16 +225,33 @@ export function QualityPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setRules(data.rules || []);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
   }, []);
 
   const fetchChecks = useCallback(async () => {
     try {
-      const res = await fetch('/api/quality-checks');
+      const res = await fetch('/api/quality-checks?type=records');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setChecks(data.checks || []);
-    } catch (e) { console.error(e); }
+      setChecks(data.records || []);
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
+  }, []);
+
+  const fetchStats = useCallback(async (days: string) => {
+    setStatsLoading(true);
+    try {
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const res = await fetch(`/api/quality-checks/stats?start_date=${startDate}&end_date=${endDate}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setStats(data.data || null);
+    } catch (e) {
+      logger.error('Failed to fetch quality stats', { error: e });
+      toast.error('获取质检统计数据失败');
+    } finally {
+      setStatsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -92,7 +260,12 @@ export function QualityPage() {
     fetchChecks();
   }, [fetchTags, fetchRules, fetchChecks]);
 
-  // Tag CRUD
+  // Fetch stats when switching to stats tab
+  useEffect(() => {
+    if (activeTab === 'stats') {
+      fetchStats(dateRange);
+    }
+  }, [activeTab, dateRange, fetchStats]);
   const openEditTagDialog = (tag: ConversationTagDef) => {
     setEditingTag(tag);
     setTagForm({
@@ -123,11 +296,18 @@ export function QualityPage() {
       setEditingTag(null);
       setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
       fetchTags();
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
   };
 
   const handleDeleteTag = async (id: string) => {
-    if (!confirm('确定删除该标签？')) return;
+    const confirmed = await confirm({
+      title: '删除标签',
+      description: '确定删除该标签？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeletingTagId(id);
     try {
       const res = await fetch(`/api/conversation-tags?id=${id}`, { method: 'DELETE' });
@@ -136,7 +316,7 @@ export function QualityPage() {
         return;
       }
       fetchTags();
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
     finally { setDeletingTagId(null); }
   };
 
@@ -147,15 +327,30 @@ export function QualityPage() {
     setRuleForm({
       name: rule.name,
       type: rule.type,
-      config_text: JSON.stringify(configObj, null, 2),
+      config: configObj,
       is_enabled: rule.is_enabled,
     });
+    // Set keyword input for tags fields
+    const keywordsField = RULE_TYPE_CONFIGS[rule.type]?.fields.find(f => f.type === 'tags');
+    if (keywordsField && configObj[keywordsField.key]) {
+      // Keywords are already in the config
+    }
+    setKeywordInput('');
     setRuleDialogOpen(true);
+  };
+
+  const handleRuleTypeChange = (newType: string) => {
+    const defaultConfig = buildConfigFromRuleType(newType, ruleForm);
+    setRuleForm(prev => ({
+      ...prev,
+      type: newType,
+      config: defaultConfig,
+    }));
+    setKeywordInput('');
   };
 
   const handleSaveRule = async () => {
     try {
-      const config = JSON.parse(ruleForm.config_text || '{}');
       const res = await fetch('/api/quality-checks', {
         method: editingRule ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -163,7 +358,7 @@ export function QualityPage() {
           id: editingRule?.id,
           name: ruleForm.name,
           type: ruleForm.type,
-          config,
+          config: ruleForm.config,
           is_enabled: ruleForm.is_enabled,
         }),
       });
@@ -173,9 +368,36 @@ export function QualityPage() {
       }
       setRuleDialogOpen(false);
       setEditingRule(null);
-      setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+      setRuleForm({ name: '', type: 'first_response_timeout', config: buildConfigFromRuleType('first_response_timeout', ruleForm), is_enabled: true });
+      setKeywordInput('');
       fetchRules();
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
+  };
+
+  const handleAddKeyword = (key: string) => {
+    if (keywordInput.trim()) {
+      const currentKeywords = (ruleForm.config[key] as string[]) || [];
+      if (!currentKeywords.includes(keywordInput.trim())) {
+        setRuleForm(prev => ({
+          ...prev,
+          config: {
+            ...prev.config,
+            [key]: [...currentKeywords, keywordInput.trim()],
+          },
+        }));
+      }
+      setKeywordInput('');
+    }
+  };
+
+  const handleRemoveKeyword = (key: string, keyword: string) => {
+    setRuleForm(prev => ({
+      ...prev,
+      config: {
+        ...prev.config,
+        [key]: (prev.config[key] as string[] || []).filter(k => k !== keyword),
+      },
+    }));
   };
 
   const handleToggleRule = async (id: string, enabled: boolean) => {
@@ -190,11 +412,18 @@ export function QualityPage() {
         return;
       }
       fetchRules();
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
   };
 
   const handleDeleteRule = async (id: string) => {
-    if (!confirm('确定删除该规则？')) return;
+    const confirmed = await confirm({
+      title: '删除规则',
+      description: '确定删除该规则？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     setDeletingRuleId(id);
     try {
       const res = await fetch(`/api/quality-checks?id=${id}`, { method: 'DELETE' });
@@ -203,7 +432,7 @@ export function QualityPage() {
         return;
       }
       fetchRules();
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Unexpected error', { error: e }); }
     finally { setDeletingRuleId(null); }
   };
 
@@ -241,6 +470,7 @@ export function QualityPage() {
     { key: 'tags' as const, label: '对话标签', icon: Tag },
     { key: 'rules' as const, label: '质检规则', icon: Shield },
     { key: 'checks' as const, label: '质检记录', icon: ClipboardCheck },
+    { key: 'stats' as const, label: '质检统计', icon: BarChart3 },
   ];
 
   return (
@@ -276,7 +506,8 @@ export function QualityPage() {
                 setTagDialogOpen(true);
               } else if (activeTab === 'rules') {
                 setEditingRule(null);
-                setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+                setRuleForm({ name: '', type: 'first_response_timeout', config: buildConfigFromRuleType('first_response_timeout', ruleForm), is_enabled: true });
+                setKeywordInput('');
                 setRuleDialogOpen(true);
               }
             }}
@@ -428,7 +659,7 @@ export function QualityPage() {
                         <td className="px-5 py-3.5 text-sm font-medium text-foreground">{rule.name}</td>
                         <td className="px-4 py-3.5">
                           <Badge variant="secondary">
-                            {RULE_TYPE_LABELS[rule.type] || rule.type}
+                            {QUALITY_RULE_TYPE_LABELS[rule.type] || rule.type}
                           </Badge>
                         </td>
                         <td className="px-4 py-3.5 text-sm text-muted-foreground">{configDesc}</td>
@@ -502,7 +733,7 @@ export function QualityPage() {
                 >
                   全部类型
                 </button>
-                {Object.entries(RULE_TYPE_LABELS).slice(0, 3).map(([k, v]) => (
+                {Object.entries(QUALITY_RULE_TYPE_LABELS).map(([k, v]) => (
                   <button
                     key={k}
                     onClick={() => setCheckFilter(prev => ({ ...prev, type: k }))}
@@ -545,15 +776,30 @@ export function QualityPage() {
                   {filteredChecks.map((check, idx) => {
                     const rule = rules.find(r => r.id === check.rule_id);
                     return (
-                      <tr key={check.id} className={idx !== filteredChecks.length - 1 ? 'border-b border-border/50' : ''}>
+                      <tr 
+                        key={check.id} 
+                        className={`${idx !== filteredChecks.length - 1 ? 'border-b border-border/50' : ''} cursor-pointer hover:bg-muted/50 transition-colors`}
+                        onClick={() => {
+                          setSelectedCheck(check);
+                          setCheckDetailDialogOpen(true);
+                        }}
+                      >
                         <td className="px-5 py-3.5">
-                          <span className="text-sm font-mono text-primary cursor-pointer hover:underline">
-                            {check.conversation_id?.substring(0, 8)}...
+                          <span
+                            className="text-sm font-mono text-primary cursor-pointer hover:underline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(check.conversation_id || '').catch(() => {});
+                              toast.success('已复制对话ID');
+                            }}
+                            title="点击复制完整ID"
+                          >
+                            {check.conversation_id || '-'}
                           </span>
                         </td>
                         <td className="px-4 py-3.5 text-sm text-foreground">{rule?.name || '未知规则'}</td>
                         <td className="px-4 py-3.5 text-center">
-                          <Badge variant={check.result === 'pass' ? 'secondary' : 'destructive'} className={check.result === 'pass' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : ''}>
+                          <Badge variant={check.result === 'pass' ? 'secondary' : 'destructive'} className={check.result === 'pass' ? 'bg-emerald-200 text-emerald-700 dark:text-emerald-400' : ''}>
                             {check.result === 'pass' ? '通过' : '未通过'}
                           </Badge>
                         </td>
@@ -572,6 +818,186 @@ export function QualityPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Tab: Stats */}
+      {activeTab === 'stats' && (
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Date range selector */}
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-foreground">质检统计</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">时间范围：</span>
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+                {DATE_RANGE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setDateRange(opt.value)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      dateRange === opt.value
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {statsLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : stats ? (
+            <>
+              {/* Overall stats cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="border border-border rounded-xl bg-card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">质检总数</span>
+                  </div>
+                  <div className="text-2xl font-bold text-foreground">{stats.overall.total}</div>
+                </div>
+                <div className="border border-border rounded-xl bg-card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="w-4 h-4 text-emerald-500" />
+                    <span className="text-sm text-muted-foreground">通过数</span>
+                  </div>
+                  <div className="text-2xl font-bold text-emerald-600">{stats.overall.pass_count}</div>
+                </div>
+                <div className="border border-border rounded-xl bg-card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                    <span className="text-sm text-muted-foreground">未通过数</span>
+                  </div>
+                  <div className="text-2xl font-bold text-red-600">{stats.overall.fail_count}</div>
+                </div>
+                <div className="border border-border rounded-xl bg-card p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <BarChart3 className="w-4 h-4 text-blue-500" />
+                    <span className="text-sm text-muted-foreground">通过率</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-600">{(stats.overall.pass_rate * 100).toFixed(1)}%</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Pass rate trend */}
+                {stats.by_date.length > 0 && (
+                  <div className="border border-border rounded-xl bg-card p-4">
+                    <h3 className="text-sm font-medium text-foreground mb-4">通过率趋势</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={stats.by_date.slice(0, 14).reverse()}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis 
+                            dataKey="date" 
+                            tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+                            tickFormatter={(value) => new Date(value).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+                            tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
+                            domain={[0, 1]}
+                          />
+                          <Tooltip 
+                            formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, '通过率']}
+                            labelFormatter={(label) => new Date(label).toLocaleDateString('zh-CN')}
+                            contentStyle={{ 
+                              backgroundColor: 'var(--card)', 
+                              border: '1px solid var(--border)',
+                              borderRadius: '8px'
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="pass_rate" 
+                            stroke="#22c55e" 
+                            strokeWidth={2}
+                            dot={{ fill: '#22c55e', r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pass/Fail distribution */}
+                <div className="border border-border rounded-xl bg-card p-4">
+                  <h3 className="text-sm font-medium text-foreground mb-4">通过/未通过分布</h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: '通过', value: stats.overall.pass_count },
+                            { name: '未通过', value: stats.overall.fail_count },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={2}
+                          dataKey="value"
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
+                        >
+                          <Cell fill="#22c55e" />
+                          <Cell fill="#ef4444" />
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'var(--card)', 
+                            border: '1px solid var(--border)',
+                            borderRadius: '8px'
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Fail count by rule */}
+                {stats.by_rule.length > 0 && (
+                  <div className="border border-border rounded-xl bg-card p-4 lg:col-span-2">
+                    <h3 className="text-sm font-medium text-foreground mb-4">各规则未通过情况</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stats.by_rule} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis type="number" tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }} />
+                          <YAxis 
+                            dataKey="rule_name" 
+                            type="category" 
+                            tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
+                            width={120}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'var(--card)', 
+                              border: '1px solid var(--border)',
+                              borderRadius: '8px'
+                            }}
+                          />
+                          <Bar dataKey="fail_count" name="未通过数" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                          <Bar dataKey="pass_count" name="通过数" fill="#22c55e" radius={[0, 4, 4, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+              <BarChart3 className="w-12 h-12 mb-4" />
+              <p>暂无质检统计数据</p>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Tag Dialog */}
@@ -638,14 +1064,15 @@ export function QualityPage() {
         setRuleDialogOpen(open);
         if (!open) {
           setEditingRule(null);
-          setRuleForm({ name: '', type: 'first_response_timeout', config_text: '{}', is_enabled: true });
+          setRuleForm({ name: '', type: 'first_response_timeout', config: buildConfigFromRuleType('first_response_timeout', ruleForm), is_enabled: true });
+          setKeywordInput('');
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">{editingRule ? '编辑质检规则' : '创建质检规则'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
             <div className="space-y-2">
               <label className="text-sm font-medium">规则名称</label>
               <input
@@ -658,27 +1085,127 @@ export function QualityPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">规则类型</label>
-              <Select value={ruleForm.type} onValueChange={v => setRuleForm(prev => ({ ...prev, type: v }))}>
+              <Select 
+                value={ruleForm.type} 
+                onValueChange={v => {
+                  handleRuleTypeChange(v);
+                }}
+              >
                 <SelectTrigger className="bg-muted border-none">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(RULE_TYPE_LABELS).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  {Object.entries(RULE_TYPE_CONFIGS).map(([k, config]) => (
+                    <SelectItem key={k} value={k}>{config.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {ruleForm.type && RULE_TYPE_CONFIGS[ruleForm.type] && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {RULE_TYPE_CONFIGS[ruleForm.type].description}
+                </p>
+              )}
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">配置 (JSON)</label>
-              <Textarea
-                value={ruleForm.config_text}
-                onChange={e => setRuleForm(prev => ({ ...prev, config_text: e.target.value }))}
-                placeholder='{"threshold_minutes": 5}'
-                rows={3}
-                className="bg-muted border-none resize-none"
-              />
-            </div>
+
+            {/* Dynamic config fields based on rule type */}
+            {ruleForm.type && RULE_TYPE_CONFIGS[ruleForm.type] && (
+              <div className="space-y-4 border-t border-border pt-4">
+                <h4 className="text-sm font-medium text-foreground">规则配置</h4>
+                {RULE_TYPE_CONFIGS[ruleForm.type].fields.map(field => (
+                  <div key={field.key} className="space-y-2">
+                    <label className="text-sm font-medium">{field.label}</label>
+                    
+                    {field.type === 'number' && (
+                      <Input
+                        type="number"
+                        placeholder={field.placeholder}
+                        value={(ruleForm.config[field.key] as number) || ''}
+                        onChange={e => setRuleForm(prev => ({
+                          ...prev,
+                          config: { ...prev.config, [field.key]: parseInt(e.target.value) || 0 },
+                        }))}
+                        className="bg-muted"
+                      />
+                    )}
+                    
+                    {field.type === 'text' && (
+                      <Input
+                        type="text"
+                        placeholder={field.placeholder}
+                        value={(ruleForm.config[field.key] as string) || ''}
+                        onChange={e => setRuleForm(prev => ({
+                          ...prev,
+                          config: { ...prev.config, [field.key]: e.target.value },
+                        }))}
+                        className="bg-muted"
+                      />
+                    )}
+                    
+                    {field.type === 'tags' && (
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder={field.placeholder}
+                            value={keywordInput}
+                            onChange={e => setKeywordInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddKeyword(field.key);
+                              }
+                            }}
+                            className="bg-muted"
+                          />
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleAddKeyword(field.key)}
+                          >
+                            添加
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(ruleForm.config[field.key] as string[] || []).map((keyword, idx) => (
+                            <Badge key={idx} variant="secondary" className="gap-1 pr-1">
+                              {keyword}
+                              <button
+                                type="button"
+                                className="ml-1 hover:text-destructive"
+                                onClick={() => handleRemoveKeyword(field.key, keyword)}
+                              >
+                                ×
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {field.type === 'select' && (
+                      <Select 
+                        value={String(ruleForm.config[field.key] || field.defaultValue || '')} 
+                        onValueChange={v => setRuleForm(prev => ({
+                          ...prev,
+                          config: { ...prev.config, [field.key]: v },
+                        }))}
+                      >
+                        <SelectTrigger className="bg-muted border-none">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {field.options?.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <Switch
                 checked={ruleForm.is_enabled}
@@ -690,6 +1217,78 @@ export function QualityPage() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRuleDialogOpen(false)} className="rounded-lg">取消</Button>
             <Button onClick={handleSaveRule} disabled={!ruleForm.name.trim()} className="rounded-lg">{editingRule ? '保存' : '创建'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Check Detail Dialog */}
+      <Dialog open={checkDetailDialogOpen} onOpenChange={(open) => {
+        setCheckDetailDialogOpen(open);
+        if (!open) setSelectedCheck(null);
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">质检记录详情</DialogTitle>
+          </DialogHeader>
+          {selectedCheck && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">对话ID</label>
+                  <div className="text-sm font-mono text-foreground break-all">
+                    {selectedCheck.conversation_id || '-'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">检测结果</label>
+                  <div>
+                    <Badge 
+                      variant={selectedCheck.result === 'pass' ? 'secondary' : 'destructive'} 
+                      className={selectedCheck.result === 'pass' ? 'bg-emerald-200 text-emerald-700 dark:text-emerald-400' : ''}
+                    >
+                      {selectedCheck.result === 'pass' ? '通过' : '未通过'}
+                    </Badge>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">规则名称</label>
+                  <div className="text-sm text-foreground">
+                    {rules.find(r => r.id === selectedCheck.rule_id)?.name || '未知规则'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">规则类型</label>
+                  <div className="text-sm text-foreground">
+                    {(() => {
+                      const ruleType = rules.find(r => r.id === selectedCheck.rule_id)?.type;
+                      return ruleType ? (QUALITY_RULE_TYPE_LABELS[ruleType] || ruleType) : '-';
+                    })()}
+                  </div>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-xs text-muted-foreground">检测时间</label>
+                  <div className="text-sm text-foreground">
+                    {selectedCheck.created_at ? new Date(selectedCheck.created_at).toLocaleString('zh-CN') : '-'}
+                  </div>
+                </div>
+              </div>
+              
+              {selectedCheck.detail && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">详情</label>
+                  <div className={`text-sm p-3 rounded-lg ${
+                    selectedCheck.result === 'fail' 
+                      ? 'bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400' 
+                      : 'bg-muted'
+                  }`}>
+                    {selectedCheck.detail}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCheckDetailDialogOpen(false)} className="rounded-lg">关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

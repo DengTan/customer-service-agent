@@ -96,7 +96,7 @@ export class KnowledgeLearningRepository {
         const from = (page - 1) * pageSize;
         return { items: filtered.slice(from, from + pageSize), total: filtered.length };
       } catch (err) {
-        console.error('[KnowledgeLearningRepository] Demo mode error:', err);
+        logger.error('[KnowledgeLearningRepository] Demo mode error', { error: err });
         return { items: [], total: 0 };
       }
     }
@@ -137,7 +137,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('list knowledge learning items', error.message, error.code);
       return { items: (data ?? []) as KnowledgeLearningItem[], total: count || 0 };
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] Database query failed, falling back to demo data:', err);
+      logger.error('[KnowledgeLearningRepository] Database query failed, falling back to demo data', { error: err });
       // Fall back to demo data
       const demoItems = this.getDemoItems();
       const filtered = this.filterDemoItems(demoItems, filters);
@@ -154,7 +154,7 @@ export class KnowledgeLearningRepository {
       try {
         return this.getDemoStats();
       } catch (err) {
-        console.error('[KnowledgeLearningRepository] Demo mode error:', err);
+        logger.error('[KnowledgeLearningRepository] Demo mode error', { error: err });
         return { pendingCount: 0, approvedWeekCount: 0, rejectedWeekCount: 0, coverage: 0 };
       }
     }
@@ -205,7 +205,7 @@ export class KnowledgeLearningRepository {
         coverage: coverageRatio,
       };
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] Database query failed, falling back to demo stats:', err);
+      logger.error('[KnowledgeLearningRepository] Database query failed, falling back to demo stats', { error: err });
       return this.getDemoStats();
     }
   }
@@ -223,7 +223,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('find recent learning item', error.message, error.code);
       return data as { id: string } | null;
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findRecentByConversation error:', err);
+      logger.error('[KnowledgeLearningRepository] findRecentByConversation error', { error: err });
       return null;
     }
   }
@@ -256,7 +256,7 @@ export class KnowledgeLearningRepository {
 
       return result;
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findRecentByConversations error:', err);
+      logger.error('[KnowledgeLearningRepository] findRecentByConversations error', { error: err });
       return new Map();
     }
   }
@@ -298,7 +298,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('find learning items by ids', error.message, error.code);
       return (data ?? []) as KnowledgeLearningItem[];
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findByIds error:', err);
+      logger.error('[KnowledgeLearningRepository] findByIds error', { error: err });
       return [];
     }
   }
@@ -313,7 +313,7 @@ export class KnowledgeLearningRepository {
 
       if (error) throw new RepositoryError('update learning item', error.message, error.code);
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] update error:', err);
+      logger.error('[KnowledgeLearningRepository] update error', { error: err });
       // Silent fail
     }
   }
@@ -328,7 +328,7 @@ export class KnowledgeLearningRepository {
 
       if (error) throw new RepositoryError('batch update learning items', error.message, error.code);
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] updateBatch error:', err);
+      logger.error('[KnowledgeLearningRepository] updateBatch error', { error: err });
       // Silent fail
     }
   }
@@ -342,6 +342,7 @@ export class KnowledgeLearningRepository {
     category: string | null;
     status: string;
     chunk_count: number;
+    embedding?: number[];
   }): Promise<{ id: string }> {
     if (isDemoMode()) return { id: 'demo-ki-new' };
     try {
@@ -354,7 +355,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('create knowledge item', error.message, error.code);
       return { id: data.id };
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] createKnowledgeItem error:', err);
+      logger.error('[KnowledgeLearningRepository] createKnowledgeItem error', { error: err });
       return { id: 'demo-ki-new' };
     }
   }
@@ -371,7 +372,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('find conversations for scan', error.message, error.code);
       return (data ?? []) as ConversationForScan[];
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findConversationsForScan error:', err);
+      logger.error('[KnowledgeLearningRepository] findConversationsForScan error', { error: err });
       return [];
     }
   }
@@ -388,7 +389,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('find messages by conversation', error.message, error.code);
       return (data ?? []) as MessageForScan[];
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findMessagesByConversation error:', err);
+      logger.error('[KnowledgeLearningRepository] findMessagesByConversation error', { error: err });
       return [];
     }
   }
@@ -407,7 +408,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('find messages by conversations', error.message, error.code);
       return (data ?? []) as MessageForScan[];
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] findMessagesByConversations error:', err);
+      logger.error('[KnowledgeLearningRepository] findMessagesByConversations error', { error: err });
       return [];
     }
   }
@@ -433,7 +434,7 @@ export class KnowledgeLearningRepository {
 
       if (error) throw new RepositoryError('update learning item', error.message, error.code);
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] updateItem error:', err);
+      logger.error('[KnowledgeLearningRepository] updateItem error', { error: err });
       // Silent fail
     }
   }
@@ -456,7 +457,7 @@ export class KnowledgeLearningRepository {
 
       if (error) throw new RepositoryError('batch update learning items', error.message, error.code);
     } catch (err) {
-      console.error('[KnowledgeLearningRepository] updateItemBatch error:', err);
+      logger.error('[KnowledgeLearningRepository] updateItemBatch error', { error: err });
       // Silent fail
     }
   }

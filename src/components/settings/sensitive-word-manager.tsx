@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface SensitiveWord {
   id: string;
@@ -39,12 +40,12 @@ const ACTION_LABELS = {
 const ACTION_COLORS = {
   block: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   replace: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-  warn: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  warn: 'bg-blue-200 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
 };
 const CATEGORY_COLORS = {
   '脏话': 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
   '政治': 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  '广告': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  '广告': 'bg-green-200 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   '其他': 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
 };
 
@@ -66,6 +67,9 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     category: '脏话',
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
 
   // Stats
   const stats = {
@@ -167,7 +171,14 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除此敏感词？')) return;
+    const confirmed = await confirm({
+      title: '删除敏感词',
+      description: '确定删除此敏感词？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/content-filter/sensitive-words?id=${id}`, {
         method: 'DELETE',
@@ -191,7 +202,14 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
       toast.error('请先选择要删除的敏感词');
       return;
     }
-    if (!confirm(`确定删除选中的 ${selectedIds.size} 个敏感词？`)) return;
+    const confirmed = await confirm({
+      title: '批量删除敏感词',
+      description: `确定删除选中的 ${selectedIds.size} 个敏感词？`,
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
     
     try {
       const results = await Promise.allSettled(

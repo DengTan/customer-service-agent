@@ -1,40 +1,25 @@
 ---
-description: SmartAssist Windows 开发环境操作规范
+description: Windows 开发环境启动命令
 alwaysApply: true
 ---
 
-# SmartAssist Windows 开发环境操作规范
+# Windows 开发环境
 
-## 开发服务器启动
+## 启动服务
 
-**Windows PowerShell 下禁止执行 `pnpm run dev`**，因为 `dev` 脚本调用的是 Linux Bash 脚本 `scripts/dev.sh`，在 Windows 下无法运行。
+**禁止**在 Windows PowerShell 执行 `pnpm run dev`（调用 Linux Bash 脚本）。
 
-### 正确方式
-
-直接在项目根目录执行：
+正确方式：
 
 ```powershell
 pnpm tsx watch src/server.ts
 ```
 
-服务将监听在 `http://localhost:5000`。
+监听 `http://localhost:5000`。
 
-### 原因
+## 环境变量
 
-- `package.json` 中的 `dev` 脚本指向 `bash ./scripts/dev.sh`
-- `dev.sh` 是 Linux Bash 脚本，依赖 `/bin/bash` 环境
-- Windows PowerShell 不支持 `&&` 链式语法（部分版本）
-- 直接用 `pnpm tsx watch src/server.ts` 可绕过脚本兼容性问题
-
-## 环境变量说明
-
-| 变量 | 说明 |
-|------|------|
-| `PORT` | 服务端口，默认 `5000` |
-| `HOSTNAME` | 绑定地址，默认 `0.0.0.0` |
-
-启动时可在命令行覆盖：
-
-```powershell
-$env:PORT=5000; $env:HOSTNAME="0.0.0.0"; pnpm tsx watch src/server.ts
-```
+| 变量 | 默认值 |
+|------|--------|
+| `PORT` | 5000 |
+| `HOSTNAME` | 0.0.0.0 |

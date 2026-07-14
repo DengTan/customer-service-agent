@@ -1,0 +1,97 @@
+---
+description: 项目启动流程规范
+alwaysApply: true
+---
+
+# 项目启动流程
+
+## 启动顺序
+
+**正确的启动顺序**：Ollama → 应用服务器
+
+```
+1. Ollama (向量嵌入服务)
+2. 应用服务器 (Next.js + API)
+```
+
+## 1. Ollama 启动
+
+### 检查状态
+
+```powershell
+ollama list
+```
+
+### 启动服务
+
+```powershell
+Start-Process -FilePath "ollama" -ArgumentList "serve" -NoNewWindow -PassThru
+```
+
+### 验证
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing
+# 期望: HTTP 200
+```
+
+## 2. 应用服务器启动
+
+### 清理锁文件（如有必要）
+
+```powershell
+Remove-Item -Path ".next\dev\lock" -Force -ErrorAction SilentlyContinue
+```
+
+### 启动服务
+
+```powershell
+cd "d:\customer_service_agent-main"
+pnpm tsx watch src/server.ts
+```
+
+### 验证
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:5000/" -UseBasicParsing
+# 期望: HTTP 307 (重定向到登录页)
+```
+
+## 端口检查
+
+如果遇到端口占用问题：
+
+```powershell
+# 查找占用端口的进程
+netstat -ano | findstr ":5000"
+netstat -ano | findstr ":11434"
+
+# 终止进程
+taskkill /PID <PID> /F
+```
+
+## 常见问题
+
+| 问题 | 解决方案 |
+|------|----------|
+| `EADDRINUSE :::5000` | 终止占用端口 5000 的进程 |
+| `Unable to acquire lock` | 删除 `.next\dev\lock` 文件 |
+| Ollama 404 错误 | 重启 Ollama 服务 |
+| `pnpm run dev` 报错 | 使用 `pnpm tsx watch src/server.ts` |
+
+## 环境变量
+
+| 变量 | 默认值 |
+|------|--------|
+| `PORT` | 5000 |
+| `HOSTNAME` | 0.0.0.0 |
+
+## 停止服务
+
+```powershell
+# 停止应用服务器
+taskkill /FI "IMAGENAME eq node.exe" /F
+
+# 停止 Ollama
+taskkill /FI "IMAGENAME eq ollama.exe" /F
+```

@@ -75,6 +75,8 @@ export class AlertRepository {
       .eq('type', type)
       .eq('is_resolved', false)
       .gte('created_at', sinceIso)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) throw new RepositoryError('find recent alert', error.message, error.code);

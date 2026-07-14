@@ -7,6 +7,8 @@ import {
   Bot, Globe, Key, TestTube, Star, ChevronDown, ChevronUp,
   Eye, EyeOff, Zap, Shield, Activity,
 } from 'lucide-react';
+import { logger } from '@/lib/logger';
+import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 interface LlmProvider {
   id: string;
@@ -62,6 +64,9 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
   const [testingId, setTestingId] = useState<string | null>(null);
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
 
+  // Confirm dialog
+  const { confirm } = useConfirmDialog();
+
   // Get active provider (from props or default)
   const activeProvider = providers.find(p => p.id === currentProviderId) 
     || providers.find(p => p.is_default)
@@ -106,7 +111,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
       }
       setModels(modelsMap);
     } catch (error) {
-      console.error('Failed to load providers:', error);
+      logger.error('Failed to load providers', { error });
       toast.error('加载失败');
     } finally {
       setLoading(false);
@@ -204,7 +209,14 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除这个提供商吗？')) return;
+    const confirmed = await confirm({
+      title: '删除提供商',
+      description: '确定要删除这个提供商吗？',
+      confirmText: '删除',
+      cancelText: '取消',
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/llm-providers/${id}`, { method: 'DELETE' });
@@ -339,7 +351,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                         )}
                         <span className={`inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded ${
                           provider.is_enabled 
-                            ? 'bg-emerald-500/10 text-emerald-600' 
+                            ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
                             : 'bg-muted text-muted-foreground'
                         }`}>
                           {provider.is_enabled ? '启用' : '禁用'}
@@ -454,7 +466,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                       </div>
                       <div>
                         <span className="text-muted-foreground">支持流式：</span>
-                        <span className={provider.supports_streaming ? 'text-emerald-600' : 'text-muted-foreground'}>
+                        <span className={provider.supports_streaming ? 'text-emerald-700' : 'text-muted-foreground'}>
                           {provider.supports_streaming ? '是' : '否'}
                         </span>
                       </div>

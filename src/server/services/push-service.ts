@@ -81,13 +81,16 @@ export class PushService {
     }
   }
 
-  async getEventLog(): Promise<{ events: PushEventLog[]; webhook_secret: string }> {
+  /**
+   * Returns the recent push event log entries. The webhook signing secret
+   * is intentionally NOT included here — admins must call the dedicated
+   * reveal endpoint (not yet implemented) to copy the secret into an
+   * external system. See `getWebhookSecretPreview` in the route handler.
+   */
+  async getEventLog(): Promise<{ events: PushEventLog[] }> {
     try {
-      const [events, webhookSecret] = await Promise.all([
-        this.repo.listEventLogs({ limit: 20 }),
-        this.repo.getWebhookSecret(),
-      ]);
-      return { events, webhook_secret: webhookSecret };
+      const events = await this.repo.listEventLogs({ limit: 20 });
+      return { events };
     } catch (error) {
       throw toServiceError(error, '获取事件日志失败');
     }

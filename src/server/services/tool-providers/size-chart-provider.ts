@@ -6,6 +6,7 @@
 import { SizeChartService } from '../../services/size-chart-service';
 import { NormalizedSizeChart, SizeChartRecommendDimension } from '../../repositories/size-chart-repository';
 import { BaseToolProvider, ToolParams, ToolResult } from './types';
+import { logger } from '@/lib/logger';
 
 export class SizeChartProvider extends BaseToolProvider {
   readonly type = 'size_chart' as const;
@@ -120,7 +121,7 @@ export class SizeChartProvider extends BaseToolProvider {
         isMockData: false,
       };
     } catch (error) {
-      console.error('[SizeChartProvider] Error querying size chart:', error);
+      logger.error('[SizeChartProvider] Error querying size chart', { error });
       return {
         message: '查询尺码表信息失败',
         confidence: 0.3,

@@ -71,7 +71,15 @@ export class ExportRepository {
 
   async getAnalyticsStats(): Promise<AnalyticsStats> {
     if (isDemoMode()) {
-      return { total_conversations: 256, active_conversations: 12, completed_conversations: 238, total_messages: 1847, avg_rating: '4.32', total_alerts: 8, queued_items: 3 };
+      return {
+        total_conversations: 0,
+        active_conversations: 0,
+        completed_conversations: 0,
+        total_messages: 0,
+        avg_rating: '0',
+        total_alerts: 0,
+        queued_items: 0,
+      };
     }
     const { data: conversations, error: convError } = await this.client
       .from('conversations')

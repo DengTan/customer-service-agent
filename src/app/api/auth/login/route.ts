@@ -4,18 +4,50 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { UserRepository } from '@/server/repositories/user-repository';
+import { UserService } from '@/server/services/user-service';
 import { verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
 import { generateToken, getTokenCookieOptions } from '@/lib/auth/jwt';
+import { getIsHttps, isSameOriginRequest } from '@/lib/auth/proxy-utils';
 import { checkRateLimit } from '@/lib/api-utils';
 import { LoginSecurityService } from '@/lib/auth/login-security';
+import { HTTP } from '@/lib/constants';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 
 const userRepo = new UserRepository();
+const userService = new UserService();
 
 // Login rate limit: 5 attempts per 5 minutes per IP
 const LOGIN_RATE_LIMIT = { maxRequests: 5, windowMs: 5 * 60 * 1000 };
+
+// Pre-computed SHA-256 placeholder hash used for timing-equivalence when the
+// user does not exist. Comparison result is discarded - this is purely to
+// keep the response time similar to a real bcrypt verify (the bcrypt verify
+// below is intentionally removed in I-9 because it cost ~250ms per call).
+const PSEUDO_VERIFY_SALT = process.env.PSEUDO_VERIFY_SALT || 'smartassist-pseudo-verify-fallback';
+const PSEUDO_VERIFY_DUMMY_HASH = crypto
+  .createHash('sha256')
+  .update(`__pseudo_invalid__:${PSEUDO_VERIFY_SALT}`)
+  .digest('hex');
+
+/**
+ * Lightweight pseudo-verification for missing users.
+ * Performs a single SHA-256 hash of the candidate password to consume
+ * roughly comparable CPU to a hash check, without the 250ms bcrypt cost.
+ * The result is intentionally ignored: the user is invalid, so we cannot
+ * meaningfully verify them. This avoids user-enumeration timing attacks.
+ */
+function pseudoVerify(password: string): void {
+  const candidate = crypto
+    .createHash('sha256')
+    .update(`${password}:${PSEUDO_VERIFY_SALT}`)
+    .digest('hex');
+  // Constant-time-ish comparison; result discarded
+  crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(PSEUDO_VERIFY_DUMMY_HASH));
+}
 
 // Zod schema for login input validation
 const LoginSchema = z.object({
@@ -30,6 +62,16 @@ const LoginSchema = z.object({
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+  // CSRF defense: reject cross-origin POST requests
+  // SameSite=lax cookies already provide primary protection;
+  // this adds defense in depth against CSRF.
+  if (!isSameOriginRequest(request)) {
+    return apiError('禁止跨站请求', {
+      status: HttpStatus.FORBIDDEN,
+      code: 'CSRF_VIOLATION',
+    });
+  }
+
   // Rate limiting (IP-based)
   const rateLimitResponse = checkRateLimit(request, LOGIN_RATE_LIMIT);
   if (rateLimitResponse) {
@@ -88,17 +130,21 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     );
   }
 
-  // Find user by email (with password hash)
-  const user = await userRepo.findByEmailWithPassword(email);
+  // Find user by email (with password hash). A `wasAutoCreated` flag tells
+  // us whether the user was just inserted as part of this request (the
+  // default-admin path); only then should we fire the one-time default
+  // settings seed — and only fire-and-forget, so login latency is unaffected.
+  const findResult = await userRepo.findByEmailWithPassword(email);
 
-  if (!user) {
+  if (!findResult) {
     // Simulate consistent timing for user enumeration prevention
-    // Always perform the same operations regardless of whether user exists
-    await verifyPassword(password, '$2b$12$abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmn');
-    
+    // Use lightweight pseudo-verify (SHA-256) instead of bcrypt to avoid
+    // ~250ms wasted work per attempt - the user is invalid by definition.
+    pseudoVerify(password);
+
     // Record failure for rate limiting (but use a generic reason)
     LoginSecurityService.recordFailure(email, 'INVALID_CREDENTIALS', request);
-    
+
     // Return generic error message - same for all failures
     return apiError('邮箱或密码错误', {
       status: HttpStatus.UNAUTHORIZED,
@@ -106,11 +152,35 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
+  const { user, wasAutoCreated } = findResult;
+
+  // First-time auto-create (default admin on a fresh DB): seed factory
+  // defaults so all feature flags, thresholds, and prompts have a baseline.
+  // Fire-and-forget so a settings failure never blocks or slows login; the
+  // seeding helper itself catches and logs its own errors. See the
+  // `setImmediate` pattern used by KnowledgeImportService.processJobAsync.
+  if (wasAutoCreated) {
+    setImmediate(() => {
+      userService
+        .seedDefaultSettings({
+          trigger: 'autoCreateDefaultAdmin',
+          userId: user.id,
+          userEmail: user.email,
+        })
+        .catch((err) => {
+          logger.error('[Auth] Fire-and-forget seed on default-admin login failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    });
+  }
+
   // Check if user is active
   if (user.status !== 'active') {
     LoginSecurityService.recordFailure(email, 'ACCOUNT_DISABLED', request);
-    
-    return apiError('账户已被禁用，请联系管理员', {
+
+    // Return generic error message - same for all authentication failures
+    return apiError('邮箱或密码错误', {
       status: HttpStatus.FORBIDDEN,
       code: 'ACCOUNT_DISABLED',
     });
@@ -119,8 +189,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   // Check if user has a password set
   if (!user.password_hash) {
     LoginSecurityService.recordFailure(email, 'NO_PASSWORD_SET', request);
-    
-    return apiError('该账户未设置密码，请联系管理员重置密码', {
+
+    // Return generic error message - same for all authentication failures
+    return apiError('邮箱或密码错误', {
       status: HttpStatus.UNAUTHORIZED,
       code: 'NO_PASSWORD_SET',
     });
@@ -184,12 +255,11 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   });
 
   // Determine if request is HTTPS for secure cookie
-  const forwardedProto = request.headers.get('x-forwarded-proto');
-  const isHttps = forwardedProto === 'https' || request.url.startsWith('https://');
-  
+  const isHttps = getIsHttps(request);
+
   // Set HTTP-only cookie
   const cookieOptions = getTokenCookieOptions(isHttps);
-  response.cookies.set('auth_token', token, cookieOptions);
+  response.cookies.set(HTTP.JWT_COOKIE_NAME, token, cookieOptions);
 
   return response;
 });

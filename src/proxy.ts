@@ -7,7 +7,7 @@
  *
  * SECURITY NOTE:
  * Edge Runtime bundles environment variables at BUILD time, not runtime.
- * This means JWT_SECRET/COZE_SUPABASE_SERVICE_ROLE_KEY from the platform
+ * This means JWT_SECRET/SUPABASE_SERVICE_ROLE_KEY from the platform
  * may not be available in middleware during preview.
  *
  * SOLUTION: Middleware does lightweight existence check only.
@@ -37,12 +37,20 @@ const PROTECTED_ROUTES = [
 // Routes that should redirect to / if already authenticated
 const AUTH_ROUTES = ['/login'];
 
+// IMPORTANT: This MUST match HTTP.JWT_COOKIE_NAME in src/lib/constants.ts.
+// proxy.ts runs in Edge Runtime and cannot import from src/lib/constants.ts
+// (no Node-only modules may transitively enter the Edge bundle), so we
+// hard-code the cookie name here. If you change one, change the other.
+// The two production writers (login/logout routes) read the constant.
+const AUTH_COOKIE_NAME = 'auth_token';
+
 /**
  * Extract auth_token value from Cookie header string.
+ * Edge-runtime safe: no Node-only modules used.
  */
-function extractTokenFromCookie(cookieHeader: string | null): string | null {
+function extractAuthCookie(cookieHeader: string | null): string | null {
   if (!cookieHeader) return null;
-  const match = cookieHeader.match(/auth_token=([^;]+)/);
+  const match = cookieHeader.match(/(?:^|;\s*)auth_token=([^;]+)/);
   return match?.[1]?.trim() || null;
 }
 
@@ -116,7 +124,7 @@ async function verifyTokenSignature(token: string): Promise<boolean> {
     }
 
     // Verify HS256 signature
-    const secret = process.env.JWT_SECRET || process.env.COZE_SUPABASE_SERVICE_ROLE_KEY || 'dev-secret-change-in-production';
+    const secret = process.env.JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'dev-secret-change-in-production';
     const keyData = textEncode(secret);
     const signingInput = textEncode(`${headerB64}.${payloadB64}`);
     const signatureBytes = base64UrlDecode(signatureB64);
@@ -168,7 +176,7 @@ export default async function middleware(request: NextRequest) {
 
   // Get token from cookie
   const cookieHeader = request.headers.get('cookie');
-  const rawToken = extractTokenFromCookie(cookieHeader);
+  const rawToken = extractAuthCookie(cookieHeader);
 
   // Detect if we're in a managed/preview environment
   const isManaged = isManagedEnvironment(request);
