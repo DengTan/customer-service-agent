@@ -1,16 +1,165 @@
 'use client';
 
 import { LlmProviderManager } from './llm-provider-manager';
-import { AI_MODELS, MULTIMODAL_MODELS, DEFAULT_SYSTEM_PROMPT } from './types';
+import { DEFAULT_SYSTEM_PROMPT } from './types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { NumberInput } from '@/components/common/number-input';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { logger } from '@/lib/logger';
+import { ImageIcon, Zap, Bot } from 'lucide-react';
+
+interface LlmModel {
+  id: string;
+  provider_id: string;
+  model_id: string;
+  display_name: string;
+  description?: string | null;
+  type: string;
+  max_tokens?: number | null;
+  supports_vision: boolean;
+  supports_function_calling: boolean;
+  supports_streaming: boolean;
+  default_temperature: number;
+  use_case: string;
+  is_enabled: boolean;
+}
+
+interface LlmProvider {
+  id: string;
+  name: string;
+  display_name: string;
+  description?: string | null;
+  api_type: string;
+  base_url: string;
+  models: string[];
+  default_model?: string | null;
+  supports_vision: boolean;
+  supports_streaming: boolean;
+  max_context_tokens?: number | null;
+  is_enabled: boolean;
+  is_default: boolean;
+  priority: number;
+}
 
 interface AISettingsProps {
   settings: Record<string, string>;
   onSettingsChange: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  /**
+   * Called whenever a number-typed field's validation state changes.
+   * Pass `false` when at least one field is invalid so the parent's
+   * save button can be disabled and the user sees a precise hint next
+   * to the offending field. The local state still allows typing partial
+   * values ("-", "0.", etc.) — `isValid` reflects only fully-formed
+   * values that would survive a roundtrip through the server validator.
+   */
+  onValidationChange?: (isValid: boolean, invalidKey: string | null) => void;
 }
 
-export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
+export function AISettings({ settings, onSettingsChange, onValidationChange }: AISettingsProps) {
   const { confirm } = useConfirmDialog();
+  const [providerModels, setProviderModels] = useState<Record<string, LlmModel[]>>({});
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [providers, setProviders] = useState<LlmProvider[]>([]);
+  const initialLoadDone = useRef(false);
+  const loadedProviderIds = useRef<Set<string>>(new Set());
+
+  // Track the validity of every bounded numeric field. We aggregate here
+  // (instead of inside each NumberInput) so the parent gets a single
+  // signal it can use to disable the save button. Fields map → validity
+  // — any single invalid field flips the global state to invalid.
+  const fieldValidityRef = useRef<Record<string, boolean>>({});
+  const reportValidity = useCallback(() => {
+    if (!onValidationChange) return;
+    const invalidKey =
+      Object.entries(fieldValidityRef.current).find(([, v]) => !v)?.[0] ?? null;
+    onValidationChange(invalidKey === null, invalidKey);
+  }, [onValidationChange]);
+
+  const trackField = useCallback(
+    (key: string) => (isValid: boolean) => {
+      if (fieldValidityRef.current[key] === isValid) return;
+      fieldValidityRef.current[key] = isValid;
+      reportValidity();
+    },
+    [reportValidity],
+  );
+  const trackMaxTokens = trackField('ai_max_tokens');
+  const trackMaxConcurrent = trackField('ai_max_concurrent');
+  const trackSearchLimit = trackField('knowledge_search_limit');
+  const trackImageLimit = trackField('knowledge_image_search_limit');
+
+  const loadProviderModels = async (providerId: string, forceRefresh = false) => {
+    // Skip cache if force refresh is requested
+    if (!forceRefresh && loadedProviderIds.current.has(providerId)) {
+      return;
+    }
+    setModelsLoading(true);
+    try {
+      const res = await fetch(`/api/llm-providers?provider_id=${providerId}`);
+      const data = await res.json();
+      loadedProviderIds.current.add(providerId);
+      setProviderModels(prev => ({ ...prev, [providerId]: data.models || [] }));
+    } catch (error) {
+      logger.error('Failed to load provider models', { error });
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  // Handle models change callback from LlmProviderManager
+  const handleModelsChange = (providerId: string) => {
+    // Force refresh the models for this provider
+    loadedProviderIds.current.delete(providerId);
+    loadProviderModels(providerId, true);
+  };
+
+  // Load providers and models on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        // Fetch providers list
+        const providersRes = await fetch('/api/llm-providers');
+        const providersData = await providersRes.json();
+        const providerList = providersData.providers || [];
+        setProviders(providerList);
+
+        // Determine which provider to use
+        let providerId = settings.llm_provider_id;
+        
+        // If no provider set, use default provider or first available
+        if (!providerId) {
+          const defaultProvider = providerList.find((p: { is_default: boolean }) => p.is_default) || providerList[0];
+          if (defaultProvider) {
+            providerId = defaultProvider.id;
+            onSettingsChange((prev) => ({ ...prev, llm_provider_id: providerId }));
+          }
+        }
+
+        // Load models for the current provider
+        if (providerId) {
+          await loadProviderModels(providerId);
+        }
+      } catch (error) {
+        logger.error('Failed to load initial provider data', { error });
+      }
+    };
+
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      loadInitialData();
+    }
+  }, []);
+
+  // Load models when provider changes
+  useEffect(() => {
+    if (settings.llm_provider_id) {
+      loadProviderModels(settings.llm_provider_id);
+    }
+  }, [settings.llm_provider_id]);
+
+  const getCurrentProviderModels = () => {
+    return providerModels[settings.llm_provider_id || ''] || [];
+  };
 
   const handleRestoreDefault = async () => {
     const confirmed = await confirm({
@@ -33,7 +182,11 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
         <div className="rounded-xl border border-border bg-card p-5">
           <LlmProviderManager 
             currentProviderId={settings.llm_provider_id}
-            onProviderChange={(providerId) => onSettingsChange((prev) => ({ ...prev, llm_provider_id: providerId }))}
+            onProviderChange={(providerId) => {
+              onSettingsChange((prev) => ({ ...prev, llm_provider_id: providerId }));
+              loadProviderModels(providerId);
+            }}
+            onModelsChange={handleModelsChange}
           />
         </div>
 
@@ -57,35 +210,60 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
               ? '已启用，用于日常文本对话'
               : '已关闭，日常文本对话将使用多模态模型（如已启用）'}
           </p>
-          <div className="space-y-2">
-            {AI_MODELS.map((model) => (
-              <button
-                key={model.value}
-                onClick={() => onSettingsChange((prev) => ({ ...prev, ai_model: model.value }))}
-                disabled={settings.ai_model_enabled === 'false'}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg border border-border text-left transition-colors ${
-                  settings.ai_model_enabled === 'false' ? 'opacity-40 cursor-not-allowed' :
-                  (settings.ai_model || 'doubao-seed-2-0-lite-260215') === model.value
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/30 hover:bg-muted/30'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                  (settings.ai_model || 'doubao-seed-2-0-lite-260215') === model.value && settings.ai_model_enabled !== 'false'
-                    ? 'border-primary'
-                    : 'border-muted-foreground/30'
-                }`}>
-                  {(settings.ai_model || 'doubao-seed-2-0-lite-260215') === model.value && settings.ai_model_enabled !== 'false' && (
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{model.label}</p>
-                  <p className="text-xs text-muted-foreground">{model.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
+          
+          {modelsLoading && settings.llm_provider_id ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(() => {
+                const textModels = getCurrentProviderModels().filter(m => !m.supports_vision);
+                if (textModels.length === 0) {
+                  return <p className="text-xs text-muted-foreground py-2">该提供商暂无普通模型</p>;
+                }
+                return textModels.map((model) => (
+                  <button
+                    key={model.id || model.model_id}
+                    onClick={() => onSettingsChange((prev) => ({ ...prev, ai_model: model.model_id }))}
+                    disabled={settings.ai_model_enabled === 'false'}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+                      settings.ai_model_enabled === 'false' ? 'opacity-40 cursor-not-allowed' :
+                      (settings.ai_model || '') === model.model_id
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:border-primary/30 hover:bg-muted/30 border-border'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      (settings.ai_model || '') === model.model_id && settings.ai_model_enabled !== 'false'
+                        ? 'border-primary'
+                        : 'border-muted-foreground/30'
+                    }`}>
+                      {(settings.ai_model || '') === model.model_id && settings.ai_model_enabled !== 'false' && (
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{model.display_name}</p>
+                      <p className="text-xs text-muted-foreground">{model.description || model.model_id}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {model.supports_streaming && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                          <Zap className="w-3 h-3" /> 流式
+                        </span>
+                      )}
+                      {model.supports_function_calling && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded">
+                          <Bot className="w-3 h-3" /> 函数
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ));
+              })()}
+            </div>
+          )}
         </div>
 
         {/* Multimodal Model Selection */}
@@ -108,35 +286,58 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
               ? '已启用，用户发送图片时自动调用多模态模型进行识别'
               : '已关闭，用户发送图片时按下方策略处理'}
           </p>
-          <div className="space-y-2">
-            {MULTIMODAL_MODELS.map((model) => (
-              <button
-                key={model.value}
-                onClick={() => onSettingsChange((prev) => ({ ...prev, multimodal_model: model.value }))}
-                disabled={settings.multimodal_enabled === 'false'}
-                className={`w-full flex items-center gap-3 p-3 rounded-lg border border-border text-left transition-colors ${
-                  settings.multimodal_enabled === 'false' ? 'opacity-40 cursor-not-allowed' :
-                  (settings.multimodal_model || 'doubao-seed-2-0-pro-260215') === model.value
-                    ? 'border-primary bg-primary/5'
-                    : 'hover:border-primary/30 hover:bg-muted/30'
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                  (settings.multimodal_model || 'doubao-seed-2-0-pro-260215') === model.value && settings.multimodal_enabled !== 'false'
-                    ? 'border-primary'
-                    : 'border-muted-foreground/30'
-                }`}>
-                  {(settings.multimodal_model || 'doubao-seed-2-0-pro-260215') === model.value && settings.multimodal_enabled !== 'false' && (
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{model.label}</p>
-                  <p className="text-xs text-muted-foreground">{model.desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
+
+          {modelsLoading && settings.llm_provider_id ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(() => {
+                const visionModels = getCurrentProviderModels().filter(m => m.supports_vision);
+                if (visionModels.length === 0) {
+                  return <p className="text-xs text-muted-foreground py-2">该提供商暂无多模态模型</p>;
+                }
+                return visionModels.map((model) => (
+                  <button
+                    key={model.id || model.model_id}
+                    onClick={() => onSettingsChange((prev) => ({ ...prev, multimodal_model: model.model_id }))}
+                    disabled={settings.multimodal_enabled === 'false'}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+                      settings.multimodal_enabled === 'false' ? 'opacity-40 cursor-not-allowed' :
+                      (settings.multimodal_model || '') === model.model_id
+                        ? 'border-primary bg-primary/5'
+                        : 'hover:border-primary/30 hover:bg-muted/30 border-border'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                      (settings.multimodal_model || '') === model.model_id && settings.multimodal_enabled !== 'false'
+                        ? 'border-primary'
+                        : 'border-muted-foreground/30'
+                    }`}>
+                      {(settings.multimodal_model || '') === model.model_id && settings.multimodal_enabled !== 'false' && (
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">{model.display_name}</p>
+                      <p className="text-xs text-muted-foreground">{model.description || model.model_id}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
+                        <ImageIcon className="w-3 h-3" /> 多模态
+                      </span>
+                      {model.supports_streaming && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                          <Zap className="w-3 h-3" /> 流式
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ));
+              })()}
+            </div>
+          )}
 
           {/* Multimodal disabled action */}
           {settings.multimodal_enabled === 'false' && (
@@ -234,14 +435,16 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
         {/* Max tokens */}
         <div className="rounded-xl border border-border bg-card p-5">
           <label className="text-xs font-medium text-foreground mb-1 block">最大回复长度（tokens）</label>
-          <p className="text-xs text-muted-foreground mb-3">控制单次回复的最大长度</p>
-          <input
-            type="number"
+          <p className="text-xs text-muted-foreground mb-3">控制单次回复的最大长度（推荐 256~8192）</p>
+          <NumberInput
+            id="ai-max-tokens"
             value={settings.ai_max_tokens || '2048'}
-            onChange={(e) => onSettingsChange((prev) => ({ ...prev, ai_max_tokens: e.target.value }))}
-            min="256"
-            max="8192"
-            className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onChange={(v) => onSettingsChange((prev) => ({ ...prev, ai_max_tokens: v }))}
+            onValidationChange={trackMaxTokens}
+            min={1}
+            max={32_000}
+            step={1}
+            fallback="2048"
           />
         </div>
 
@@ -254,13 +457,15 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">AI 同时处理的最大对话数量，设为 0 表示不限制</p>
-          <input
-            type="number"
+          <NumberInput
+            id="ai-max-concurrent"
             value={settings.ai_max_concurrent || '0'}
-            onChange={(e) => onSettingsChange((prev) => ({ ...prev, ai_max_concurrent: e.target.value }))}
-            min="0"
-            max="1000"
-            className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onChange={(v) => onSettingsChange((prev) => ({ ...prev, ai_max_concurrent: v }))}
+            onValidationChange={trackMaxConcurrent}
+            min={0}
+            max={10_000}
+            step={1}
+            fallback="0"
           />
         </div>
 
@@ -300,13 +505,15 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">每次对话最多召回的知识片段数</p>
-          <input
-            type="number"
+          <NumberInput
+            id="knowledge-search-limit"
             value={settings.knowledge_search_limit || '5'}
-            onChange={(e) => onSettingsChange((prev) => ({ ...prev, knowledge_search_limit: e.target.value }))}
-            min="1"
-            max="20"
-            className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onChange={(v) => onSettingsChange((prev) => ({ ...prev, knowledge_search_limit: v }))}
+            onValidationChange={trackSearchLimit}
+            min={1}
+            max={50}
+            step={1}
+            fallback="5"
           />
         </div>
 
@@ -321,15 +528,17 @@ export function AISettings({ settings, onSettingsChange }: AISettingsProps) {
           <p className="text-xs text-muted-foreground mb-3">
             AI 回复时附带的相关图片上限（0 = 不附带图片）
           </p>
-          <input
-            type="number"
+          <NumberInput
+            id="knowledge-image-search-limit"
             value={settings.knowledge_image_search_limit || '3'}
-            onChange={(e) =>
-              onSettingsChange((prev) => ({ ...prev, knowledge_image_search_limit: e.target.value }))
+            onChange={(v) =>
+              onSettingsChange((prev) => ({ ...prev, knowledge_image_search_limit: v }))
             }
-            min="0"
-            max="10"
-            className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onValidationChange={trackImageLimit}
+            min={0}
+            max={20}
+            step={1}
+            fallback="3"
           />
         </div>
 

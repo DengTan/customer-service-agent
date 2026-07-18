@@ -1,6 +1,7 @@
 'use client';
 
 import { ToggleLeft, ToggleRight } from 'lucide-react';
+import { useEffect } from 'react';
 import { useThemeSettings } from '@/lib/theme-settings-context';
 import type { ThemeMode } from '@/lib/theme-settings-context';
 import { THEME_OPTIONS } from './types';
@@ -8,11 +9,26 @@ import { THEME_OPTIONS } from './types';
 interface AppearanceSettingsProps {
   settings: Record<string, string>;
   onSettingsChange: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  /**
+   * Acceptance contract: all inputs in this section are either bounded
+   * `<input type="range">` sliders (browser-enforced step) or boolean
+   * toggles, so there is nothing to validate client-side. We accept the
+   * prop for API symmetry with the other sub-sections but always report
+   * valid.
+   */
+  onValidationChange?: (isValid: boolean, invalidKey: string | null) => void;
 }
 
-export function AppearanceSettings({ settings, onSettingsChange }: AppearanceSettingsProps) {
+export function AppearanceSettings({ settings, onSettingsChange, onValidationChange }: AppearanceSettingsProps) {
   const themeSettingsHook = useThemeSettings();
   const themeSettings = themeSettingsHook.settings;
+
+  // Always valid — see prop docs. Notify parent once on mount in case
+  // it gates the save button on our callback firing.
+  useEffect(() => {
+    onValidationChange?.(true, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <section>

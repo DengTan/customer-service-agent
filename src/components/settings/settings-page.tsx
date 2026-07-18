@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
@@ -12,8 +12,11 @@ import type { Shop } from './types';
 import type { ShopStats } from './types';
 import type { MainBot } from './types';
 import type { SkillGroup } from './types';
+import type { ThemeMode, ThemeSettings } from '@/lib/theme-settings-context';
+import { useThemeSettings } from '@/lib/theme-settings-context';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { SECRET_KEYS } from '@/lib/settings-schema';
 
 // Lazy load section components
 const AutoReplySettings = dynamic(() => import('./auto-reply-settings').then(m => ({ default: m.AutoReplySettings })), {
@@ -43,10 +46,27 @@ const BotSettings = dynamic(() => import('./bot-settings').then(m => ({ default:
 const KnowledgeLearningSettings = dynamic(() => import('./knowledge-learning-settings').then(m => ({ default: m.KnowledgeLearningSettings })), {
   loading: () => <div className="p-6"><Skeleton className="h-64 w-full" /></div>,
 });
+const ExternalKnowledgeSettings = dynamic(() => import('./external-knowledge-settings').then(m => ({ default: m.ExternalKnowledgeSettings })), {
+  loading: () => <div className="p-6"><Skeleton className="h-64 w-full" /></div>,
+});
 
 // Static imports for components that are already independent
 import { AgentAssignmentSettings } from './agent-assignment-settings';
 import GorgiasSettings from './gorgias-settings';
+
+// ─── Type Guards ─────────────────────────────────────────────────
+
+/**
+ * Narrowing helper for the /api/settings GET response.
+ * Avoids scattered optional-chaining in call-sites.
+ */
+function isSettingsResponse(value: unknown): value is { data: { settings: Record<string, string> } } {
+  if (value === null || typeof value !== 'object') return false;
+  const d = (value as Record<string, unknown>).data;
+  if (d === null || typeof d !== 'object') return false;
+  const s = (d as Record<string, unknown>).settings;
+  return typeof s === 'object' && s !== null && !Array.isArray(s);
+}
 
 export type SettingsResetResult =
   | { ok: true; settings: Record<string, string> }
@@ -102,24 +122,85 @@ export async function performSettingsReset(
     return { ok: false, phase: 'reload', error: '重置成功，但重新加载设置失败，请刷新页面' };
   }
 
-  let data: { data?: { settings?: Record<string, string> } };
+  let data: unknown;
   try {
     data = await settingsRes.json();
   } catch (err) {
     logger.error('重置后重新加载设置解析 JSON 失败', { error: err });
     return { ok: false, phase: 'reload', error: '重置成功，但重新加载设置失败，请刷新页面' };
   }
-  const settings = data?.data?.settings ?? {};
+  // L-4: Use type guard to safely narrow the response shape
+  const settings = isSettingsResponse(data) ? data.data.settings : {};
   return { ok: true, settings };
 }
 
 export function SettingsPage() {
   const [rules, setRules] = useState<AutoReplyRule[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [externalKbSettings, setExternalKbSettings] = useState<{
+    enabled: boolean;
+    provider: string;
+    baseUrl: string;
+    apiKeyMasked: string;
+    datasetId: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionType>('auto-reply');
+  /**
+   * Per-section validity reporters. Each child mounts and reports its
+   * current validity via `onValidationChange`; we remember the most
+   * recent report per child (by sectionId) and the overall page is
+   * considered valid iff every reported child is valid.
+   *
+   * Why we pre-build 5 separate callbacks (rather than a factory that
+   * returns one inline arrow per render): the inline arrow path leaks a
+   * fresh function reference on every parent render, which propagates
+   * through every NumberInput child and forces its `runValidation` /
+   * `handleChange` / `handleBlur` closures to rebuild on every keystroke.
+   * Pre-binding once keeps the reference chain stable for the lifetime
+   * of the SettingsPage mount.
+   */
+  const childValidityRef = useRef<Record<string, boolean>>({});
+  const [numericSettingsValid, setNumericSettingsValid] = useState(true);
+  const [invalidFieldKey, setInvalidFieldKey] = useState<string | null>(null);
+
+  // Single shared reporter. We wrap it once and reuse it for every
+  // section — each section passes its own id at the call site. The
+  // resulting closure captures `setNumericSettingsValid` / `setInvalidFieldKey`
+  // which are stable across renders, so this callback stays stable too.
+  const reportChildValidity = useCallback(
+    (sectionId: string) => (isValid: boolean, key: string | null) => {
+      if (childValidityRef.current[sectionId] === isValid && key === null) return;
+      childValidityRef.current[sectionId] = isValid;
+      const entries = Object.entries(childValidityRef.current);
+      const firstInvalid = entries.find(([, v]) => !v);
+      if (firstInvalid) {
+        // Preserve the key from the failing child if it provided one,
+        // otherwise default to the section id.
+        setNumericSettingsValid(false);
+        setInvalidFieldKey(key ?? firstInvalid[0]);
+      } else {
+        setNumericSettingsValid(true);
+        setInvalidFieldKey(null);
+      }
+    },
+    [],
+  );
+
+  const chatValidityHandler = useMemo(() => reportChildValidity('chat'), [reportChildValidity]);
+  const aiValidityHandler = useMemo(() => reportChildValidity('ai'), [reportChildValidity]);
+  const alertValidityHandler = useMemo(() => reportChildValidity('alert'), [reportChildValidity]);
+  const appearanceValidityHandler = useMemo(
+    () => reportChildValidity('appearance'),
+    [reportChildValidity],
+  );
+  const knowledgeLearningValidityHandler = useMemo(
+    () => reportChildValidity('knowledge-learning'),
+    [reportChildValidity],
+  );
+  const themeSettings = useThemeSettings();
 
   // Confirm dialog
   const { confirm } = useConfirmDialog();
@@ -140,13 +221,14 @@ export function SettingsPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [rulesRes, settingsRes, pushTemplatesRes, pushEventsRes, shopsRes, skillGroupsRes] = await Promise.all([
+      const [rulesRes, settingsRes, pushTemplatesRes, pushEventsRes, shopsRes, skillGroupsRes, externalKbRes] = await Promise.all([
         fetch('/api/auto-reply'),
         fetch('/api/settings'),
         fetch('/api/push/templates'),
         fetch('/api/push/events'),
         fetch('/api/shops?stats=true').catch(() => null),
         fetch('/api/skill-groups').catch(() => null),
+        fetch('/api/knowledge/external/settings').catch(() => null),
       ]);
       const rulesData = await rulesRes.json();
       const settingsData = await settingsRes.json();
@@ -165,6 +247,27 @@ export function SettingsPage() {
         const skillGroupsData = await skillGroupsRes.json();
         setSkillGroups(skillGroupsData.groups || []);
       }
+      // Load external knowledge settings.
+      // Catch returns null on network failure, while non-2xx still resolves to a Response
+      // with .ok=false — both cases must NOT silently keep the previous state, otherwise
+      // the UI would render hardcoded "default" values that look like a successful reset.
+      if (externalKbRes) {
+        if (externalKbRes.ok) {
+          try {
+            const externalKbData = await externalKbRes.json();
+            setExternalKbSettings(externalKbData);
+          } catch (err) {
+            logger.error('外部知识库设置解析失败', { error: err });
+            toast.error('外部知识库设置加载失败：响应格式错误');
+          }
+        } else {
+          logger.warn('外部知识库设置加载 HTTP 失败', { status: externalKbRes.status });
+          toast.error(`外部知识库设置加载失败 (HTTP ${externalKbRes.status})`);
+        }
+      } else {
+        logger.warn('外部知识库设置网络请求失败');
+        toast.error('外部知识库设置加载失败，请检查网络连接');
+      }
     } catch (err) {
       logger.error('加载设置失败', { error: err });
       toast.error('加载设置失败，请刷新重试');
@@ -178,7 +281,25 @@ export function SettingsPage() {
   }, [loadData]);
 
   const handleSaveSettings = async () => {
-    // Cross-validate alert thresholds: Critical must be less than Warning
+    // Block save if any numeric field is currently in an invalid state.
+    // The UI already disables the button, but a stale handler (e.g. the
+    // user pressed Enter while focus was elsewhere) can still fire here.
+    if (!numericSettingsValid) {
+      const fieldLabel = invalidFieldKey ?? '数值字段';
+      toast.error(`${fieldLabel} 当前值不合法，请修正后再保存`);
+      return;
+    }
+
+    // Cross-validate alert thresholds. AlertSettings already runs these
+    // rules live and reports them via onValidationChange — so by the
+    // time we get here the save button should be disabled if either
+    // pair violates its constraint. The checks below are a defensive
+    // belt-and-suspenders copy that protects against:
+//   (a) a stale settings object captured by this closure (e.g. async
+//       race if the user mashes Enter while setSettings is still
+//       pending),
+//   (b) programmatic callers that bypass the disabled-button path
+//       (tests, hot-reload, future refactors).
     const confWarn = parseFloat(settings.alert_confidence_threshold || '0.4');
     const confCrit = parseFloat(settings.alert_confidence_critical_threshold || '0.2');
     const roundsWarn = parseInt(settings.alert_high_rounds_threshold || '10', 10);
@@ -193,19 +314,79 @@ export function SettingsPage() {
       return;
     }
 
+    // Strip secret / server-internal keys that the generic PUT endpoint does not accept.
+    // These keys have dedicated API routes (e.g. /api/gorgias/settings, /api/push/secret/rotate)
+    // and must never be sent through the generic settings endpoint.
+    // Defense in depth: settings-schema.ts WRITABLE_SETTING_KEYS also blocks these at the service layer.
+
+    const writableSettings: Record<string, string> = {};
+    const systemPrompt = settings.system_prompt;
+    for (const [key, value] of Object.entries(settings)) {
+      if (key === 'system_prompt') continue; // handled by dedicated endpoint
+      if (!SECRET_KEYS.includes(key)) {
+        writableSettings[key] = value;
+      }
+    }
+
     setSaving(true);
     try {
+      // 1. Save all non-secret settings via the generic endpoint
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings: writableSettings }),
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+
+      // 2. Save system_prompt via the dedicated narrow-scope endpoint
+      //    (system_prompt is no longer writable via the generic endpoint;
+      //     calling it here is safe even if the value hasn't changed — it's idempotent)
+      const spRes = await fetch('/api/settings/system-prompt', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system_prompt: systemPrompt ?? '' }),
+      });
+      const spData = await spRes.json().catch(() => ({}));
+
+      if (res.ok && data.success && spRes.ok && spData.success) {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
+        // Re-fetch full settings so the single source of truth (server DB) is
+        // reflected in the Theme Context and localStorage.
+        try {
+          const fullRes = await fetch('/api/settings');
+          if (fullRes.ok) {
+            const full = await fullRes.json();
+            const db = full.settings ?? {};
+            const appearance: ThemeSettings = {
+              theme: (db.theme as ThemeMode) ?? 'system',
+              fontSize: db.font_size ?? '14',
+              showTimestamps: db.show_timestamps === 'true',
+              compactMode: db.compact_mode === 'true',
+            };
+            themeSettings.syncFromServer(appearance);
+          }
+        } catch {
+          // Non-fatal: save succeeded, sync is best-effort
+        }
       } else {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || '保存设置失败');
+        // Build the most useful error message
+        const genericError = data.error || spData.error || '保存设置失败';
+        const detail = data.detail;
+        let fullMsg = genericError;
+        // System-prompt specific errors
+        if (spData.code && !res.ok) {
+          fullMsg = `系统提示词保存失败: ${spData.error}`;
+        } else if (detail) {
+          if (detail.invalidKeys?.length) {
+            fullMsg += `\n不支持的设置键: ${detail.invalidKeys.join(', ')}`;
+          }
+          if (detail.invalidValues?.length) {
+            const bad = detail.invalidValues.map((v: { key: string; value: unknown }) => `${v.key}=${v.value}`).join(', ');
+            fullMsg += `\n无效的值: ${bad}`;
+          }
+        }
+        toast.error(fullMsg);
       }
     } catch {
       toast.error('保存设置失败，请检查网络连接');
@@ -239,13 +420,37 @@ export function SettingsPage() {
       case 'auto-reply':
         return <AutoReplySettings rules={rules} onRulesChange={setRules} />;
       case 'chat':
-        return <ChatSettings settings={settings} onSettingsChange={setSettings} />;
+        return (
+          <ChatSettings
+            settings={settings}
+            onSettingsChange={setSettings}
+            onValidationChange={chatValidityHandler}
+          />
+        );
       case 'ai':
-        return <AISettings settings={settings} onSettingsChange={setSettings} />;
+        return (
+          <AISettings
+            settings={settings}
+            onSettingsChange={setSettings}
+            onValidationChange={aiValidityHandler}
+          />
+        );
       case 'alert':
-        return <AlertSettings settings={settings} onSettingsChange={setSettings} />;
+        return (
+          <AlertSettings
+            settings={settings}
+            onSettingsChange={setSettings}
+            onValidationChange={alertValidityHandler}
+          />
+        );
       case 'appearance':
-        return <AppearanceSettings settings={settings} onSettingsChange={setSettings} />;
+        return (
+          <AppearanceSettings
+            settings={settings}
+            onSettingsChange={setSettings}
+            onValidationChange={appearanceValidityHandler}
+          />
+        );
       case 'shop':
         return (
           <ShopSettings
@@ -265,7 +470,20 @@ export function SettingsPage() {
       case 'gorgias':
         return <GorgiasSettings />;
       case 'knowledge-learning':
-        return <KnowledgeLearningSettings settings={settings} onSettingsChange={setSettings} />;
+        return (
+          <KnowledgeLearningSettings
+            settings={settings}
+            onSettingsChange={setSettings}
+            onValidationChange={knowledgeLearningValidityHandler}
+          />
+        );
+      case 'external-knowledge':
+        return (
+          <ExternalKnowledgeSettings
+            externalKbSettings={externalKbSettings}
+            onSettingsChange={setExternalKbSettings}
+          />
+        );
       default:
         return null;
     }
@@ -287,8 +505,13 @@ export function SettingsPage() {
           </button>
           <button
             onClick={handleSaveSettings}
-            disabled={saving || resetting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+            disabled={saving || resetting || !numericSettingsValid}
+            title={
+              !numericSettingsValid
+                ? `当前存在非法数值字段${invalidFieldKey ? `: ${invalidFieldKey}` : ''}`
+                : undefined
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saved ? (
               <>

@@ -1,13 +1,19 @@
 'use client';
 
 import { ToggleLeft, ToggleRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { NumberInput } from '@/components/common/number-input';
 import SensitiveWordManager from './sensitive-word-manager';
 import DomainWhitelistManager from './domain-whitelist-manager';
 
 interface ChatSettingsProps {
   settings: Record<string, string>;
   onSettingsChange: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  /**
+   * Same contract as AISettings: false ⇒ at least one numeric field is
+   * invalid, parent should disable the save button.
+   */
+  onValidationChange?: (isValid: boolean, invalidKey: string | null) => void;
 }
 
 async function fetchTotalCount(endpoint: string): Promise<number> {
@@ -25,11 +31,32 @@ async function fetchTotalCount(endpoint: string): Promise<number> {
   }
 }
 
-export function ChatSettings({ settings, onSettingsChange }: ChatSettingsProps) {
+export function ChatSettings({ settings, onSettingsChange, onValidationChange }: ChatSettingsProps) {
   const [showSensitiveWordManager, setShowSensitiveWordManager] = useState(false);
   const [showDomainManager, setShowDomainManager] = useState(false);
   const [sensitiveWordCount, setSensitiveWordCount] = useState(0);
   const [domainCount, setDomainCount] = useState(0);
+
+  // Aggregate validity across our three bounded numeric fields. The
+  // pattern mirrors AISettings — see that file for the full rationale.
+  const fieldValidityRef = useRef<Record<string, boolean>>({});
+  const reportValidity = useCallback(() => {
+    if (!onValidationChange) return;
+    const invalidKey =
+      Object.entries(fieldValidityRef.current).find(([, v]) => !v)?.[0] ?? null;
+    onValidationChange(invalidKey === null, invalidKey);
+  }, [onValidationChange]);
+  const trackField = useCallback(
+    (key: string) => (isValid: boolean) => {
+      if (fieldValidityRef.current[key] === isValid) return;
+      fieldValidityRef.current[key] = isValid;
+      reportValidity();
+    },
+    [reportValidity],
+  );
+  const trackSessionTimeout = trackField('session_timeout');
+  const trackMaxTurns = trackField('max_turns');
+  const trackUnhandledMinutes = trackField('unhandled_remind_minutes');
 
   useEffect(() => {
     let cancelled = false;
@@ -64,22 +91,28 @@ export function ChatSettings({ settings, onSettingsChange }: ChatSettingsProps) 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-xs font-medium text-foreground mb-1 block">对话超时时间（分钟）</label>
-            <input
-              type="number"
+            <NumberInput
+              id="chat-session-timeout"
               value={settings.session_timeout || '30'}
-              onChange={(e) => onSettingsChange((prev) => ({ ...prev, session_timeout: e.target.value }))}
-              min="1"
-              className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onChange={(v) => onSettingsChange((prev) => ({ ...prev, session_timeout: v }))}
+              onValidationChange={trackSessionTimeout}
+              min={0}
+              max={24 * 60}
+              step={1}
+              fallback="30"
             />
           </div>
           <div>
             <label className="text-xs font-medium text-foreground mb-1 block">最大对话轮次</label>
-            <input
-              type="number"
+            <NumberInput
+              id="chat-max-turns"
               value={settings.max_turns || '20'}
-              onChange={(e) => onSettingsChange((prev) => ({ ...prev, max_turns: e.target.value }))}
-              min="1"
-              className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              onChange={(v) => onSettingsChange((prev) => ({ ...prev, max_turns: v }))}
+              onValidationChange={trackMaxTurns}
+              min={0}
+              max={1_000}
+              step={1}
+              fallback="20"
             />
           </div>
         </div>
@@ -136,18 +169,16 @@ export function ChatSettings({ settings, onSettingsChange }: ChatSettingsProps) 
           <label className="text-xs font-medium text-foreground mb-1 block">
             未处理超时阈值（分钟）
           </label>
-          <input
-            type="number"
-            min={1}
-            max={1440}
+          <NumberInput
+            id="chat-unhandled-minutes"
             value={settings.unhandled_remind_minutes ?? '30'}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === '' || /^\d+$/.test(v)) {
-                onSettingsChange((prev) => ({ ...prev, unhandled_remind_minutes: v }));
-              }
-            }}
-            className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            onChange={(v) => onSettingsChange((prev) => ({ ...prev, unhandled_remind_minutes: v }))}
+            onValidationChange={trackUnhandledMinutes}
+            min={1}
+            max={24 * 60}
+            step={1}
+            fallback="30"
+            placeholder="30"
           />
           <p className="text-xs text-muted-foreground mt-1">
             用户发消息后超过该时间仍未被客服接管时触发提醒。

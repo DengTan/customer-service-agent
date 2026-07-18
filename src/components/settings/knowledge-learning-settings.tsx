@@ -1,11 +1,36 @@
 'use client';
 
+import { NumberInput } from '@/components/common/number-input';
+import { useCallback, useRef } from 'react';
+
 interface KnowledgeLearningSettingsProps {
   settings: Record<string, string>;
   onSettingsChange: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onValidationChange?: (isValid: boolean, invalidKey: string | null) => void;
 }
 
-export function KnowledgeLearningSettings({ settings, onSettingsChange }: KnowledgeLearningSettingsProps) {
+export function KnowledgeLearningSettings({
+  settings,
+  onSettingsChange,
+  onValidationChange,
+}: KnowledgeLearningSettingsProps) {
+  const fieldValidityRef = useRef<Record<string, boolean>>({});
+  const reportValidity = useCallback(() => {
+    if (!onValidationChange) return;
+    const invalidKey =
+      Object.entries(fieldValidityRef.current).find(([, v]) => !v)?.[0] ?? null;
+    onValidationChange(invalidKey === null, invalidKey);
+  }, [onValidationChange]);
+  const trackField = useCallback(
+    (key: string) => (isValid: boolean) => {
+      if (fieldValidityRef.current[key] === isValid) return;
+      fieldValidityRef.current[key] = isValid;
+      reportValidity();
+    },
+    [reportValidity],
+  );
+  const trackConfidence = trackField('knowledge_learning_confidence_threshold');
+
   return (
     <section>
       <h2 className="text-sm font-semibold text-foreground mb-1">知识自学习</h2>
@@ -17,18 +42,19 @@ export function KnowledgeLearningSettings({ settings, onSettingsChange }: Knowle
           <p className="text-xs text-muted-foreground mb-3">
             AI 回复置信度高于此值时不提取为候选知识
           </p>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              value={settings.knowledge_learning_confidence_threshold ?? '0.85'}
-              onChange={(e) => onSettingsChange((prev) => ({ ...prev, knowledge_learning_confidence_threshold: e.target.value }))}
-              min="0"
-              max="1"
-              step="0.05"
-              className="w-32 px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-            <span className="text-xs text-muted-foreground">（范围: 0 - 1）</span>
-          </div>
+          <NumberInput
+            id="knowledge-learning-confidence"
+            value={settings.knowledge_learning_confidence_threshold ?? '0.85'}
+            onChange={(v) =>
+              onSettingsChange((prev) => ({ ...prev, knowledge_learning_confidence_threshold: v }))
+            }
+            onValidationChange={trackConfidence}
+            min={0}
+            max={1}
+            step={0.05}
+            fallback="0.85"
+          />
+          <p className="text-xs text-muted-foreground mt-1">（范围: 0 - 1）</p>
         </div>
 
         {/* Scan Interval */}

@@ -1,9 +1,17 @@
 ﻿import { SettingsRepository } from '@/server/repositories/settings-repository';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
 import { logger } from '@/lib/logger';
 import { isDemoMode } from '@/storage/database/supabase-client';
 import { WRITABLE_SETTING_KEYS } from '@/lib/settings-schema';
+import {
+  INTEGER_RANGE_KEYS,
+  FLOAT_RANGE_KEYS,
+} from '@/lib/setting-number-ranges';
+import { invalidateKnowledgeSearchSettingsCache } from './knowledge-search-service';
+import { FeatureFlagService } from './feature-flag-service';
+import { ContentFilterService } from './content-filter-service';
 
 /**
  * Keys whose values must be parsed as JSON before persisting.
@@ -41,41 +49,7 @@ const ENUM_KEYS: Record<string, readonly string[]> = {
 };
 
 /**
- * Keys whose values are integers with explicit min/max bounds.
- * Values outside the range are rejected. Keys not in this map fall
- * through to the legacy "non-negative number" check below.
- */
-const INTEGER_RANGE_KEYS: Record<string, { min: number; max: number }> = {
-  session_timeout: { min: 0, max: 24 * 60 },
-  max_turns: { min: 0, max: 1_000 },
-  unhandled_remind_minutes: { min: 1, max: 24 * 60 },
-  alert_high_rounds_threshold: { min: 1, max: 1_000 },
-  alert_high_rounds_critical_threshold: { min: 1, max: 1_000 },
-  alert_auto_handoff_rounds: { min: 1, max: 1_000 },
-  ai_max_tokens: { min: 1, max: 32_000 },
-  ai_max_concurrent: { min: 0, max: 10_000 },
-  knowledge_search_limit: { min: 1, max: 50 },
-  knowledge_image_search_limit: { min: 0, max: 20 },
-  knowledge_chunk_size: { min: 50, max: 4_000 },
-  knowledge_chunk_overlap: { min: 0, max: 2_000 },
-  knowledge_learning_scan_interval_hours: { min: 1, max: 24 * 30 },
-  font_size: { min: 8, max: 32 },
-  max_main_bots: { min: 1, max: 1_000 },
-};
-
-/**
- * Float-range keys: must parse to a finite number in [min, max].
- */
-const FLOAT_RANGE_KEYS: Record<string, { min: number; max: number }> = {
-  alert_confidence_threshold: { min: 0, max: 1 },
-  alert_confidence_critical_threshold: { min: 0, max: 1 },
-  knowledge_min_score: { min: 0, max: 1 },
-  knowledge_learning_confidence_threshold: { min: 0, max: 1 },
-  ai_temperature: { min: 0, max: 2 },
-};
-
-/**
- * Legacy "non-negative number" keys 鈥?kept for backwards compatibility
+ * Legacy "non-negative number" keys — kept for backwards compatibility
  * with any setting that wasn't promoted to INTEGER_RANGE_KEYS above.
  */
 const LEGACY_NON_NEGATIVE_NUMERIC_KEYS = new Set([
@@ -98,6 +72,7 @@ const LEGACY_NON_NEGATIVE_NUMERIC_KEYS = new Set([
  */
 const FREE_TEXT_KEYS = new Set([
   'welcome_message',
+  'system_prompt',
   'multimodal_fixed_message',
   'sensitive_word_block_message',
   'sensitive_word_warn_message',
@@ -115,14 +90,23 @@ export interface ValidatedSettings {
   valid: boolean;
   invalidKeys: string[];
   invalidValues: Array<{ key: string; value: unknown }>;
+  errorCode?: string;
+  errorMessage?: string;
 }
 
 export class SettingsService {
-  constructor(private readonly settings = new SettingsRepository()) {}
+  constructor(
+    private readonly settings: SettingsRepository = new SettingsRepository(),
+  ) {}
+
+  // Expose the constructor type so callers can instantiate a repository
+  // with a custom Supabase client and pass it in.
+  static readonly RepositoryConstructor: new (client: SupabaseClient) => SettingsRepository =
+    SettingsRepository;
 
   /**
    * Server-internal / secret keys. These are NEVER returned to non-admin
-   * callers and are never writable via the generic PUT endpoint 鈥?they
+   * callers and are never writable via the generic PUT endpoint — they
    * each have their own dedicated, scope-narrow API (e.g. /api/gorgias/settings).
    */
   static readonly SECRET_KEYS: readonly string[] = [
@@ -135,7 +119,6 @@ export class SettingsService {
     'llm_provider_bearer_token',
     'openai_api_key',
     'anthropic_api_key',
-    'coze_api_key',
     'webhook_secret',
     'system_prompt',
   ] as const;
@@ -200,7 +183,7 @@ export class SettingsService {
     const entries = Object.entries(raw as Record<string, unknown>);
 
     for (const [key, value] of entries) {
-      // Rule 1: allowlist check 鈥?block all secret keys and unknown keys.
+      // Rule 1: allowlist check — block all secret keys and unknown keys.
       // `key` is typed as `string` (from Object.entries) but the allowlist
       // was declared `as const`, so we widen it explicitly to `string`.
       if (!WRITABLE_SETTING_KEYS.has(key)) {
@@ -293,6 +276,39 @@ export class SettingsService {
       filtered[key] = value;
     }
 
+    // Rule 8: threshold relationship validation
+    // Critical threshold must be strictly less than Warning threshold.
+    // This is a cross-field constraint that can't be expressed in single-field rules.
+    const confidenceWarning = parseFloat(filtered['alert_confidence_threshold'] ?? '');
+    const confidenceCritical = parseFloat(filtered['alert_confidence_critical_threshold'] ?? '');
+    if (Number.isFinite(confidenceWarning) && Number.isFinite(confidenceCritical)) {
+      if (confidenceCritical >= confidenceWarning) {
+        return {
+          filtered,
+          valid: false,
+          invalidKeys: [],
+          invalidValues: [],
+          errorCode: 'INVALID_THRESHOLD_RELATION',
+          errorMessage: `严重告警阈值 (${confidenceCritical.toFixed(2)}) 必须小于告警阈值 (${confidenceWarning.toFixed(2)})`,
+        };
+      }
+    }
+
+    const roundsWarning = parseInt(filtered['alert_high_rounds_threshold'] ?? '', 10);
+    const roundsCritical = parseInt(filtered['alert_high_rounds_critical_threshold'] ?? '', 10);
+    if (Number.isFinite(roundsWarning) && Number.isFinite(roundsCritical)) {
+      if (roundsCritical <= roundsWarning) {
+        return {
+          filtered,
+          valid: false,
+          invalidKeys: [],
+          invalidValues: [],
+          errorCode: 'INVALID_THRESHOLD_RELATION',
+          errorMessage: `严重告警轮次 (${roundsCritical}) 必须大于告警轮次 (${roundsWarning})`,
+        };
+      }
+    }
+
     const valid = invalidKeys.length === 0 && invalidValues.length === 0;
     return { filtered, valid, invalidKeys, invalidValues };
   }
@@ -303,6 +319,12 @@ export class SettingsService {
    * Goes through `SettingsRepository.upsertManyAtomic`, which calls the
    * `upsert_settings_batch` SECURITY DEFINER RPC and falls back to the
    * legacy `upsert_many_settings` RPC or per-row upserts as needed.
+   *
+   * After persisting, invalidates all downstream in-memory caches so the next
+   * request picks up the new values without waiting for TTL expiry:
+   *   - knowledge-search settings cache (knowledge_min_score, _search_limit, _image_search_limit)
+   *   - content-filter cache (sensitive words, allowed domains)
+   *   - feature-flag cache (eval_*, EVAL_* flags)
    */
   async updateSettings(
     settings: Record<string, string> | undefined,
@@ -317,9 +339,9 @@ export class SettingsService {
     // Double-check with the static validator (belt-and-suspenders)
     const validated = SettingsService.validateSettings(settings);
     if (!validated.valid) {
-      throw new ServiceError('Invalid settings payload', {
+      throw new ServiceError(validated.errorMessage || 'Invalid settings payload', {
         status: 400,
-        code: 'VALIDATION_ERROR',
+        code: validated.errorCode || 'VALIDATION_ERROR',
       });
     }
 
@@ -329,14 +351,30 @@ export class SettingsService {
         logger.info('[SettingsService] Upserted settings', {
           count: Object.keys(validated.filtered).length,
         });
-        return;
+      } else {
+        // Demo mode: log and skip
+        logger.debug('[SettingsService] Demo mode - settings upsert skipped', {
+          count: Object.keys(validated.filtered).length,
+        });
       }
-      // Demo mode: log and skip
-      logger.debug('[SettingsService] Demo mode 鈥?settings upsert skipped', {
-        count: Object.keys(validated.filtered).length,
-      });
     } catch (error) {
       throw toServiceError(error, 'Failed to update settings');
     }
+
+    // -- Cache invalidation --------------------------------------------------------
+    // Any settings change (custom_tools, knowledge thresholds, content-filter
+    // toggles, feature flags, etc.) invalidates all downstream caches so the
+    // next request picks up the new values without waiting for TTL expiry.
+    try {
+      invalidateKnowledgeSearchSettingsCache();
+    } catch { /* non-fatal */ }
+
+    try {
+      new ContentFilterService().clearCache();
+    } catch { /* non-fatal */ }
+
+    try {
+      FeatureFlagService.invalidateCache();
+    } catch { /* non-fatal */ }
   }
 }
