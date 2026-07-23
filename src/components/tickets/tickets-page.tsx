@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Search, Plus, Ticket, X, Play, MessageCircle, CheckCircle,
   Archive, Send, Clock, User, Link2, Loader2, UserCheck, AlertTriangle, Timer
@@ -182,6 +183,7 @@ export default function TicketsPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [selectedTicket, setSelectedTicket] = useState<TicketDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -291,6 +293,7 @@ export default function TicketsPage() {
   }, []);
 
   const loadTicketDetail = useCallback(async (ticketId: string) => {
+    setDetailLoading(true);
     try {
       const res = await fetch(`/api/tickets/${ticketId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -300,6 +303,8 @@ export default function TicketsPage() {
       }
     } catch {
       toast.error('加载工单详情失败');
+    } finally {
+      setDetailLoading(false);
     }
   }, []);
 
@@ -627,9 +632,29 @@ export default function TicketsPage() {
             {/* Table Body */}
             <div className="divide-y divide-border overflow-y-auto flex-1">
               {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
-                </div>
+                <>
+                  {/* Table Header */}
+                  <div className="grid grid-cols-9 px-4 py-3 bg-muted text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">
+                    <span>☑</span><span>工单编号</span><span className="col-span-2">标题</span>
+                    <span>分类</span><span>优先级</span><span>状态</span><span>负责人</span><span>操作</span>
+                  </div>
+                  {/* Skeleton rows */}
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="grid grid-cols-9 px-4 py-3 items-center border-b border-border">
+                      <Skeleton className="h-4 w-4 rounded" />
+                      <Skeleton className="h-4 w-24 rounded" />
+                      <Skeleton className="h-4 w-40 col-span-2 rounded" />
+                      <Skeleton className="h-5 w-14 rounded-full" />
+                      <Skeleton className="h-5 w-12 rounded-full" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                      <div className="flex items-center gap-1.5">
+                        <Skeleton className="h-5 w-5 rounded-full" />
+                        <Skeleton className="h-4 w-12 rounded" />
+                      </div>
+                      <Skeleton className="h-4 w-8 rounded" />
+                    </div>
+                  ))}
+                </>
               ) : tickets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Ticket className="w-12 h-12 text-muted-foreground/30 mb-4" />
@@ -792,9 +817,65 @@ export default function TicketsPage() {
           </div>
         </div>
 
-        {/* Right - Detail Panel or Empty State */}
+        {/* Right - Detail Panel or Loading or Empty State */}
         <div style={{ width: '40%' }}>
-          {selectedTicket ? (
+          {detailLoading ? (
+            <div className="bg-card rounded-lg shadow-card h-full flex flex-col overflow-hidden">
+              {/* Header skeleton */}
+              <div className="px-5 pt-5 pb-4 border-b border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-5 w-24 rounded" />
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                    <Skeleton className="h-5 w-12 rounded-full" />
+                  </div>
+                  <Skeleton className="h-6 w-6 rounded" />
+                </div>
+                <Skeleton className="h-6 w-3/4 rounded mb-1" />
+                <Skeleton className="h-4 w-1/2 rounded" />
+              </div>
+              {/* Basic info skeleton */}
+              <div className="px-5 py-4 border-b border-border">
+                <div className="grid grid-cols-2 gap-3">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i}>
+                      <Skeleton className="h-3 w-12 rounded mb-1.5" />
+                      <Skeleton className="h-4 w-full rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Description skeleton */}
+              <div className="px-5 py-4 border-b border-border">
+                <Skeleton className="h-3 w-12 rounded mb-2" />
+                <Skeleton className="h-4 w-full rounded mb-1.5" />
+                <Skeleton className="h-4 w-5/6 rounded mb-1.5" />
+                <Skeleton className="h-4 w-4/6 rounded" />
+              </div>
+              {/* Action buttons skeleton */}
+              <div className="px-5 py-3 border-b border-border flex gap-2">
+                <Skeleton className="h-8 w-24 rounded-md" />
+                <Skeleton className="h-8 w-24 rounded-md" />
+              </div>
+              {/* Comments skeleton */}
+              <div className="px-5 py-4 flex-1">
+                <Skeleton className="h-3 w-20 rounded mb-4" />
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="flex gap-3 mb-4">
+                    <Skeleton className="h-7 w-7 rounded-full shrink-0" />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Skeleton className="h-4 w-16 rounded" />
+                        <Skeleton className="h-3 w-12 rounded" />
+                      </div>
+                      <Skeleton className="h-4 w-full rounded mb-1" />
+                      <Skeleton className="h-4 w-3/4 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : selectedTicket ? (
             <div className="bg-card rounded-lg shadow-card h-full flex flex-col overflow-hidden">
               {/* Detail Header */}
               <div className="px-5 pt-5 pb-4 border-b border-border">
@@ -1045,9 +1126,9 @@ export default function TicketsPage() {
       {/* Create Ticket Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-card rounded-xl shadow-dialog max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-xl shadow-dialog max-w-lg w-full max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
               <h3 className="text-base font-bold text-foreground">创建工单</h3>
               <button
                 onClick={() => setShowCreateModal(false)}
@@ -1057,7 +1138,7 @@ export default function TicketsPage() {
               </button>
             </div>
             {/* Modal Content */}
-            <div className="px-6 py-5 space-y-4">
+            <div className="px-6 py-5 space-y-4 flex-1 overflow-y-auto">
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">
                   标题 <span className="text-destructive">*</span>
@@ -1193,7 +1274,7 @@ export default function TicketsPage() {
               )}
             </div>
             {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="bg-muted text-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-muted/80 active:scale-[0.98] transition-all"

@@ -208,7 +208,8 @@ export type PermissionResource =
   | 'sub_agents'
   | 'routing'
   | 'quality'
-  | 'push';
+  | 'push'
+  | 'auto_reply';
 export type PermissionAction = 'read' | 'write' | 'delete';
 
 export interface RolePermission {
@@ -233,6 +234,7 @@ export const PERMISSION_RESOURCES: Record<PermissionResource, string> = {
   routing: '路由规则',
   quality: '质检规则',
   push: '推送模板',
+  auto_reply: '自动回复',
 };
 
 export const PERMISSION_ACTIONS: Record<PermissionAction, string> = {

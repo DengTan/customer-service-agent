@@ -132,6 +132,7 @@ export async function executeTool(
     query_logistics: 'logistics',
     apply_refund: 'refund',
     query_product_detail: 'product',
+    query_size_chart: 'size_chart',
   };
 
   const providerType = toolToProviderMap[toolName];

@@ -224,6 +224,21 @@ export class AgentRepository {
     return data as AgentQueueRow;
   }
 
+  async findSessionByUserId(userId: string): Promise<AgentSessionRow | null> {
+    if (isDemoMode()) return null;
+    const { data, error } = await this.client
+      .from('agent_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // Not found
+      throw new RepositoryError('find agent session', error.message, error.code);
+    }
+    return data as AgentSessionRow;
+  }
+
   async upsertSession(
     userId: string,
     status: string,

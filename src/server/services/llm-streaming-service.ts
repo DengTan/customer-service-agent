@@ -514,6 +514,12 @@ export class LLMStreamingService {
                     child_bot_id: matchedSubAgent.id,
                     trigger_intent: intent ?? undefined,
                     input_message: userMessage,
+                    // R-2: Thread productContext, sizeChartContext, and llmProviderConfig through
+                    productContext: options.productContext,
+                    sizeChartContext: options.sizeChartContext,
+                    llmProviderConfig: options.llmProviderBaseUrl && options.llmProviderApiKey
+                      ? { baseUrl: options.llmProviderBaseUrl, apiKey: options.llmProviderApiKey, model: options.llmProviderDefaultModel }
+                      : undefined,
                   });
 
                   delegationResults.push({

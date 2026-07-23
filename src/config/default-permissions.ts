@@ -23,6 +23,7 @@ export const DEFAULT_PERMISSIONS: DefaultPermissions = {
     routing: { read: true, write: true, delete: true },
     quality: { read: true, write: true, delete: true },
     push: { read: true, write: true, delete: true },
+    auto_reply: { read: true, write: true, delete: true },
   },
   agent: {
     conversations: { read: true, write: true, delete: false },
@@ -38,6 +39,7 @@ export const DEFAULT_PERMISSIONS: DefaultPermissions = {
     routing: { read: true, write: false, delete: false },
     quality: { read: true, write: false, delete: false },
     push: { read: true, write: false, delete: false },
+    auto_reply: { read: true, write: true, delete: false },
   },
   observer: {
     conversations: { read: true, write: false, delete: false },
@@ -53,5 +55,6 @@ export const DEFAULT_PERMISSIONS: DefaultPermissions = {
     routing: { read: true, write: false, delete: false },
     quality: { read: true, write: false, delete: false },
     push: { read: true, write: false, delete: false },
+    auto_reply: { read: true, write: false, delete: false },
   },
 };

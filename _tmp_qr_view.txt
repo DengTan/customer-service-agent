@@ -1,0 +1,666 @@
+"use client";
+
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  Search,
+  Plus,
+  Edit2,
+  Trash2,
+  Download,
+  Upload,
+  ChevronDown,
+  BookOpen,
+  Sparkles,
+  Users,
+  X,
+  Copy,
+  Check,
+  FileSpreadsheet,
+  FileText,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { Info } from "lucide-react";
+import { toast } from "sonner";
+import { logger } from "@/lib/logger";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
+import { zhCN } from "date-fns/locale";
+
+const API_BASE = "/api/quick-replies";
+
+const DEFAULT_CATEGORIES = ["鍞墠鍜ㄨ", "鍞悗闂", "鐗╂祦鍜ㄨ", "浼樻儬娲诲姩", "鎶曡瘔寤鸿", "鍏朵粬"];
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: "鍏ㄥ眬",
+  agent: "鍧愬腑",
+  ai: "AI",
+};
+
+const SCOPE_COLORS: Record<string, string> = {
+  global: "bg-blue-200 text-blue-800",
+  agent: "bg-green-200 text-green-800",
+  ai: "bg-purple-100 text-purple-700",
+};
+
+interface QuickReply {
+  id: string;
+  title: string;
+  content: string;
+  category?: string;
+  scope: string;
+  variables?: unknown[];
+  usage_count: number;
+  creator_id?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+interface QuickRepliesPanelProps {
+  /** 闈㈡澘鎵撳紑鐘舵€侊紝鐢卞閮?Dialog 鎺у埗 */
+  open?: boolean;
+  /** 闈㈡澘鐘舵€佸彉鏇村洖璋?*/
+  onOpenChange?: (open: boolean) => void;
+  /** 閫変腑璇濇湳鍥炶皟 */
+  onSelect?: (reply: QuickReply) => void;
+  /** 鏄惁鏄剧ず瀵煎叆瀵煎嚭鎿嶄綔 */
+  showActions?: boolean;
+  className?: string;
+}
+
+export function QuickRepliesPanel({
+  open = true,
+  onOpenChange,
+  onSelect,
+  showActions = true,
+  className,
+}: QuickRepliesPanelProps) {
+  const [replies, setReplies] = useState<QuickReply[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [scopeFilter, setScopeFilter] = useState("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    content: "",
+    category: "鍏朵粬",
+    scope: "global",
+  });
+
+  // 鍔犺浇璇濇湳鍒楄〃 (API绔瓫閫?
+  const loadReplies = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (categoryFilter && categoryFilter !== "all" && categoryFilter !== "鍏ㄩ儴") {
+        params.set("category", categoryFilter);
+      }
+      if (scopeFilter && scopeFilter !== "all" && scopeFilter !== "鍏ㄩ儴") {
+        params.set("scope", scopeFilter);
+      }
+      if (search.trim()) params.set("search", search.trim());
+      const url = `${API_BASE}${params.toString() ? `?${params}` : ""}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setReplies(data.items || []);
+      }
+    } catch (error) {
+      logger.error('鍔犺浇璇濇湳澶辫触', { error });
+    } finally {
+      setLoading(false);
+    }
+  }, [categoryFilter, scopeFilter, search]);
+
+  // 棣栨鍔犺浇鏃惰幏鍙栨暟鎹?  useEffect(() => {
+    loadReplies();
+  }, [loadReplies]);
+
+  // API绔瓫閫夊悗鐩存帴浣跨敤
+  const filteredReplies = replies;
+
+  // 鑾峰彇鎵€鏈夊垎绫?  const categories = useMemo(() => {
+    const cats = new Set(replies.map((r) => r.category).filter((c): c is string => Boolean(c)));
+    return Array.from(cats).sort();
+  }, [replies]);
+
+  // 鎵撳紑鏂板缓
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ title: "", content: "", category: "鍏朵粬", scope: "global" });
+    setDialogOpen(true);
+  };
+
+  // 鎵撳紑缂栬緫
+  const openEdit = (reply: QuickReply) => {
+    setEditingId(reply.id);
+    setForm({
+      title: reply.title,
+      content: reply.content,
+      category: reply.category || "鍏朵粬",
+      scope: reply.scope,
+    });
+    setDialogOpen(true);
+  };
+
+  // 淇濆瓨
+  const handleSave = async () => {
+    if (!form.title.trim() || !form.content.trim()) {
+      toast.error("璇峰～鍐欐爣棰樺拰鍐呭");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const url = editingId ? `${API_BASE}?id=${editingId}` : API_BASE;
+      const method = editingId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingId ? { ...form, id: editingId } : form),
+      });
+
+      if (res.ok) {
+        toast.success(editingId ? "璇濇湳宸叉洿鏂? : "璇濇湳宸插垱寤?);
+        setDialogOpen(false);
+        if (editingId) {
+          // 缂栬緫锛氬埛鏂板綋鍓嶉〉
+          await reset();
+        } else {
+          // 鏂板缓锛氬鍔犳€绘暟骞跺埛鏂?          setTotal((n) => n + 1);
+          await reset();
+        }
+      } else {
+        toast.error("淇濆瓨澶辫触");
+      }
+    } catch (error) {
+      toast.error("淇濆瓨澶辫触");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 鍒犻櫎
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`${API_BASE}?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("璇濇湳宸插垹闄?);
+        // 浠庡垪琛ㄤ腑绉婚櫎骞跺噺灏戞€绘暟
+        updateItems((prev) => prev.filter((r) => r.id !== id));
+        setTotal((n) => Math.max(0, n - 1));
+      } else {
+        toast.error("鍒犻櫎澶辫触");
+      }
+    } catch (error) {
+      toast.error("鍒犻櫎澶辫触");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // 澶嶅埗鍐呭
+  const handleCopy = async (reply: QuickReply, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(reply.content);
+      setCopiedId(reply.id);
+      toast.success("宸插鍒跺埌鍓创鏉?);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("澶嶅埗澶辫触锛岃鎵嬪姩澶嶅埗");
+    }
+  };
+
+  // 閫変腑璇濇湳
+  const handleSelect = (reply: QuickReply) => {
+    if (onSelect) {
+      onSelect(reply);
+    }
+  };
+
+  // 瀵煎嚭
+  const handleExport = async (format: "xlsx" | "csv") => {
+    try {
+      const res = await fetch(`${API_BASE}/export?format=${format}`);
+      if (!res.ok) throw new Error("瀵煎嚭澶辫触");
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `璇濇湳搴揰${new Date().toLocaleDateString("zh-CN").replace(/\//g, "-")}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`宸插鍑轰负 ${format.toUpperCase()}`);
+    } catch (error) {
+      toast.error("瀵煎嚭澶辫触");
+    }
+  };
+
+  // 瀵煎叆
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    const loadingToast = toast.loading("姝ｅ湪瀵煎叆...");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${API_BASE}/import`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        // 鏋勫缓鎴愬姛娑堟伅锛屽け璐ユ椂灞曠ず鍓嶅嚑鏉￠敊璇?        const successMsg = `瀵煎叆瀹屾垚锛氭垚鍔?${data.success} 鏉;
+        if (data.failed > 0 && data.errors && data.errors.length > 0) {
+          const errorList = data.errors.slice(0, 3).map((e: { row: number; message: string }) =>
+            `绗?{e.row}琛? ${e.message}`
+          ).join("\n");
+          const more = data.errors.length > 3 ? `\n杩樻湁 ${data.errors.length - 3} 鏉￠敊璇?..` : "";
+          toast.error(
+            <div className="whitespace-pre-line">
+              {successMsg}锛屽け璐?{data.failed} 鏉?              {errorList}
+              {more}
+            </div>,
+            { id: loadingToast, duration: 8000 }
+          );
+        } else if (data.failed > 0) {
+          toast.success(`${successMsg}锛屽け璐?${data.failed} 鏉, { id: loadingToast });
+        } else {
+          toast.success(successMsg, { id: loadingToast });
+        }
+        setImportDialogOpen(false);
+        await reset();
+      } else {
+        toast.error(data.error || "瀵煎叆澶辫触", { id: loadingToast });
+      }
+    } catch (error) {
+      toast.error("瀵煎叆澶辫触");
+    } finally {
+      setImporting(false);
+      // 閲嶇疆 file input
+      setTimeout(() => {
+        document.getElementById("import-file")?.setAttribute("value", "");
+      }, 100);
+    }
+  };
+
+  return (
+    <div className={cn("flex flex-col h-full bg-background", className)}>
+      {/* 鎼滅储绛涢€夋爮 */}
+      <div className="flex items-center gap-2 p-3 border-b bg-muted/30">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="鎼滅储璇濇湳..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 h-8 text-sm bg-background"
+          />
+        </div>
+
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-[100px] h-8 text-xs">
+            <SelectValue placeholder="鍒嗙被" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">鍏ㄩ儴鍒嗙被</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={scopeFilter} onValueChange={setScopeFilter}>
+          <SelectTrigger className="w-[80px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">鍏ㄩ儴</SelectItem>
+            <SelectItem value="global">鍏ㄥ眬</SelectItem>
+            <SelectItem value="agent">鍧愬腑</SelectItem>
+            <SelectItem value="ai">AI</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Button size="sm" onClick={openCreate} className="h-8 gap-1 shrink-0">
+          <Plus className="w-3.5 h-3.5" />
+          鏂板缓
+        </Button>
+      </div>
+
+      {/* 缁熻鍜屾搷浣滄爮 */}
+      {showActions && (
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>
+              鍏?<span className="font-medium text-foreground">{total}</span> 鏉¤瘽鏈?              {replies.length < total && (
+                <span className="text-muted-foreground/60">锛堝凡鍔犺浇 {replies.length}锛?/span>
+              )}
+            </span>
+            {(search || categoryFilter !== "all" || scopeFilter !== "all") && (
+              <span
+                className={loading ? "text-orange-600" : "text-green-600"}
+                aria-live="polite"
+              >
+                {loading ? "绛涢€変腑" : "宸茬瓫閫?}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                  <Download className="w-3 h-3" />
+                  瀵煎嚭
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("xlsx")}>
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-2" />
+                  Excel 鏍煎紡
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("csv")}>
+                  <FileText className="w-3.5 h-3.5 mr-2" />
+                  CSV 鏍煎紡
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => setImportDialogOpen(true)}
+            >
+              <Upload className="w-3 h-3" />
+              瀵煎叆
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 璇濇湳鍒楄〃 */}
+      <ReplyList
+        replies={replies}
+        isInitialLoading={isInitialLoading}
+        isLoadingMore={isLoadingMore}
+        hasMore={hasMore}
+        onLoadMore={loadMore}
+        onSelect={onSelect ? handleSelect : undefined}
+        onCopy={handleCopy}
+        onEdit={openEdit}
+        onDelete={(id) => setConfirmDeleteId(id)}
+        onCreateFirst={openCreate}
+        copiedId={copiedId}
+        deletingId={deletingId}
+        search={search}
+        categoryFilter={categoryFilter}
+        scopeFilter={scopeFilter}
+      />
+
+      {/* 鏂板缓/缂栬緫瀵硅瘽妗?*/}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "缂栬緫璇濇湳" : "鏂板缓璇濇湳"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {editingId ? "淇敼璇濇湳鍐呭" : "鍒涘缓鏂扮殑蹇嵎鍥炲璇濇湳"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">鏍囬</label>
+              <Input
+                placeholder="杈撳叆璇濇湳鏍囬"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">鍐呭</label>
+              <textarea
+                className="w-full min-h-[120px] px-3 py-2 rounded-md border border-input bg-background text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                placeholder="杈撳叆璇濇湳鍐呭锛屾敮鎸佸彉閲忓崰浣嶇 {customer_name}銆亄product_name} 绛?
+                value={form.content}
+                onChange={(e) => setForm({ ...form, content: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">鍒嗙被</label>
+                <Select
+                  value={form.category}
+                  onValueChange={(v) => setForm({ ...form, category: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEFAULT_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">閫傜敤鑼冨洿</label>
+                <Select
+                  value={form.scope}
+                  onValueChange={(v) => setForm({ ...form, scope: v })}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-3 h-3" />
+                        鍏ㄥ眬
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="agent">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px]">鍧愬腑</Badge>
+                        浠呭潗甯彲瑙?                      </div>
+                    </SelectItem>
+                    <SelectItem value="ai">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3 h-3" />
+                        AI 涓撶敤
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              鍙栨秷
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "淇濆瓨涓?.." : "淇濆瓨"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 瀵煎叆瀵硅瘽妗?*/}
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>鎵归噺瀵煎叆璇濇湳</DialogTitle>
+            <DialogDescription className="text-xs">
+              浠?Excel 鎴?CSV 鏂囦欢鎵归噺瀵煎叆璇濇湳
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* 鏂囦欢涓婁紶鍖?*/}
+            <div className="relative">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImport}
+                disabled={importing}
+                className="hidden"
+                id="import-file"
+              />
+              <label
+                htmlFor="import-file"
+                className={cn(
+                  "flex flex-col items-center justify-center p-8 rounded-lg border-2 border-dashed cursor-pointer transition-colors",
+                  "hover:border-primary/50 hover:bg-primary/5",
+                  importing && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {importing ? (
+                  <>
+                    <div className="w-10 h-10 mb-3 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+                    <p className="text-sm font-medium">姝ｅ湪瀵煎叆...</p>
+                    <p className="text-xs text-muted-foreground mt-1">璇风◢鍊?/p>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-10 h-10 mb-3 text-muted-foreground" />
+                    <p className="text-sm font-medium mb-1">鐐瑰嚮閫夋嫨鏂囦欢</p>
+                    <p className="text-xs text-muted-foreground">
+                      鏀寔 .xlsx銆?xls銆?csv 鏍煎紡
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+
+            {/* 瀵煎叆璇存槑 */}
+            <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-medium text-foreground">瀵煎叆鏍煎紡瑕佹眰锛?/p>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li className="flex items-start gap-1.5">
+                  <span className="text-primary">鈥?/span>
+                  <span>
+                    <strong>鏍囬</strong> - 蹇呭～锛岃瘽鏈悕绉?                  </span>
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-primary">鈥?/span>
+                  <span>
+                    <strong>鍐呭</strong> - 蹇呭～锛岃瘽鏈鏂?                  </span>
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-primary">鈥?/span>
+                  <span>
+                    <strong>鍒嗙被</strong> - 鍙€夛紝榛樿涓?ldquo;鍏朵粬&rdquo;
+                  </span>
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-primary">鈥?/span>
+                  <span>
+                    <strong>閫傜敤鑼冨洿</strong> - 鍙€夛細global/agent/ai锛岄粯璁?global
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            {/* 閲嶅澶勭悊璇存槑 */}
+            <div className="flex items-start gap-2 text-xs text-muted-foreground bg-amber-50 rounded-lg p-2">
+              <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+              <span>鐩稿悓鏍囬鐨勮瘽鏈細琚嚜鍔ㄨ烦杩囷紝涓嶄細閲嶅鍒涘缓</span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              鍏抽棴
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 鍒犻櫎纭寮圭獥 */}
+      <AlertDialog open={!!confirmDeleteId} onOpenChange={() => setConfirmDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>纭鍒犻櫎</AlertDialogTitle>
+            <AlertDialogDescription>
+              纭畾瑕佸垹闄よ繖鏉¤瘽鏈悧锛熸鎿嶄綔鏃犳硶鎾ら攢銆?            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDeleteId(null)}>
+              鍙栨秷
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmDeleteId) {
+                  handleDelete(confirmDeleteId);
+                  setConfirmDeleteId(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              鍒犻櫎
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

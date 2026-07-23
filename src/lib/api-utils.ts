@@ -19,6 +19,28 @@ import { PermissionService } from '@/server/services/permission-service';
 const apiLogger = loggerCollection.api;
 const securityLogger = loggerCollection.security;
 
+// ─── Request ID ──────────────────────────────────────────────
+
+/** Standard HTTP header name for request tracing. */
+export const REQUEST_ID_HEADER = 'x-request-id';
+
+/**
+ * Extracts or generates a request ID from/in a NextRequest.
+ * Checks `x-request-id` header first; falls back to generating a UUID v4.
+ */
+export function getOrCreateRequestId(request: NextRequest): string {
+  const header = request.headers.get(REQUEST_ID_HEADER);
+  if (header && header.length > 0 && header.length <= 64) {
+    return header;
+  }
+  // Generate a simple UUID v4
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // ─── HTTP Status Codes ─────────────────────────────────────
 
 export const HttpStatus = {

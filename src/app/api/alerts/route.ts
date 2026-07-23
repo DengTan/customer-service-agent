@@ -17,7 +17,10 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     limit,
   });
 
-  return apiSuccess(result);
+  return apiSuccess({
+    alerts: result.alerts,
+    total: result.stats.unresolved,
+  });
 });
 
 export const POST = withErrorHandlerSimple(async (request: NextRequest) => {

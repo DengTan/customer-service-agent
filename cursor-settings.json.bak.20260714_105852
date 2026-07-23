@@ -1,0 +1,21 @@
+{
+  "window.commandCenter": true,
+  "explorer.confirmDelete": false,
+  "explorer.confirmDragAndDrop": false,
+  "cursor.general.disableHttp2": false,
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "http.proxy": "",
+  "http.proxyStrictSSL": true,
+  "http.proxySupport": "off",
+  "workbench.colorTheme": "Tomorrow Night Blue",
+  "explorer.confirmPasteNative": false,
+  "containers.containerClient": "com.microsoft.visualstudio.containers.docker",
+  "containers.orchestratorClient": "com.microsoft.visualstudio.orchestrators.dockercompose",
+  "window.autoDetectColorScheme": false,
+  "update.mode": "none",
+  "cursor.composer.shouldChimeAfterChatFinishes": true,
+  "git.enableSmartCommit": true,
+  "git.autofetch": true,
+  "git.confirmSync": false
+}

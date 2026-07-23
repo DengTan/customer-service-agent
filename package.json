@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build": "bash ./scripts/build.sh",
-    "dev": "bash ./scripts/dev.sh",
+    "dev:win": "node --require ./scripts/asls-bootstrap.cjs --import tsx --no-warnings --watch src/server.ts",
+  "dev": "bash ./scripts/dev.sh",
     "preinstall": "npx only-allow pnpm",
     "lint": "eslint",
     "lint:build": "eslint . --quiet",
@@ -13,7 +14,9 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'"
+    "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'",
+    "eval:gate": "tsx scripts/run-eval-gate.ts",
+    "eval:dataset:build": "tsx scripts/build-eval-dataset.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
@@ -83,8 +86,12 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@supabase/cli": "^1.0.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/archiver": "^8.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/dompurify": "^3.2.0",
@@ -98,8 +105,10 @@
     "@typescript-eslint/eslint-plugin": "^8.62.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
+    "jsdom": "^29.1.1",
     "only-allow": "^1.2.2",
     "pg": "^8.22.0",
+    "playwright": "^1.61.1",
     "shadcn": "latest",
     "supabase": "^2.108.0",
     "tailwindcss": "^4",

@@ -89,3 +89,10 @@ function getSupabaseClient(token?: string): SupabaseClient {
 }
 
 export { getSupabaseCredentials, getSupabaseServiceRoleKey, getSupabaseClient, isDemoMode };
+
+// ─── Service Role Client ─────────────────────────────────────
+
+/** Returns a Supabase client with service-role key (bypasses RLS). */
+export function getServiceRoleClient(): SupabaseClient {
+  return getSupabaseClient();
+}

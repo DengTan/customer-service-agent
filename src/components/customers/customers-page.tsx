@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import {
   Search, Plus, X, Tag, Users, Globe, ShoppingBag, Music,
   Edit3, Trash2, ChevronRight, MessageSquare, StickyNote, Palette,
-  Phone, Mail, Clock, UserCheck
+  Phone, Mail, Clock, UserCheck, Calendar, Star,
+  ChevronDown, Download, Loader2
 } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -25,12 +26,14 @@ import {
   Command, CommandInput, CommandList, CommandEmpty, CommandItem,
 } from '@/components/ui/command';
 import type { Customer, CustomerTag, CustomerSource } from '@/lib/types';
+import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { Pagination } from '@/components/common/pagination';
 
-const PAGE_SIZE = 10;
 const MAX_TAG_NAME_LENGTH = 50;
+const CONVERSATION_PAGE_SIZE = 10;
 
 const PLATFORM_ICONS: Record<CustomerSource, React.ReactNode> = {
   web: <Globe className="w-3.5 h-3.5" />,
@@ -55,20 +58,52 @@ export default function CustomersPage() {
   const [tags, setTags] = useState<CustomerTag[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const searchQuery = useDebounce(searchInput, 300);
+  const debouncedSearch = searchQuery;
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [includeAnonymous, setIncludeAnonymous] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{ total: number; byPlatform: Record<string, number> }>({ total: 0, byPlatform: {} });
 
+  // Pagination state
+  const pageSize = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+
   // Detail drawer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [customerNotes, setCustomerNotes] = useState('');
-  const [customerConversations, setCustomerConversations] = useState<Array<{ id: string; title: string; status: string; created_at: string }>>([]);
+  const [customerConversations, setCustomerConversations] = useState<Array<{
+    id: string;
+    title: string;
+    status: string;
+    created_at: string;
+    message_count?: number;
+    rating?: number;
+    summary?: string;
+  }>>([]);
   // Add new state for load more conversations
   const [conversationOffset, setConversationOffset] = useState(0);
   const [hasMoreConversations, setHasMoreConversations] = useState(false);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
+
+  // Conversation detail modal
+  const [detailConv, setDetailConv] = useState<{
+    id: string;
+    title: string;
+    rating?: number;
+    rating_comment?: string;
+  } | null>(null);
+  const [detailMessages, setDetailMessages] = useState<Array<{
+    id: string;
+    role: string;
+    content: string;
+    created_at: string;
+  }>>([]);
+  const [detailTotalMessages, setDetailTotalMessages] = useState(0);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const [promoteForm, setPromoteForm] = useState<{ name: string; phone: string; email: string }>({ name: '', phone: '', email: '' });
 
@@ -102,24 +137,30 @@ export default function CustomersPage() {
   const [createCustomerLoading, setCreateCustomerLoading] = useState(false);
 
   // Fetch customers
-  const fetchCustomers = useCallback(async () => {
+  const fetchCustomers = useCallback(async (page: number = 1) => {
+    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (platformFilter !== 'all') params.set('platform', platformFilter);
       if (tagFilter !== 'all') params.set('tag', tagFilter);
       if (searchQuery) params.set('search', searchQuery);
       if (includeAnonymous) params.set('include_anonymous', 'true');
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+
       const res = await fetch(`/api/customers?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (data.customers) setCustomers(data.customers);
+
+      setCustomers(data.customers || []);
+      if (data.total !== undefined) setTotalCount(data.total || 0);
       if (data.stats) setStats(data.stats);
     } catch {
       toast.error('获取客户列表失败');
     } finally {
       setLoading(false);
     }
-  }, [platformFilter, tagFilter, searchQuery, includeAnonymous]);
+  }, [platformFilter, tagFilter, searchQuery, includeAnonymous, pageSize]);
 
   // Fetch tags
   const fetchTags = useCallback(async () => {
@@ -134,9 +175,16 @@ export default function CustomersPage() {
   }, []);
 
   useEffect(() => {
-    fetchCustomers();
+    setCurrentPage(1);
+  }, [platformFilter, tagFilter, searchQuery, includeAnonymous]);
+
+  useEffect(() => {
+    fetchCustomers(currentPage);
+  }, [currentPage, fetchCustomers]);
+
+  useEffect(() => {
     fetchTags();
-  }, [fetchCustomers, fetchTags]);
+  }, [fetchTags]);
 
   // Open customer detail drawer
   const openCustomerDetail = async (customer: Customer) => {
@@ -145,6 +193,7 @@ export default function CustomersPage() {
     setCustomerConversations([]);
     setConversationOffset(0);
     setHasMoreConversations(false);
+    setConversationsLoading(true);
     setDrawerOpen(true);
     // Fetch customer detail with conversations
     try {
@@ -153,11 +202,13 @@ export default function CustomersPage() {
       const data = await res.json();
       if (data.conversations) {
         setCustomerConversations(data.conversations);
-        setHasMoreConversations(data.conversations.length >= PAGE_SIZE);
+        setHasMoreConversations(data.conversations.length >= CONVERSATION_PAGE_SIZE);
         setConversationOffset(data.conversations.length);
       }
     } catch {
       setCustomerConversations([]);
+    } finally {
+      setConversationsLoading(false);
     }
   };
 
@@ -268,17 +319,20 @@ export default function CustomersPage() {
   // Load more conversations
   const loadMoreConversations = async () => {
     if (!selectedCustomer) return;
+    setConversationsLoading(true);
     try {
       const res = await fetch(`/api/customers/${selectedCustomer.id}?offset=${conversationOffset}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.conversations) {
         setCustomerConversations(prev => [...prev, ...data.conversations]);
-        setHasMoreConversations(data.conversations.length >= PAGE_SIZE);
+        setHasMoreConversations(data.conversations.length >= CONVERSATION_PAGE_SIZE);
         setConversationOffset(prev => prev + data.conversations.length);
       }
     } catch {
       toast.error('加载更多对话失败');
+    } finally {
+      setConversationsLoading(false);
     }
   };
 
@@ -448,6 +502,52 @@ export default function CustomersPage() {
     ? tags.filter(t => !selectedCustomer.tags.includes(t.name))
     : [];
 
+  // View conversation detail
+  const handleViewConversation = async (conv: {
+    id: string;
+    title: string;
+    rating?: number;
+    rating_comment?: string;
+  }) => {
+    setDetailConv(conv);
+    setDetailMessages([]);
+    setDetailTotalMessages(0);
+    setDetailLoading(true);
+
+    try {
+      const res = await fetch(`/api/conversations/${conv.id}?limit=50`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.success) {
+        setDetailMessages(data.data?.messages || []);
+        setDetailTotalMessages(data.data?.total || data.data?.messages?.length || 0);
+      }
+    } catch (err) {
+      toast.error('加载对话详情失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  // Load more messages in detail modal
+  const loadMoreMessages = async () => {
+    if (!detailConv || detailLoading) return;
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${detailConv.id}/messages?limit=50&offset=${detailMessages.length}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.success) {
+        setDetailMessages(prev => [...prev, ...(data.data?.messages || [])]);
+        setDetailTotalMessages(data.data?.total || detailMessages.length);
+      }
+    } catch (err) {
+      toast.error('加载更多消息失败');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const closeDrawer = () => {
     setDrawerOpen(false);
     setSelectedCustomer(null);
@@ -455,6 +555,7 @@ export default function CustomersPage() {
     setCustomerConversations([]);
     setConversationOffset(0);
     setHasMoreConversations(false);
+    setConversationsLoading(false);
     setPromoteForm({ name: '', phone: '', email: '' });
     setAddTagToCustomer(false);
   };
@@ -513,7 +614,25 @@ export default function CustomersPage() {
     if (!confirmed) return;
     try {
       const res = await fetch(`/api/customers?id=${selectedCustomer.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const data = await res.json();
+        // 有进行中对话时，提示用户先结束对话
+        if (data.code === 'HAS_ACTIVE_CONVERSATIONS' && data.activeConversations?.length > 0) {
+          const convList = data.activeConversations
+            .map((c: { title: string }) => `• ${c.title}`)
+            .join('\n');
+          toast.error(
+            <div className="text-left">
+              <div className="font-semibold mb-1">无法删除：该客户有进行中的对话</div>
+              <div className="text-sm opacity-80">请先在对话监控中结束以下对话：</div>
+              <div className="text-sm mt-1 whitespace-pre-line">{convList}</div>
+            </div>,
+            { duration: 5000 }
+          );
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
       if (data.success) {
         toast.success('客户已删除');
@@ -528,22 +647,10 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 page-transition">
       {/* Header */}
-      <div className="h-14 px-6 flex items-center justify-between border-b border-border bg-card/50 shrink-0">
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">客户管理</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => setActiveTab('tags')}>
-            <Tag className="w-4 h-4" />
-            标签管理
-          </Button>
-          <Button size="sm" className="gap-2" onClick={() => setCreateCustomerModalOpen(true)}>
-            <Plus className="w-4 h-4" />
-            添加客户
-          </Button>
-        </div>
+      <div className="h-14 px-6 flex items-center border-b border-border bg-card/50 shrink-0">
+        <h1 className="text-lg font-semibold text-foreground">客户管理</h1>
       </div>
 
       {/* Main Content */}
@@ -581,7 +688,7 @@ export default function CustomersPage() {
           <div className="p-6">
             {/* Stats Cards */}
             <div className="grid grid-cols-4 gap-4 mb-6">
-              <div className="bg-card rounded-xl border p-4 shadow-card">
+              <div className="bg-card rounded-xl p-4 shadow-card">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Users className="w-5 h-5 text-primary" />
@@ -592,7 +699,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
               </div>
-              <div className="bg-card rounded-xl border p-4 shadow-card">
+              <div className="bg-card rounded-xl p-4 shadow-card">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
                     <UserCheck className="w-5 h-5 text-green-600" />
@@ -603,7 +710,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
               </div>
-              <div className="bg-card rounded-xl border p-4 shadow-card">
+              <div className="bg-card rounded-xl p-4 shadow-card">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
                     <Clock className="w-5 h-5 text-amber-600" />
@@ -614,7 +721,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
               </div>
-              <div className="bg-card rounded-xl border p-4 shadow-card">
+              <div className="bg-card rounded-xl p-4 shadow-card">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
                     <MessageSquare className="w-5 h-5 text-blue-600" />
@@ -724,14 +831,18 @@ export default function CustomersPage() {
                 />
                 显示匿名访客
               </label>
+              <Button size="sm" className="ml-auto gap-2" onClick={() => setCreateCustomerModalOpen(true)}>
+                <Plus className="w-4 h-4" />
+                添加客户
+              </Button>
             </div>
 
             {/* Customer Cards Grid */}
             <div className="grid grid-cols-1 gap-3">
               {loading ? (
                 // Loading skeletons
-                Array.from({ length: PAGE_SIZE }).map((_, i) => (
-                  <div key={i} className="bg-card rounded-xl border p-4 shadow-card">
+                Array.from({ length: pageSize }).map((_, i) => (
+                  <div key={i} className="bg-card rounded-xl p-4 shadow-card">
                     <div className="flex items-center gap-4">
                       <Skeleton className="w-12 h-12 rounded-full" />
                       <div className="flex-1 space-y-2">
@@ -743,16 +854,17 @@ export default function CustomersPage() {
                   </div>
                 ))
               ) : customers.length === 0 ? (
-                <div className="bg-card rounded-xl border p-12 shadow-card text-center">
+                <div className="bg-card rounded-xl p-12 shadow-card text-center animate-fadeIn">
                   <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
                   <div className="text-lg font-medium text-muted-foreground">暂无客户</div>
                   <div className="text-sm text-muted-foreground/70 mt-1">客户数据将显示在这里</div>
                 </div>
               ) : (
-                customers.map((customer) => (
+                customers.map((customer, index) => (
                   <div
                     key={customer.id}
-                    className="bg-card rounded-xl border p-4 shadow-card hover:shadow-card-hover transition-all cursor-pointer"
+                    className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all cursor-pointer animate-stagger"
+                    style={{ animationDelay: `${Math.min(index * 0.04, 0.4)}s` }}
                     onClick={() => openCustomerDetail(customer)}
                   >
                     <div className="flex items-center gap-4">
@@ -832,6 +944,18 @@ export default function CustomersPage() {
                 ))
               )}
             </div>
+
+            {/* Pagination */}
+            {totalCount > pageSize && (
+              <Pagination
+                page={currentPage}
+                totalPages={totalPages}
+                total={totalCount}
+                pageSize={pageSize}
+                onPageChange={(page) => setCurrentPage(page)}
+                disabled={loading}
+              />
+            )}
           </div>
         )}
 
@@ -852,16 +976,17 @@ export default function CustomersPage() {
           {/* Tags Grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {tags.length === 0 ? (
-              <div className="col-span-full bg-card rounded-xl border p-12 shadow-card text-center">
+              <div className="col-span-full bg-card rounded-xl p-12 shadow-card text-center animate-fadeIn">
                 <Tag className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
                 <div className="text-lg font-medium text-muted-foreground">暂无标签</div>
                 <div className="text-sm text-muted-foreground/70 mt-1">点击上方按钮创建第一个标签</div>
               </div>
             ) : (
-              tags.map((tag) => (
+              tags.map((tag, index) => (
                 <div
                   key={tag.id}
-                  className="bg-card rounded-xl border p-4 shadow-card hover:shadow-card-hover transition-all cursor-pointer group"
+                  className="bg-card rounded-xl p-4 shadow-card hover:shadow-card-hover transition-all cursor-pointer group animate-stagger"
+                  style={{ animationDelay: `${Math.min(index * 0.04, 0.4)}s` }}
                   onClick={() => openTagDetail(tag)}
                 >
                   <div className="flex items-center justify-between mb-3">
@@ -903,11 +1028,11 @@ export default function CustomersPage() {
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-40 transition-opacity"
+            className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-40 transition-opacity animate-fade-in"
             onClick={closeDrawer}
           />
           {/* Drawer */}
-          <div className="fixed right-0 top-0 bottom-0 w-[480px] bg-background shadow-float z-50 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+          <div className="fixed right-0 top-0 bottom-0 w-[480px] bg-background shadow-float z-50 flex flex-col overflow-hidden animate-slide-in-right">
             {/* Drawer Header */}
             <div className="flex items-center justify-between px-6 h-16 border-b border-border shrink-0 bg-card/80">
               <h2 className="text-lg font-semibold">客户详情</h2>
@@ -1047,23 +1172,73 @@ export default function CustomersPage() {
                   <MessageSquare className="w-4 h-4" />
                   最近对话
                 </span>
-                {customerConversations.length === 0 ? (
+                {conversationsLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="p-3 bg-muted/50 rounded-lg animate-pulse">
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-2">
+                            <div className="h-4 w-32 bg-muted rounded" />
+                            <div className="h-3 w-48 bg-muted rounded" />
+                          </div>
+                          <div className="h-5 w-12 bg-muted rounded-full" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : customerConversations.length === 0 ? (
                   <div className="text-sm text-muted-foreground text-center py-4">暂无对话记录</div>
                 ) : (
                   <div className="space-y-2">
-                    {customerConversations.map((conv) => (
-                      <div
-                        key={conv.id}
-                        className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                        onClick={() => window.location.href = `/history?conversation=${conv.id}`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{conv.title || '对话'}</div>
-                          <div className="text-xs text-muted-foreground">{formatDate(conv.created_at)}</div>
+                    {customerConversations.map((conv, index) => (
+                      <div key={conv.id} className="animate-stagger" style={{ animationDelay: `${index * 0.05}s` }}>
+                        <div
+                          className="flex items-center justify-between p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors cursor-pointer"
+                          onClick={() => handleViewConversation(conv)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm font-medium truncate">
+                                {conv.title || '对话'}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                                conv.status === 'active' || conv.status === 'handoff'
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {conv.status === 'active' || conv.status === 'handoff' ? '进行中' : '已结束'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {formatDate(conv.created_at)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MessageSquare className="w-3 h-3" />
+                                {conv.message_count ?? 0} 条消息
+                              </span>
+                              {conv.rating ? (
+                                <span className="flex items-center gap-0.5 text-amber-500">
+                                  <Star className="w-3 h-3 fill-amber-400" />
+                                  {conv.rating}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/50">未评价</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <Badge variant="secondary" className={conv.status === 'completed' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}>
-                          {conv.status === 'completed' ? '已解决' : '进行中'}
-                        </Badge>
+                        {/* Expandable Summary */}
+                        {(conv.summary || conv.message_count) && (
+                          <div className="px-3 pb-2 -mt-1">
+                            {conv.summary ? (
+                              <p className="text-xs text-muted-foreground/70 line-clamp-2 pl-3 border-l-2 border-muted-foreground/20">
+                                {conv.summary}
+                              </p>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     ))}
                     {hasMoreConversations && (
@@ -1072,8 +1247,16 @@ export default function CustomersPage() {
                         size="sm"
                         className="w-full mt-2"
                         onClick={loadMoreConversations}
+                        disabled={conversationsLoading}
                       >
-                        加载更多
+                        {conversationsLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            加载中...
+                          </>
+                        ) : (
+                          '加载更多'
+                        )}
                       </Button>
                     )}
                   </div>
@@ -1165,7 +1348,7 @@ export default function CustomersPage() {
           setEditingTag(null);
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md animate-scale-in">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {editingTag ? (
@@ -1270,7 +1453,7 @@ export default function CustomersPage() {
         setTagDetailModalOpen(open);
         if (!open) setEditingTag(null);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg animate-scale-in">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {editingTag && (
@@ -1365,7 +1548,7 @@ export default function CustomersPage() {
           setCreateCustomerForm({ name: '', phone: '', email: '', source_platform: 'web', notes: '' });
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md animate-scale-in">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="w-5 h-5 text-primary" />
@@ -1434,6 +1617,99 @@ export default function CustomersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Conversation Detail Modal */}
+      {detailConv !== null && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 animate-fadeIn"
+          onClick={() => setDetailConv(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[80vh] bg-card rounded-2xl shadow-lg flex flex-col animate-fadeInUp outline-none"
+            onClick={(e) => e.stopPropagation()}
+            tabIndex={-1}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="text-base font-semibold text-foreground">{detailConv.title}</h3>
+              <button onClick={() => setDetailConv(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors" aria-label="关闭">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              {detailLoading ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">加载中...</span>
+                </div>
+              ) : detailMessages.length > 0 ? (
+                <>
+                  {/* Load more button at the top */}
+                  {detailMessages.length < detailTotalMessages && (
+                    <div className="flex justify-center pb-2">
+                      <button
+                        onClick={loadMoreMessages}
+                        disabled={detailLoading}
+                        className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {detailLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                        加载更早消息 ({detailTotalMessages - detailMessages.length} 条)
+                      </button>
+                    </div>
+                  )}
+                  {detailMessages.map((msg, idx) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'} animate-slideInRight`}
+                      style={{ animationDelay: `${Math.min(idx * 50, 500)}ms` }}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-all duration-200 hover:shadow-md ${
+                          msg.role === 'user'
+                            ? 'bg-muted text-foreground'
+                            : 'bg-primary text-primary-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-medium ${
+                            msg.role === 'user' ? 'text-muted-foreground' : 'text-primary-foreground/70'
+                          }`}>
+                            {msg.role === 'user' ? '客户' : msg.role === 'assistant' ? 'AI 客服' : '系统'}
+                          </span>
+                        </div>
+                        {msg.role === 'user' ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                  暂无消息内容
+                </div>
+              )}
+            </div>
+            {detailConv?.rating && (
+              <div className="px-6 py-3 border-t border-border flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">满意度：</span>
+                <span className="flex items-center gap-0.5 text-amber-500">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star
+                      key={i}
+                      className={`w-4 h-4 ${i < detailConv.rating! ? 'fill-amber-400' : 'fill-none'}`}
+                    />
+                  ))}
+                </span>
+                {detailConv.rating_comment && (
+                  <span className="text-muted-foreground ml-2">— {detailConv.rating_comment}</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

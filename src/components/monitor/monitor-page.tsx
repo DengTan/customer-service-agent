@@ -12,6 +12,7 @@ import { StatsBar } from './stats-bar';
 import { AlertBar } from './alert-bar';
 import { AlertDrawer } from './alert-drawer';
 import { MonitorListSkeleton, MonitorDetailSkeleton } from './monitor-skeleton';
+import { MonitorEmptyState } from '@/components/chat/welcome-screen';
 import { useLazyList } from '@/hooks/use-lazy-list';
 import type { Conversation, Message } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -417,8 +418,12 @@ export function MonitorPage() {
             total={total}
           />
           )}
-        {(isInitialLoading || (!selectedConversation && !isInitialLoading)) ? (
+        {isInitialLoading ? (
           <MonitorDetailSkeleton />
+        ) : !selectedConversation ? (
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-card">
+            <MonitorEmptyState hasConversations={(total ?? 0) > 0} />
+          </div>
         ) : (
           <div className="flex-1 min-w-0 min-h-0 flex flex-col">
             <ConversationDetail

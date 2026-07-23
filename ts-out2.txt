@@ -1,0 +1,4 @@
+
+> projects@0.1.0 ts-check D:\customer_service_agent-main
+> tsc -p tsconfig.json
+

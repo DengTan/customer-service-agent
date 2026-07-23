@@ -25,6 +25,10 @@ import { getKnowledgeSearchService, type KnowledgeSourceItem } from './knowledge
 import { getHybridSearchService } from './hybrid-search-service';
 import { ProductDetailService } from './product-detail-service';
 import { SizeChartService } from './size-chart-service';
+import { ProductEvidenceService } from './product-evidence-service';
+import { SizeChartEvidenceService } from './size-chart-evidence-service';
+import type { NormalizedProductDetail } from '@/server/repositories/product-detail-repository';
+import type { NormalizedSizeChart } from '@/server/repositories/size-chart-repository';
 import { HTTP } from '@/lib/constants';
 import { logger } from '@/lib/logger';
 
@@ -89,6 +93,12 @@ export interface CitationItem {
   /** Content hash for citation stability */
   content_hash?: string | null;
   provenanceVersion: 1 | 2;
+  /** Product-specific fields */
+  sku?: string;
+  brand?: string;
+  price?: number;
+  /** Size chart-specific fields */
+  chart_type?: string;
 }
 
 export interface EvidenceTrace {
@@ -148,6 +158,8 @@ export class RetrievalOrchestrator {
   private readonly gating = getRetrievalGatingService();
   private readonly knowledgeSearch = getKnowledgeSearchService();
   private readonly hybridSearch = getHybridSearchService();
+  private readonly productEvidenceService = new ProductEvidenceService();
+  private readonly sizeChartEvidenceService = new SizeChartEvidenceService();
 
   /**
    * Retrieve evidence for a user message.
@@ -266,14 +278,14 @@ export class RetrievalOrchestrator {
         }
       }
 
-      // Process product result
-      if (productResult && productResult.productContext) {
+      // Process product result (guard against whitespace-only strings)
+      if (productResult?.productContext?.trim()) {
         productBundle = this.buildProductBundle(productResult);
         productContext = { productContext: productResult.productContext };
       }
 
-      // Process size chart result
-      if (sizeChartResult && sizeChartResult.sizeChartContext) {
+      // Process size chart result (guard against whitespace-only strings)
+      if (sizeChartResult?.sizeChartContext?.trim()) {
         sizeChartBundle = this.buildSizeChartBundle(sizeChartResult);
         sizeChartContext = { sizeChartContext: sizeChartResult.sizeChartContext };
       }
@@ -415,23 +427,52 @@ export class RetrievalOrchestrator {
   // Private: Build product bundle
   // ---------------------------------------------------------------------------
 
-  private buildProductBundle(result: { productContext?: string; productSources?: unknown[] }): EvidenceBundle {
+  private buildProductBundle(result: { 
+    productContext?: string; 
+    items?: NormalizedProductDetail[];
+  }): EvidenceBundle {
+    const hasProductContext = Boolean(result.productContext?.trim());
+    
+    // Generate citations from matched products
+    const citations: CitationItem[] = [];
+    if (result.items && result.items.length > 0) {
+      for (const product of result.items) {
+        const evidence = this.productEvidenceService.extractEvidence(product);
+        citations.push({
+          id: evidence.product_id,
+          type: 'product',
+          name: evidence.name,
+          category: evidence.category ?? undefined,
+          content: this.truncateForCitation(evidence.name, 200),
+          score: 0.85, // Product/size chart default high score
+          provenanceVersion: 2,
+          content_hash: evidence.content_hash ?? undefined,
+          knowledge_item_id: evidence.product_id,
+          sku: evidence.sku ?? undefined,
+          brand: evidence.brand ?? undefined,
+          price: evidence.price ?? undefined,
+        });
+      }
+    }
+    
     return {
       candidates: [],
       accepted: [],
-      citations: [],
+      citations,
       trace: {
         provenanceVersion: 2,
-        retrievalRan: !!result.productContext,
+        retrievalRan: hasProductContext,
         rerankDegraded: true,
         rerankBackend: 'none',
         hybridSearch: false,
-        candidateCount: 0,
-        acceptedCount: 0,
-        citationCount: 0,
+        candidateCount: citations.length,
+        acceptedCount: citations.length,
+        citationCount: citations.length,
         minScore: 0,
         executionTimeMs: 0,
-        degradationReasons: result.productContext ? ['product_citation_unverified'] : [],
+        degradationReasons: hasProductContext && citations.length > 0 
+          ? []  // Removed unverified marker - citations are now generated
+          : (hasProductContext ? ['product_no_citations'] : []),
       },
     };
   }
@@ -440,23 +481,50 @@ export class RetrievalOrchestrator {
   // Private: Build size chart bundle
   // ---------------------------------------------------------------------------
 
-  private buildSizeChartBundle(result: { sizeChartContext?: string }): EvidenceBundle {
+  private buildSizeChartBundle(result: { 
+    sizeChartContext?: string; 
+    items?: NormalizedSizeChart[];
+  }): EvidenceBundle {
+    const hasSizeChartContext = Boolean(result.sizeChartContext?.trim());
+    
+    // Generate citations from matched size charts
+    const citations: CitationItem[] = [];
+    if (result.items && result.items.length > 0) {
+      for (const chart of result.items) {
+        const evidence = this.sizeChartEvidenceService.extractEvidence(chart);
+        citations.push({
+          id: evidence.size_chart_id,
+          type: 'size_chart',
+          name: evidence.name,
+          category: evidence.category ?? undefined,
+          content: this.truncateForCitation(evidence.name, 200),
+          score: 0.85, // Product/size chart default high score
+          provenanceVersion: 2,
+          content_hash: evidence.content_hash ?? undefined,
+          knowledge_item_id: evidence.size_chart_id,
+          sku: evidence.sku ?? undefined,
+        });
+      }
+    }
+    
     return {
       candidates: [],
       accepted: [],
-      citations: [],
+      citations,
       trace: {
         provenanceVersion: 2,
-        retrievalRan: !!result.sizeChartContext,
+        retrievalRan: hasSizeChartContext,
         rerankDegraded: true,
         rerankBackend: 'none',
         hybridSearch: false,
-        candidateCount: 0,
-        acceptedCount: 0,
-        citationCount: 0,
+        candidateCount: citations.length,
+        acceptedCount: citations.length,
+        citationCount: citations.length,
         minScore: 0,
         executionTimeMs: 0,
-        degradationReasons: result.sizeChartContext ? ['size_chart_citation_unverified'] : [],
+        degradationReasons: hasSizeChartContext && citations.length > 0 
+          ? []  // Removed unverified marker - citations are now generated
+          : (hasSizeChartContext ? ['size_chart_no_citations'] : []),
       },
     };
   }
@@ -542,7 +610,10 @@ export class RetrievalOrchestrator {
 // Private: Product search
 // ---------------------------------------------------------------------------
 
-  private async productSearch(query: string): Promise<{ productContext?: string; productSources?: unknown[] }> {
+  private async productSearch(query: string): Promise<{ 
+    productContext?: string; 
+    items?: NormalizedProductDetail[];
+  }> {
     const productService = new ProductDetailService();
     if ('searchProductsForLLM' in productService) {
       return productService.searchProductsForLLM(query);
@@ -554,11 +625,23 @@ export class RetrievalOrchestrator {
   // Private: Size chart search
   // ---------------------------------------------------------------------------
 
-  private async sizeChartSearch(query: string): Promise<{ sizeChartContext?: string }> {
+  private async sizeChartSearch(query: string): Promise<{ 
+    sizeChartContext?: string; 
+    items?: NormalizedSizeChart[];
+  }> {
     const sizeChartService = new SizeChartService();
     if ('searchSizeChartsForLLM' in sizeChartService) {
       return sizeChartService.searchSizeChartsForLLM(query);
     }
     return {};
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: Helper methods
+  // ---------------------------------------------------------------------------
+
+  private truncateForCitation(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
   }
 }

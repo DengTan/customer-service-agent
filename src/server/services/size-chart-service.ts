@@ -91,6 +91,7 @@ export interface SizeChartRecommendation {
 export interface SizeChartSearchResult {
   sizeChartContext: string;
   matchedSizeChartIds: string[];
+  items: import('@/server/repositories/size-chart-repository').NormalizedSizeChart[];
 }
 
 export class SizeChartService {
@@ -460,7 +461,7 @@ export class SizeChartService {
     limit: number = 3,
   ): Promise<SizeChartSearchResult> {
     if (!query?.trim()) {
-      return { sizeChartContext: '', matchedSizeChartIds: [] };
+      return { sizeChartContext: '', matchedSizeChartIds: [], items: [] };
     }
 
     try {
@@ -470,7 +471,7 @@ export class SizeChartService {
       );
 
       if (items.length === 0) {
-        return { sizeChartContext: '', matchedSizeChartIds: [] };
+        return { sizeChartContext: '', matchedSizeChartIds: [], items: [] };
       }
 
       const sizeChartContext = items
@@ -487,10 +488,11 @@ export class SizeChartService {
       return {
         sizeChartContext: `\n\n以下是检索到的相关尺码表信息：\n${sizeChartContext}`,
         matchedSizeChartIds: items.map(c => c.id),
+        items,
       };
     } catch (error) {
       logger.api.warn('size-chart-search-for-llm-failed', { query, error: (error as Error).message });
-      return { sizeChartContext: '', matchedSizeChartIds: [] };
+      return { sizeChartContext: '', matchedSizeChartIds: [], items: [] };
     }
   }
 

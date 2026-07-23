@@ -4,6 +4,17 @@ import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess
 
 const service = new AgentService();
 
+// GET /api/agent/status - 获取当前坐席状态
+export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+  const currentUserId = getAuthenticatedUserId(request);
+  if (!currentUserId) {
+    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
+  }
+
+  const result = await service.getStatus(currentUserId);
+  return apiSuccess(result);
+});
+
 // PATCH /api/agent/status - 更新坐席状态
 export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   // Verify authentication

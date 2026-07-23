@@ -99,14 +99,33 @@ export const WRITABLE_SETTING_KEYS: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * Keys that are NEVER resettable, even if a client tries to put them into
- * the reset payload. The reset RPC and `/api/settings/reset` endpoint
- * reject any key not in `RESETTABLE_DEFAULTS` as well, so this set is
- * purely defensive — it exists so a future contributor who accidentally
- * adds one of these to `RESETTABLE_DEFAULTS` gets a unit-test failure
- * pointing them at this list.
+ * Keys that are NEVER saved through the generic `PUT /api/settings` endpoint.
+ *
+ * These fall into three categories:
+ *   1. Server-managed keys (set by the server, not the UI):
+ *        - gorgias_webhook_secret_encrypted: set server-side after validation
+ *        - external_knowledge_*: managed by /api/knowledge/external/settings
+ *        - retrieval_hybrid_config: server-computed hybrid retrieval config
+ *        - knowledge_image_max_citations: computed/derived setting
+ *   2. Operator-managed Bot config
+ *   3. Integration secrets (LLM API keys, webhook secrets, etc.)
+ *
+ * The frontend uses this set to filter keys before calling PUT /api/settings.
+ * The server-side SettingsService also blocks these via WRITABLE_SETTING_KEYS
+ * as a defense-in-depth measure.
  */
 export const NON_RESETTABLE_KEYS: ReadonlySet<string> = new Set<string>([
+  // Server-managed keys (managed by dedicated API routes, not writable via generic endpoint)
+  'gorgias_webhook_secret_encrypted',
+  'external_knowledge_enabled',
+  'external_knowledge_provider',
+  'external_knowledge_base_url',
+  'external_knowledge_dataset_id',
+  'external_knowledge_search_mode',
+  'external_knowledge_use_rerank',
+  'external_knowledge_api_key',
+  'retrieval_hybrid_config',
+  'knowledge_image_max_citations',
   // Operator-managed Bot config (also excluded from resettable)
   'custom_tools',
   // Gorgias integration

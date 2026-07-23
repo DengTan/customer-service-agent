@@ -1,8 +1,8 @@
 'use client';
 
-import { MessageSquare, Palette, Cpu, AlertTriangle, Store, Users, Bell, Network, Globe, GraduationCap } from 'lucide-react';
+import { MessageSquare, Palette, Cpu, AlertTriangle, Store, Users, Bell, Network, Globe, GraduationCap, BookOpen, User, Database } from 'lucide-react';
 
-export type SectionType = 'auto-reply' | 'chat' | 'ai' | 'alert' | 'appearance' | 'shop' | 'agent-assignment' | 'push' | 'bot' | 'gorgias' | 'knowledge-learning';
+export type SectionType = 'auto-reply' | 'chat' | 'ai' | 'alert' | 'appearance' | 'shop' | 'agent-assignment' | 'push' | 'bot' | 'external-knowledge' | 'gorgias' | 'knowledge-learning' | 'profile' | 'internal-knowledge';
 
 interface SettingsSidebarProps {
   activeSection: SectionType;
@@ -10,6 +10,7 @@ interface SettingsSidebarProps {
 }
 
 const SECTIONS: Array<{ key: SectionType; label: string; icon: typeof MessageSquare }> = [
+  { key: 'profile', label: '个人资料', icon: User },
   { key: 'auto-reply', label: '自动回复规则', icon: MessageSquare },
   { key: 'chat', label: '对话设置', icon: MessageSquare },
   { key: 'ai', label: 'AI 模型', icon: Cpu },
@@ -19,6 +20,8 @@ const SECTIONS: Array<{ key: SectionType; label: string; icon: typeof MessageSqu
   { key: 'agent-assignment', label: '坐席分配', icon: Users },
   { key: 'push', label: '主动推送', icon: Bell },
   { key: 'bot', label: 'Bot与子Agent', icon: Network },
+  { key: 'external-knowledge', label: '外部知识库', icon: BookOpen },
+  { key: 'internal-knowledge', label: '内部知识库', icon: Database },
   { key: 'gorgias', label: 'Gorgias 集成', icon: Globe },
   { key: 'knowledge-learning', label: '知识自学习', icon: GraduationCap },
 ];

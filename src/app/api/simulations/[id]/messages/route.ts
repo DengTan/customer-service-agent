@@ -440,7 +440,7 @@ export const POST = withErrorHandler(async (
         // from raw orchestratorCitations, as that bypasses the fail-closed verifier.
         // On timeout, the stream service did not run claim verification, so we fall back
         // to the stream's own confidence (typically 0 since nothing finished).
-        const lc = lastDoneChunk as Record<string, unknown>;
+        const lc = lastDoneChunk as unknown as Record<string, unknown>;
         const verifiedConfidence = (lc?.confidence as number | undefined) ?? 0.5;
         const verifiedConfidenceBreakdown = lc?.confidence_breakdown as Record<string, unknown> | null ?? null;
         // On timeout (streamTimedOut=true), lastDoneChunk will exist but have 0 confidence.

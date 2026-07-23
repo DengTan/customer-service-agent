@@ -16,7 +16,7 @@ import type { ThemeMode, ThemeSettings } from '@/lib/theme-settings-context';
 import { useThemeSettings } from '@/lib/theme-settings-context';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
-import { SECRET_KEYS } from '@/lib/settings-schema';
+import { NON_RESETTABLE_KEYS } from '@/lib/settings-schema';
 
 // Lazy load section components
 const AutoReplySettings = dynamic(() => import('./auto-reply-settings').then(m => ({ default: m.AutoReplySettings })), {
@@ -53,6 +53,8 @@ const ExternalKnowledgeSettings = dynamic(() => import('./external-knowledge-set
 // Static imports for components that are already independent
 import { AgentAssignmentSettings } from './agent-assignment-settings';
 import GorgiasSettings from './gorgias-settings';
+import { ProfileSettings } from './profile-settings';
+import { InternalKnowledgeSettings } from './internal-knowledge-settings';
 
 // ─── Type Guards ─────────────────────────────────────────────────
 
@@ -323,7 +325,7 @@ export function SettingsPage() {
     const systemPrompt = settings.system_prompt;
     for (const [key, value] of Object.entries(settings)) {
       if (key === 'system_prompt') continue; // handled by dedicated endpoint
-      if (!SECRET_KEYS.includes(key)) {
+      if (!NON_RESETTABLE_KEYS.has(key)) {
         writableSettings[key] = value;
       }
     }
@@ -484,6 +486,10 @@ export function SettingsPage() {
             onSettingsChange={setExternalKbSettings}
           />
         );
+      case 'profile':
+        return <ProfileSettings />;
+      case 'internal-knowledge':
+        return <InternalKnowledgeSettings />;
       default:
         return null;
     }

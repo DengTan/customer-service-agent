@@ -42,3 +42,35 @@ export function WelcomeScreen({ onNew }: WelcomeScreenProps) {
     </div>
   );
 }
+
+interface MonitorEmptyStateProps {
+  hasConversations: boolean;
+}
+
+export function MonitorEmptyState({ hasConversations }: MonitorEmptyStateProps) {
+  if (!hasConversations) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-8">
+        <div className="text-center max-w-md animate-fade-in-up">
+          <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <Headset className="w-8 h-8 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground mb-2">智能客服监控</h1>
+          <p className="text-sm text-muted-foreground">暂无平台对话，等待客户接入</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-8">
+      <div className="text-center animate-fade-in-up">
+        <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mx-auto mb-5">
+          <Headset className="w-8 h-8 text-muted-foreground" />
+        </div>
+        <h1 className="text-xl font-semibold text-foreground mb-2">选择会话</h1>
+        <p className="text-sm text-muted-foreground">从左侧列表选择一个会话查看详情</p>
+      </div>
+    </div>
+  );
+}

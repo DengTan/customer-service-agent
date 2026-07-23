@@ -1,0 +1,49 @@
+---
+description: Skill 系统配置与自动路由规则
+alwaysApply: true
+---
+
+# Skill 系统配置
+
+## Skill 目录
+
+项目中有多个 Skill 库，位于 `.agents/skills/` 目录下：
+
+- `.agents/skills/mattpocock/` — mattpocock/skills 工程实践集
+- `.agents/skills/supabase/` — Supabase 官方技能
+- `.agents/skills/supabase-postgres-best-practices/` — Postgres 最佳实践
+
+## 自动路由规则
+
+**当用户提问涉及以下主题时，应自动读取对应 Skill：**
+
+| 用户意图 | 应激活的 Skill |
+|---------|---------------|
+| 用户说"帮我写测试"、"TDD"、"红绿重构" | `.agents/skills/mattpocock/engineering/tdd/SKILL.md` |
+| 用户说"代码审查"、"review" | `.agents/skills/mattpocock/engineering/code-review/SKILL.md` |
+| 用户说"诊断 bug"、"哪里出问题了" | `.agents/skills/mattpocock/engineering/diagnosing-bugs/SKILL.md` |
+| 用户说"研究一下"、"调研" | `.agents/skills/mattpocock/engineering/research/SKILL.md` |
+| 用户说"写规范"、"写规格" | `.agents/skills/mattpocock/engineering/to-spec/SKILL.md` |
+| 用户说"原型"、"prototype" | `.agents/skills/mattpocock/engineering/prototype/SKILL.md` |
+| 用户提到 Supabase/数据库 | `.agents/skills/supabase/SKILL.md` |
+| 用户说"优化 SQL"、"Postgres" | `.agents/skills/supabase-postgres-best-practices/SKILL.md` |
+| 用户说"创建 skill"、"写 skill" | `.agents/skills/mattpocock/productivity/writing-great-skills/SKILL.md` |
+| 用户说"教我"、"解释一下" | `.agents/skills/mattpocock/productivity/teach/SKILL.md` |
+| 用户说"交接"、"handoff" | `.agents/skills/mattpocock/productivity/handoff/SKILL.md` |
+| 用户说"原型设计"、"UI 原型" | `.agents/skills/mattpocock/engineering/prototype/SKILL.md` |
+| 用户说"领域建模"、"DDD" | `.agents/skills/mattpocock/engineering/domain-modeling/SKILL.md` |
+| 用户说"重构架构"、"改善代码" | `.agents/skills/mattpocock/engineering/improve-codebase-architecture/SKILL.md` |
+| 用户说"设计方案"、"design review" | `.agents/skills/mattpocock/engineering/codebase-design/SKILL.md` |
+
+## 使用方法
+
+1. 当检测到上述意图时，先用 Read 工具读取对应的 SKILL.md 文件
+2. 按照 skill 中的指导执行任务
+3. Skill 文档是你的行动指南，遵循其中的步骤和原则
+
+## Skill 优先级
+
+当多个 skill 可能适用时，按以下优先级选择：
+1. 最具体的 skill（如 diagnosing-bugs > general debugging）
+2. 最新的 skill（in-progress 目录下的是正在开发的）
+3. 用户明确指定的 skill

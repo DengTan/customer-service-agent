@@ -85,6 +85,11 @@ export class HybridSearchService {
   private configCache: { config: HybridSearchConfig; cachedAt: number } | null = null;
   private readonly CONFIG_CACHE_TTL_MS = 30_000;
 
+  /** Clears the in-memory config cache. Used by cache invalidation handlers. */
+  invalidateCache(): void {
+    this.configCache = null;
+  }
+
   constructor() {
     this.bm25Service = getBm25Service();
     this.config = { ...DEFAULT_CONFIG };
@@ -461,4 +466,12 @@ export function getHybridSearchService(): HybridSearchService {
     hybridServiceInstance = new HybridSearchService();
   }
   return hybridServiceInstance;
+}
+
+/**
+ * Invalidates the hybrid search service config cache so that the next search
+ * call reloads configuration from the database.
+ */
+export function invalidateSearchModeCache(): void {
+  getHybridSearchService().invalidateCache();
 }

@@ -208,11 +208,6 @@
   animation: slideInLeft 0.25s ease-out both;
 }
 
-/* Sidebar nav item indicator transition */
-.nav-item-active-bar {
-  transition: all 0.2s ease;
-}
-
 /* Card hover lift */
 .card-hover-lift {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -384,17 +379,6 @@
 }
 .duration-300 {
   animation-duration: 300ms;
-}
-
-/* ===== Appearance Settings Variables ===== */
-
-:root {
-  --chat-font-size: 14px;
-  --chat-message-gap: 12px;
-}
-
-body.compact-mode {
-  --chat-message-gap: 4px;
 }
 
 /* ===== Sonner Toast Close Button Position ===== */

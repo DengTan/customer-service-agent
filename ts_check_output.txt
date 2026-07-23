@@ -1,0 +1,177 @@
+
+> projects@0.1.0 ts-check D:\customer_service_agent-main
+> tsc -p tsconfig.json
+
+src/app/api/auth/login/route.ts(251,29): error TS2304: Cannot find name 'agentRepo'.
+src/app/api/knowledge/external/settings/route.ts(169,22): error TS2304: Cannot find name 'REQUEST_ID_HEADER'.
+src/app/api/knowledge/external/settings/route.ts(169,42): error TS2552: Cannot find name 'requestId'. Did you mean 'request'?
+src/app/api/knowledge/external/settings/route.ts(172,7): error TS2552: Cannot find name 'requestId'. Did you mean 'request'?
+src/app/api/knowledge/external/settings/route.ts(187,21): error TS2304: Cannot find name 'getOrCreateRequestId'.
+src/app/api/knowledge/external/settings/route.ts(241,77): error TS2304: Cannot find name 'REQUEST_ID_HEADER'.
+src/app/api/knowledge/external/settings/route.ts(244,20): error TS2304: Cannot find name 'getServiceRoleClient'.
+src/app/api/knowledge/external/settings/route.ts(277,63): error TS2304: Cannot find name 'REQUEST_ID_HEADER'.
+src/app/api/knowledge/external/test-connection/saved/route.ts(20,10): error TS2305: Module '"@/storage/database/supabase-client"' has no exported member 'getServiceRoleClient'.
+src/app/api/knowledge/internal/settings/route.ts(9,10): error TS2305: Module '"@/storage/database/supabase-client"' has no exported member 'getServiceRoleClient'.
+src/app/api/knowledge/internal/settings/route.ts(10,45): error TS2305: Module '"@/lib/api-utils"' has no exported member 'getOrCreateRequestId'.
+src/app/api/knowledge/internal/settings/route.ts(10,67): error TS2305: Module '"@/lib/api-utils"' has no exported member 'REQUEST_ID_HEADER'.
+src/app/api/knowledge/internal/settings/route.ts(306,13): error TS2339: Property 'invalidateSearchModeCache' does not exist on type 'typeof import("D:/customer_service_agent-main/src/server/services/hybrid-search-service")'.
+src/app/api/settings/system-prompt/route.ts(30,10): error TS2305: Module '"@/storage/database/supabase-client"' has no exported member 'getServiceRoleClient'.
+src/app/api/simulations/[id]/messages/route.ts(443,20): error TS2352: Conversion of type 'null' to type 'Record<string, unknown>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+src/components/chat/product-picker.tsx(14,15): error TS2305: Module '"@/lib/types"' has no exported member 'ProductCardData'.
+src/components/settings/ai-settings.tsx(189,13): error TS2322: Type '{ currentProviderId: string; onProviderChange: (providerId: string) => void; onModelsChange: (providerId: string) => void; }' is not assignable to type 'IntrinsicAttributes & Props'.
+  Property 'onModelsChange' does not exist on type 'IntrinsicAttributes & Props'.
+src/components/settings/profile-settings.tsx(24,17): error TS2339: Property 'refreshUser' does not exist on type 'AuthContextValue'.
+src/components/settings/settings-page.tsx(367,27): error TS2339: Property 'syncFromServer' does not exist on type 'ThemeSettingsContextValue'.
+src/components/settings/settings-page.tsx(480,12): error TS2678: Type '"external-knowledge"' is not comparable to type 'SectionType'.
+src/components/settings/settings-page.tsx(482,12): error TS2769: No overload matches this call.
+  Overload 2 of 2, '(props: ExternalKnowledgeSettingsProps): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | ... 4 more ... | undefined', gave the following error.
+    Type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null' is not assignable to type 'ExternalKbSettingsState'.
+      Type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; }' is missing the following properties from type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; searchMode: "embedding" | "hybrid" | "fullText"; useRerank: boolean; }': searchMode, useRerank
+  Overload 2 of 2, '(props: ExternalKnowledgeSettingsProps): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | ... 4 more ... | undefined', gave the following error.
+    Type 'Dispatch<SetStateAction<{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null>>' is not assignable to type 'Dispatch<SetStateAction<ExternalKbSettingsState>>'.
+      Type 'SetStateAction<ExternalKbSettingsState>' is not assignable to type 'SetStateAction<{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null>'.
+        Type '(prevState: ExternalKbSettingsState) => ExternalKbSettingsState' is not assignable to type 'SetStateAction<{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null>'.
+          Type '(prevState: ExternalKbSettingsState) => ExternalKbSettingsState' is not assignable to type '(prevState: { enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null) => { enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null'.
+            Types of parameters 'prevState' and 'prevState' are incompatible.
+              Type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; } | null' is not assignable to type 'ExternalKbSettingsState'.
+                Type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; }' is missing the following properties from type '{ enabled: boolean; provider: string; baseUrl: string; apiKeyMasked: string; datasetId: string; searchMode: "embedding" | "hybrid" | "fullText"; useRerank: boolean; }': searchMode, useRerank
+src/lib/agent-performance-cache.test.ts(71,9): error TS2339: Property 'invalidatePerformance' does not exist on type 'AgentService'.
+src/lib/agent-performance-cache.test.ts(99,11): error TS2339: Property 'invalidatePerformance' does not exist on type 'AgentService'.
+src/lib/agent-performance-cache.test.ts(110,9): error TS2339: Property 'invalidatePerformance' does not exist on type 'AgentService'.
+src/lib/api-utils-extensions.test.ts(15,10): error TS2305: Module '"./api-utils"' has no exported member 'requireResourceOwnership'.
+src/lib/api-utils-extensions.test.ts(15,41): error TS2305: Module '"./api-utils"' has no exported member 'OwnershipDecision'.
+src/lib/ticket-audit-trail.test.ts(13,15): error TS2305: Module '"./api-utils"' has no exported member 'AuditContext'.
+src/lib/ticket-audit-trail.ts(13,10): error TS2305: Module '"./api-utils"' has no exported member 'withAuditTrail'.
+src/lib/ticket-audit-trail.ts(13,31): error TS2305: Module '"./api-utils"' has no exported member 'AuditHook'.
+src/lib/ticket-audit-trail.ts(13,47): error TS2305: Module '"./api-utils"' has no exported member 'AuditContext'.
+src/server/repositories/conversation-repository.test.ts(24,25): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(25,27): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(27,16): error TS2339: Property 'markAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/conversation-repository.test.ts(29,17): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(30,17): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(31,17): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(33,10): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(34,10): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(39,10): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(40,10): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(42,16): error TS2339: Property 'clearAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/conversation-repository.test.ts(44,17): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(45,17): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(51,16): error TS2339: Property 'markAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/conversation-repository.test.ts(52,17): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(54,16): error TS2339: Property 'clearAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/conversation-repository.test.ts(55,17): error TS2339: Property 'ai_processing' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(56,17): error TS2339: Property 'ai_processing_started_at' does not exist on type 'Conversation'.
+src/server/repositories/conversation-repository.test.ts(62,12): error TS2339: Property 'clearAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/conversation-repository.test.ts(69,12): error TS2339: Property 'markAiProcessing' does not exist on type 'ConversationRepository'.
+src/server/repositories/simulation-repository.test.ts(40,32): error TS2339: Property 'markAiProcessing' does not exist on type 'SimulationRepository'.
+src/server/repositories/simulation-repository.test.ts(42,18): error TS2339: Property 'ai_processing' does not exist on type 'SimulationConversation'.
+src/server/repositories/simulation-repository.test.ts(43,18): error TS2339: Property 'ai_processing_started_at' does not exist on type 'SimulationConversation'.
+src/server/repositories/simulation-repository.test.ts(44,25): error TS2339: Property 'ai_processing_started_at' does not exist on type 'SimulationConversation'.
+src/server/repositories/simulation-repository.test.ts(47,32): error TS2339: Property 'clearAiProcessing' does not exist on type 'SimulationRepository'.
+src/server/repositories/simulation-repository.test.ts(49,18): error TS2339: Property 'ai_processing' does not exist on type 'SimulationConversation'.
+src/server/repositories/simulation-repository.test.ts(50,18): error TS2339: Property 'ai_processing_started_at' does not exist on type 'SimulationConversation'.
+src/server/repositories/simulation-repository.test.ts(61,39): error TS2339: Property 'markAiProcessing' does not exist on type 'SimulationRepository'.
+src/server/repositories/simulation-repository.test.ts(62,39): error TS2339: Property 'clearAiProcessing' does not exist on type 'SimulationRepository'.
+src/server/services/alert-service.test.ts(203,35): error TS2554: Expected 1 arguments, but got 2.
+src/server/services/alert-service.test.ts(252,15): error TS2339: Property 'dismissAlert' does not exist on type 'AlertService'.
+src/server/services/alert-service.test.ts(276,22): error TS2339: Property 'dismissAlert' does not exist on type 'AlertService'.
+src/server/services/alert-service.test.ts(309,22): error TS2339: Property 'reopenAlert' does not exist on type 'AlertService'.
+src/server/services/alert-service.test.ts(314,15): error TS2339: Property 'reopenAlert' does not exist on type 'AlertService'.
+src/server/services/alert-service.test.ts(324,11): error TS2339: Property 'reopenAlert' does not exist on type 'AlertService'.
+src/server/services/claim-attestation-service.ts(9,15): error TS2305: Module '"./claim-support-verifier"' has no exported member 'ClaimAttestationContext'.
+src/server/services/claim-attestation-service.ts(62,45): error TS2339: Property 'supportLevel' does not exist on type 'ClaimVerificationResult'.
+src/server/services/conversation-end-audit-sprint6.test.ts(98,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(101,25): error TS7006: Parameter 'ctx' implicitly has an 'any' type.
+src/server/services/conversation-end-audit-sprint6.test.ts(127,11): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(149,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(151,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(169,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(170,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(171,15): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-end-audit-sprint6.test.ts(183,11): error TS2551: Property 'endConversation' does not exist on type 'ConversationService'. Did you mean 'rateConversation'?
+src/server/services/conversation-list-cache-sprint6.test.ts(16,3): error TS2305: Module '"@/server/services/conversation-service"' has no exported member 'invalidateConversationsListCache'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(116,30): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(131,11): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(132,11): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(145,30): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(159,30): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(172,30): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/conversation-session-timeout-sprint6.test.ts(185,11): error TS2339: Property 'checkSessionTimeout' does not exist on type 'ConversationService'.
+src/server/services/customer-delete-audit-sprint6.test.ts(30,15): error TS2305: Module '"@/lib/api-utils"' has no exported member 'AuditContext'.
+src/server/services/customer-delete-audit-sprint6.test.ts(32,3): error TS2305: Module '"@/lib/api-utils"' has no exported member 'requireResourceOwnership'.
+src/server/services/customer-delete-audit-sprint6.test.ts(33,8): error TS2305: Module '"@/lib/api-utils"' has no exported member 'OwnershipDecision'.
+src/server/services/customer-delete-audit-sprint6.test.ts(70,50): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/customer-delete-audit-sprint6.test.ts(82,15): error TS2339: Property 'deleteCustomerWithAudit' does not exist on type 'CustomerService'.
+src/server/services/customer-delete-audit-sprint6.test.ts(109,11): error TS2339: Property 'deleteCustomerWithAudit' does not exist on type 'CustomerService'.
+src/server/services/customer-delete-audit-sprint6.test.ts(124,11): error TS2339: Property 'deleteCustomerWithAudit' does not exist on type 'CustomerService'.
+src/server/services/customer-delete-audit-sprint6.test.ts(141,15): error TS2339: Property 'deleteCustomerWithAudit' does not exist on type 'CustomerService'.
+src/server/services/customer-delete-audit-sprint6.test.ts(151,25): error TS7006: Parameter 'ctx' implicitly has an 'any' type.
+src/server/services/customer-list-cache-sprint6.test.ts(16,27): error TS2305: Module '"@/server/services/customer-service"' has no exported member 'invalidateCustomersListCache'.
+src/server/services/customer-list-cache-sprint6.test.ts(52,50): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/customer-list-cache-sprint6.test.ts(84,15): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-list-cache-sprint6.test.ts(106,15): error TS2339: Property 'deleteCustomerWithAudit' does not exist on type 'CustomerService'.
+src/server/services/customer-service-sprint6.test.ts(25,27): error TS2305: Module '"@/server/services/customer-service"' has no exported member 'applyTagModification'.
+src/server/services/customer-service-sprint6.test.ts(140,52): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/customer-service-sprint6.test.ts(147,50): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/customer-service-sprint6.test.ts(191,20): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(215,20): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(236,19): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(248,20): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(261,16): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(273,16): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(293,20): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(307,28): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-service-sprint6.test.ts(308,22): error TS2551: Property 'customerId' does not exist on type '{ customer: unknown; created: boolean; }'. Did you mean 'customer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(103,45): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/customer-tags-batch-sprint6.test.ts(111,11): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(119,30): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(129,30): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(147,30): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(167,30): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(194,11): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/customer-tags-batch-sprint6.test.ts(215,15): error TS2551: Property 'updateCustomerTags' does not exist on type 'CustomerService'. Did you mean 'updateCustomer'?
+src/server/services/eval/calibration-service.ts(358,122): error TS2554: Expected 2-3 arguments, but got 4.
+src/server/services/eval/calibration-service.ts(363,50): error TS2339: Property 'externalContext' does not exist on type 'RetrievalResult'.
+src/server/services/eval/calibration-service.ts(365,48): error TS2339: Property 'externalContext' does not exist on type 'RetrievalResult'.
+src/server/services/hybrid-search-raw-hits-sprint3.test.ts(11,3): error TS2305: Module '"@/server/services/hybrid-search-service"' has no exported member 'hybridRawHitsCacheStats'.
+src/server/services/hybrid-search-raw-hits-sprint3.test.ts(12,3): error TS2305: Module '"@/server/services/hybrid-search-service"' has no exported member 'invalidateHybridRawHitsCache'.
+src/server/services/knowledge-search-cache-sprint3.test.ts(27,3): error TS2724: '"@/server/services/knowledge-search-service"' has no exported member named 'invalidateKnowledgeSearchResultCache'. Did you mean 'invalidateKnowledgeSearchSettingsCache'?
+src/server/services/knowledge-search-cache-sprint3.test.ts(28,3): error TS2724: '"@/server/services/knowledge-search-service"' has no exported member named 'knowledgeSearchResultCacheStats'. Did you mean 'KnowledgeSearchResultExt'?
+src/server/services/knowledge-search-cache-sprint3.test.ts(29,3): error TS2305: Module '"@/server/services/knowledge-search-service"' has no exported member 'KNOWNLEDGE_SETTINGS_INVALIDATE_EVENT'.
+src/server/services/marketing-service.test.ts(123,51): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/marketing-service.test.ts(135,51): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/marketing-service.test.ts(167,5): error TS2554: Expected 0-1 arguments, but got 3.
+src/server/services/marketing-service.test.ts(170,7): error TS2339: Property 'invalidateAnalyticsCache' does not exist on type 'MarketingService'.
+src/server/services/marketing-service.test.ts(207,18): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "failed" | "sent"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(207,50): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "failed" | "sent"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(208,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "failed" | "sent"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(257,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "failed" | "sent"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(277,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "failed" | "sent"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(319,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(320,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(323,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(323,28): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(324,45): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(347,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(348,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(350,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(351,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(360,19): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(417,56): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(426,56): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(523,9): error TS2339: Property 'invalidateAnalyticsCache' does not exist on type 'MarketingService'.
+src/server/services/sprint2-gorgias-hardening.test.ts(51,3): error TS2305: Module '"./gorgias-service"' has no exported member 'encryptSecret'.
+src/server/services/sprint2-gorgias-hardening.test.ts(52,3): error TS2305: Module '"./gorgias-service"' has no exported member 'decryptSecret'.
+src/server/services/sprint2-gorgias-hardening.test.ts(57,3): error TS2305: Module '"./retrieval-gating-service"' has no exported member 'ADVERSARIAL_REJECTION_MESSAGE'.
+src/server/services/sprint2-gorgias-hardening.test.ts(138,37): error TS2339: Property 'linkCustomerToConversation' does not exist on type 'CustomerService'.
+src/server/services/sprint2-gorgias-hardening.test.ts(143,37): error TS2339: Property 'linkCustomerToConversation' does not exist on type 'CustomerService'.
+src/server/services/sprint2-gorgias-hardening.test.ts(150,33): error TS2339: Property 'linkCustomerToConversation' does not exist on type 'CustomerService'.
+src/server/services/sprint2-gorgias-hardening.test.ts(307,21): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(316,21): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(327,14): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(327,39): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(328,14): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(338,37): error TS2339: Property 'linkCustomerToConversation' does not exist on type 'CustomerService'.
+src/server/services/sprint2-gorgias-hardening.test.ts(344,33): error TS2339: Property 'linkCustomerToConversation' does not exist on type 'CustomerService'.
+鈥塃LIFECYCLE鈥?Command failed with exit code 2.

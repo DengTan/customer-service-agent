@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 /** Polished skeleton for a single conversation row in the monitor list */
 function MonitorConversationSkeleton() {
   return (
-    <div className="flex gap-3 p-3 rounded-lg border bg-card animate-skeleton-pulse">
+    <div className="flex gap-3 p-3 rounded-lg bg-card animate-skeleton-pulse">
       {/* Avatar */}
       <div className="w-9 h-9 rounded-full bg-muted shrink-0" />
 
@@ -31,9 +31,9 @@ function MonitorConversationSkeleton() {
 /** Skeleton panel for the full conversation list */
 export function MonitorListSkeleton({ count = 8 }: { count?: number }) {
   return (
-    <div className="w-80 border-r border-border overflow-y-auto bg-card">
+    <div className="w-80 border-r overflow-y-auto bg-card">
       {/* Search bar */}
-      <div className="p-3 border-b border-border space-y-2">
+      <div className="p-3 space-y-2">
         <div className="h-8 bg-muted rounded-md" />
         <div className="flex gap-1">
           {[1, 2, 3, 4].map((i) => (
@@ -57,7 +57,7 @@ export function MonitorDetailSkeleton() {
   return (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-card">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center shrink-0">
+      <div className="h-14 px-6 flex items-center shrink-0">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="w-10 h-10 rounded-full bg-muted shrink-0" />
           <div className="space-y-1.5 min-w-0">
@@ -72,7 +72,7 @@ export function MonitorDetailSkeleton() {
       </div>
 
       {/* Summary bar (handoff/ended) */}
-      <div className="border-b border-border px-6 py-3 flex items-start gap-2 shrink-0">
+      <div className="px-6 py-3 flex items-start gap-2 shrink-0">
         <div className="w-4 h-4 bg-muted rounded shrink-0 mt-0.5" />
         <div className="space-y-1.5 flex-1 min-w-0">
           <div className="h-3 w-16 bg-muted rounded" />
@@ -117,7 +117,7 @@ export function MonitorDetailSkeleton() {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-border p-4 shrink-0">
+      <div className="p-4 shrink-0">
         <div className="h-10 bg-muted rounded-lg max-w-3xl mx-auto" />
       </div>
     </div>

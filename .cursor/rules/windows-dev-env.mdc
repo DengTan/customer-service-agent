@@ -9,10 +9,20 @@ alwaysApply: true
 
 **禁止**在 Windows PowerShell 执行 `pnpm run dev`（调用 Linux Bash 脚本）。
 
-正确方式：
+正确方式（Next.js 16 在 tsx 注册前必须挂载 `AsyncLocalStorage` 到 globalThis，否则会抛 `Invariant: AsyncLocalStorage accessed in runtime where it is not available`）：
 
 ```powershell
-pnpm tsx watch src/server.ts
+# 推荐：使用项目内置的 bootstrap 脚本
+pnpm dev:win
+
+# 等价手动命令
+node --require ./scripts/asls-bootstrap.cjs --import tsx --no-warnings src/server.ts
+```
+
+watch 模式（文件变更自动重启）：
+
+```powershell
+node --require ./scripts/asls-bootstrap.cjs --import tsx --no-warnings --watch src/server.ts
 ```
 
 监听 `http://localhost:5000`。

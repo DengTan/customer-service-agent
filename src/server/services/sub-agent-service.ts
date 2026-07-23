@@ -12,19 +12,21 @@ import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { ServiceError } from './service-error';
 import { logger } from '@/lib/logger';
 
+
 // Normalize text to prevent zero-width character bypass attacks
 function normalizeText(text: string): string {
-  if (!text) return '';
-  return text
-    .normalize('NFC')
-    .replace(/[\u200B-\u200F\uFEFF\u00AD]/g, '');
+    if (!text) return '';
+    return text
+        .normalize('NFC')
+        .replace(/[​-‏﻿­]/g, '');
 }
 
 function toServiceError(error: unknown, fallbackMessage: string, fallbackCode: string): ServiceError {
-  if (error instanceof ServiceError) return error;
-  const message = error instanceof Error ? error.message : fallbackMessage;
-  return new ServiceError(message, { status: 500, code: fallbackCode });
+    if (error instanceof ServiceError) return error;
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    return new ServiceError(message, { status: 500, code: fallbackCode });
 }
+
 
 // Intent categories for sub-agent routing
 const INTENT_CATEGORIES: Record<string, string[]> = {
@@ -59,6 +61,13 @@ export interface DelegationResult {
   responseContent: string;
   confidence: number;
   collaborations?: AgentCollaborationRow[];
+  degraded?: boolean;
+}
+
+export interface LlmProviderConfig {
+  baseUrl: string;
+  apiKey: string;
+  model?: string;
 }
 
 export interface CollaborationRequest {
@@ -360,6 +369,12 @@ export class SubAgentService {
     child_bot_id: string;
     trigger_intent?: string;
     input_message: string;
+    /** R-2: 商品上下文（注入到子Agent系统提示词） */
+    productContext?: string;
+    /** R-2: 尺码表上下文（注入到子Agent系统提示词） */
+    sizeChartContext?: string;
+    /** R-2: 子Agent专属的LLM Provider配置（覆盖默认Coze配置） */
+    llmProviderConfig?: LlmProviderConfig;
   }): Promise<DelegationResult> {
     try {
       // Verify parent and child bots exist
@@ -390,14 +405,26 @@ export class SubAgentService {
       await this.subAgentRepo.updateDelegationStatus(delegation.id, 'processing');
 
       // Build the sub-agent response prompt
-      const responseContent = await this.generateSubAgentResponse(
+      const { content: responseContent, degraded } = await this.generateSubAgentResponse(
         childBot,
         input.conversation_id,
         input.input_message,
+        input.productContext,
+        input.sizeChartContext,
+        input.llmProviderConfig,
       );
 
       // Calculate confidence based on sub-agent's configuration and actual response quality
-      const confidence = this.calculateSubAgentConfidence(childBot, input.input_message, responseContent);
+      // P2-A: degraded=true → force confidence to 0.3 (below alert threshold 0.4, triggers human handoff)
+      const hasExternalContext = !!(input.productContext || input.sizeChartContext);
+      const confidence = degraded
+        ? 0.3
+        : this.calculateSubAgentConfidence(
+            childBot,
+            input.input_message,
+            responseContent,
+            hasExternalContext,
+          );
 
       // Complete the delegation
       const completedDelegation = await this.subAgentRepo.updateDelegationStatus(delegation.id, 'completed', {
@@ -421,6 +448,7 @@ export class SubAgentService {
         responseContent,
         confidence,
         collaborations,
+        degraded,
       };
     } catch (error) {
       if (error instanceof ServiceError) throw error;
@@ -431,23 +459,41 @@ export class SubAgentService {
   /**
    * Generate a response from a sub-agent using the LLM.
    * Full pipeline: LLM → parse [TOOL_CALL] → execute via ToolExecutionService → second-pass LLM explanation.
+   * Returns structured result with degraded flag for confidence calculation.
+   *
+   * @param productContext - Optional product context to inject into system prompt (R-2)
+   * @param sizeChartContext - Optional size chart context to inject into system prompt (R-2)
+   * @param llmProviderConfig - Optional LLM provider config to override the default Coze config (R-2)
    */
   private async generateSubAgentResponse(
     childBot: BotConfigRow,
     conversationId: string,
     userMessage: string,
-  ): Promise<string> {
-    const baseUrl = process.env.COZE_BASE_URL || 'https://api.coze.cn';
-    const apiKey = process.env.COZE_API_KEY;
+    productContext?: string,
+    sizeChartContext?: string,
+    llmProviderConfig?: LlmProviderConfig,
+  ): Promise<{ content: string; degraded: boolean }> {
+    // R-2: Use the provided LLM provider config if available, otherwise fall back to env defaults
+    const baseUrl = llmProviderConfig?.baseUrl ?? process.env.COZE_BASE_URL ?? 'https://api.coze.cn';
+    const apiKey = llmProviderConfig?.apiKey ?? process.env.COZE_API_KEY;
 
     if (!apiKey) {
       throw new Error('Sub-agent LLM 调用失败: COZE_API_KEY 环境变量未配置');
     }
 
     const adapter = new LLMClientAdapter({ baseUrl, apiKey });
-    const model = process.env.COZE_SUB_AGENT_MODEL || 'doubao-seed-2-0-lite-260215';
+    const model = llmProviderConfig?.model ?? process.env.COZE_SUB_AGENT_MODEL ?? 'doubao-seed-2-0-lite-260215';
 
-    const systemPrompt = childBot.system_prompt || '你是一个专业的客服助手。';
+    let systemPrompt = childBot.system_prompt || '你是一个专业的客服助手。';
+
+    // R-2: Inject external grounding context into system prompt
+    if (productContext) {
+      systemPrompt += `\n\n【商品详情信息】\n${productContext}`;
+    }
+    if (sizeChartContext) {
+      systemPrompt += `\n\n【尺码表信息】\n${sizeChartContext}`;
+    }
+
     const hasTools = Array.isArray(childBot.tools) && childBot.tools.length > 0;
 
     // Build system prompt with tool definitions (if tools are configured)
@@ -470,23 +516,23 @@ export class SubAgentService {
       }
     } catch (error) {
       logger.error('[SubAgentService] LLM first-pass failed', { error: error instanceof Error ? error.message : String(error) });
-      return this.buildFallbackResponse(childBot);
+      return { content: this.buildFallbackResponse(childBot), degraded: true };
     }
 
     if (!llmContent.trim()) {
-      return this.buildFallbackResponse(childBot);
+      return { content: this.buildFallbackResponse(childBot), degraded: true };
     }
 
     // If no tools are configured, return raw LLM response
     if (!hasTools) {
-      return llmContent;
+      return { content: llmContent, degraded: false };
     }
 
     // Parse and execute tool calls
     const toolExecutions = await this.parseAndExecuteToolCalls(llmContent, conversationId);
 
     if (toolExecutions.length === 0) {
-      return llmContent;
+      return { content: llmContent, degraded: false };
     }
 
     // Build second-pass LLM call with tool results
@@ -512,10 +558,10 @@ export class SubAgentService {
         error: error instanceof Error ? error.message : String(error),
       });
       // Graceful degradation: return first-pass LLM content + raw tool results
-      return `${llmContent}\n\n---\n${toolResultsSummary}`;
+      return { content: `${llmContent}\n\n---\n${toolResultsSummary}`, degraded: false };
     }
 
-    return finalContent.trim() || llmContent;
+    return { content: finalContent.trim() || llmContent, degraded: false };
   }
 
   private buildFallbackResponse(childBot: BotConfigRow): string {
@@ -532,7 +578,7 @@ export class SubAgentService {
         }).join('、')
       : '无';
 
-    return `[子Agent「${childBot.name}」处理中]\n${childBot.description}\n\n抱歉，专家正在处理您的问题，请稍候。`;
+    return `[子Agent「${childBot.name}」处理中]\n${childBot.description}\n\n降级为模板回复：抱歉，专家正在处理您的问题，请稍候。`;
   }
 
   private buildToolDefinitions(tools: unknown[]): string | null {
@@ -588,8 +634,16 @@ export class SubAgentService {
   /**
    * Calculate the confidence score for a sub-agent's response.
    * Evaluates both static configuration (tools, knowledge) and actual response quality.
+   *
+   * @param hasExternalContext - R-2: whether productContext or sizeChartContext was injected.
+   *                             Adds +0.07 when true (OR logic — only once, not twice).
    */
-  private calculateSubAgentConfidence(childBot: BotConfigRow, userMessage: string, responseContent: string): number {
+  private calculateSubAgentConfidence(
+    childBot: BotConfigRow,
+    userMessage: string,
+    responseContent: string,
+    hasExternalContext: boolean = false,
+  ): number {
     let confidence = 0.5; // Base confidence
 
     // Configuration signals (reduced weight from original — these are just potential, not proof)
@@ -598,6 +652,12 @@ export class SubAgentService {
     }
     if (Array.isArray(childBot.knowledge_ids) && childBot.knowledge_ids.length > 0) {
       confidence += 0.05;
+    }
+
+    // R-2: External grounding (product / size-chart) boosts confidence by 0.07.
+    // Applied once when either context is present (OR logic — no double-counting).
+    if (hasExternalContext) {
+      confidence += 0.07;
     }
 
     // Delegation prompt keyword matching (reduced weight)

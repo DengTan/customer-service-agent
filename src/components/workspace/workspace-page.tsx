@@ -9,11 +9,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import {
   MessageSquare,
-  Clock,
-  UserCheck,
   CheckCircle,
   RefreshCw,
   StickyNote,
+  TrendingUp,
+  Users,
+  Zap,
 } from 'lucide-react';
 import { useVisibilityAwarePoll } from '@/hooks/use-visibility-aware-poll';
 import { cn } from '@/lib/utils';
@@ -28,7 +29,6 @@ import {
 } from '@/lib/types';
 import {
   type ChatMessage,
-  StatCard,
 } from './workspace-shared';
 import { QueuePanel } from './queue-panel';
 import { ChatPanel } from './chat-panel';
@@ -148,6 +148,9 @@ export function WorkspacePage() {
   // Load conversation messages
   const loadMessages = useCallback(async (conversationId: string) => {
     try {
+      // Small delay to allow skeleton to show
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const res = await fetch(`/api/conversations/${conversationId}`);
       if (res.ok) {
         const data = await res.json();
@@ -181,6 +184,25 @@ export function WorkspacePage() {
   useEffect(() => {
     fetchAgentsRef.current = fetchAgents;
   }, [fetchAgents]);
+
+  // Fetch current agent status from server
+  useEffect(() => {
+    if (!user?.id) return;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('/api/agent/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status) {
+            setAgentStatus(data.status);
+          }
+        }
+      } catch {
+        // Fallback to 'online' on error
+      }
+    };
+    fetchStatus();
+  }, [user?.id]);
 
   useEffect(() => {
     const doFetch = async () => {
@@ -306,89 +328,264 @@ export function WorkspacePage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Initial Loading State */}
+      {/* Initial Loading State - Full skeleton */}
       {isInitialLoading && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">加载坐席工作台...</p>
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Header skeleton */}
+          <div className="border-b border-border/80 bg-gradient-to-r from-background to-background">
+            <div className="px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-8 w-32" />
+                <Skeleton className="h-8 w-40" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="h-8 w-24" />
+              </div>
+            </div>
+            <div className="px-4 py-2.5 border-t border-border/30 bg-muted/20">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="w-7 h-7 rounded-md" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-3 w-12" />
+                    <Skeleton className="h-5 w-8" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="w-7 h-7 rounded-md" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-3 w-12" />
+                    <Skeleton className="h-5 w-8" />
+                  </div>
+                </div>
+                <Skeleton className="w-px h-8" />
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="w-7 h-7 rounded-md" />
+                  <div className="space-y-1">
+                    <Skeleton className="h-3 w-12" />
+                    <Skeleton className="h-5 w-8" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Body skeleton - 3 columns */}
+          <div className="flex flex-1 min-h-0">
+            {/* Left column - Queue skeleton */}
+            <div className="w-[280px] border-r border-border/50 bg-card p-4 space-y-3 overflow-auto">
+              <div className="flex items-center gap-2 mb-4">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-5 w-12" />
+              </div>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex gap-3 p-3 rounded-lg bg-background">
+                  <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="w-16 h-6 shrink-0" />
+                </div>
+              ))}
+            </div>
+
+            {/* Middle column - Chat skeleton */}
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-card/50 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <Skeleton className="w-8 h-8 rounded-full" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Skeleton className="h-7 w-16" />
+                  <Skeleton className="h-7 w-16" />
+                  <Skeleton className="h-7 w-16" />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto py-4 min-h-0">
+                <div className="space-y-4 max-w-3xl mx-auto px-4">
+                  <div className="flex gap-2 justify-start">
+                    <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-16 w-64 rounded-lg" />
+                      <Skeleton className="h-3 w-12" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <div className="space-y-2">
+                      <Skeleton className="h-20 w-72 rounded-lg" />
+                      <Skeleton className="h-3 w-12 ml-auto" />
+                    </div>
+                    <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                  </div>
+                  <div className="flex gap-2 justify-start">
+                    <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-12 w-48 rounded-lg" />
+                      <Skeleton className="h-3 w-12" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-border px-4 h-14 flex items-center gap-2 bg-card/50 shrink-0">
+                <Skeleton className="h-9 w-full rounded-md" />
+                <Skeleton className="h-9 w-9 rounded-md shrink-0" />
+              </div>
+            </div>
+
+            {/* Right column - Customer info skeleton */}
+            <div className="w-[280px] border-l border-border/50 bg-card overflow-y-auto shrink-0">
+              <div className="p-4 space-y-5">
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-16" />
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-10 h-10 rounded-full" />
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-9 w-full rounded-lg" />
+                  <Skeleton className="h-9 w-full rounded-lg" />
+                  <Skeleton className="h-9 w-full rounded-lg" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {!isInitialLoading && (
       <>
-      {/* Header */}
-      <div className="h-14 border-b border-border px-4 flex items-center justify-between bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">坐席工作台</h1>
-        {/* Stats */}
-        <div className="flex items-center gap-4">
-          <StatCard
-            icon={<Clock className="w-4 h-4 text-amber-500" />}
-            label="排队中"
-            value={queuedTotal.toString()}
-            accentColor="text-amber-500"
-          />
-          <StatCard
-            icon={<MessageSquare className="w-4 h-4 text-primary" />}
-            label="服务中"
-            value={assignedTotal.toString()}
-            accentColor="text-primary"
-          />
-          <StatCard
-            icon={<CheckCircle className="w-4 h-4 text-emerald-600" />}
-            label="今日已解决"
-            value={performance?.total_resolved?.toString() || '0'}
-            accentColor="text-emerald-600"
-          />
-          <StatCard
-            icon={<UserCheck className="w-4 h-4 text-muted-foreground" />}
-            label="平均响应"
-            value={performance?.avg_response_time_seconds ? formatResponseTime(performance.avg_response_time_seconds) : '--'}
-            accentColor="text-muted-foreground"
-          />
-        </div>
-        {/* Current Agent & Status */}
-        <div className="flex items-center gap-4">
-          {/* Quick Replies Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setQuickRepliesOpen(true)}
-            className="gap-1.5 px-3 h-8 text-xs font-medium"
-          >
-            <StickyNote className="w-4 h-4" />
-            话术库
-          </Button>
-          {/* Status Switcher */}
-          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-            {(['online', 'away', 'offline'] as AgentStatus[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => handleStatusChange(s)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  agentStatus === s
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${AGENT_STATUS_COLORS[s]}`} />
-                {AGENT_STATUS_LABELS[s]}
-              </button>
-            ))}
+      {/* Header - Redesigned */}
+      <div className="border-b border-border/80 bg-gradient-to-r from-background to-background">
+        {/* Top Bar: Title + User Info + Actions */}
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-primary" />
+              </span>
+              坐席工作台
+            </h1>
+            {/* Status Switcher - Inline with title */}
+            <div className="flex items-center gap-1 bg-muted/60 rounded-lg p-0.5">
+              {(['online', 'away', 'offline'] as AgentStatus[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => handleStatusChange(s)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                    agentStatus === s
+                      ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  )}
+                >
+                  <span className={cn("w-1.5 h-1.5 rounded-full", AGENT_STATUS_COLORS[s])} />
+                  {AGENT_STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
           </div>
-          {/* Refresh Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="gap-2 text-muted-foreground hover:text-foreground"
-            title="刷新数据"
-          >
-            <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-            {refreshing ? '刷新中...' : '刷新'}
-          </Button>
+          {/* Right Actions */}
+          <div className="flex items-center gap-1">
+            {/* Quick Replies Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setQuickRepliesOpen(true)}
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              title="话术库"
+            >
+              <StickyNote className="w-4 h-4" />
+            </Button>
+            {/* Refresh Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              title={refreshing ? '刷新中…' : '刷新数据'}
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Bar - Enhanced with more visual hierarchy */}
+        <div className="px-4 py-2.5 border-t border-border/30 bg-muted/20">
+          <div className="flex items-center gap-6">
+            {/* Queue Stats */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-amber-500/10">
+                <Users className="w-3.5 h-3.5 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground leading-none">排队中</p>
+                <p className="text-lg font-bold text-amber-600 leading-none">{queuedTotal}</p>
+              </div>
+            </div>
+
+            {/* Serving Stats */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-primary/10">
+                <MessageSquare className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground leading-none">服务中</p>
+                <p className="text-lg font-bold text-primary leading-none">{assignedTotal}</p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="w-px h-8 bg-border/50 mx-1" />
+
+            {/* Resolved Stats */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-emerald-500/10">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground leading-none">今日已解决</p>
+                <p className="text-lg font-bold text-emerald-600 leading-none">{performance?.total_resolved?.toString() || '0'}</p>
+              </div>
+            </div>
+
+            {/* Avg Response Time */}
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-center w-7 h-7 rounded-md bg-blue-500/10">
+                <TrendingUp className="w-3.5 h-3.5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground leading-none">平均响应</p>
+                <p className="text-lg font-bold text-blue-600 leading-none">
+                  {performance?.avg_response_time_seconds ? formatResponseTime(performance.avg_response_time_seconds) : '--'}
+                </p>
+              </div>
+            </div>
+
+            {/* Performance Trend - if available */}
+            {performance?.avg_response_time_seconds && (
+              <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+                <TrendingUp className="w-3 h-3" />
+                <span>响应效率良好</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -402,7 +599,7 @@ export function WorkspacePage() {
               <Skeleton className="h-5 w-12" />
             </div>
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex gap-3 p-3 rounded-lg border bg-background">
+              <div key={i} className="flex gap-3 p-3 rounded-lg bg-background">
                 <Skeleton className="w-10 h-10 rounded-full shrink-0" />
                 <div className="flex-1 space-y-2 min-w-0">
                   <Skeleton className="h-4 w-3/4" />
@@ -416,7 +613,7 @@ export function WorkspacePage() {
               <Skeleton className="h-5 w-12" />
             </div>
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={`assigned-${i}`} className="flex gap-3 p-3 rounded-lg border bg-background">
+              <div key={`assigned-${i}`} className="flex gap-3 p-3 rounded-lg bg-background">
                 <Skeleton className="w-10 h-10 rounded-full shrink-0" />
                 <div className="flex-1 space-y-2 min-w-0">
                   <Skeleton className="h-4 w-3/4" />

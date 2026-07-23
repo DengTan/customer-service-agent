@@ -496,9 +496,9 @@ export class ProductDetailService {
   async searchProductsForLLM(
     query: string,
     limit: number = 3,
-  ): Promise<{ productContext: string; matchedProductIds: string[] }> {
+  ): Promise<{ productContext: string; matchedProductIds: string[]; items: NormalizedProductDetail[] }> {
     if (!query?.trim()) {
-      return { productContext: '', matchedProductIds: [] };
+      return { productContext: '', matchedProductIds: [], items: [] };
     }
 
     try {
@@ -507,7 +507,7 @@ export class ProductDetailService {
       const activeProducts = items.filter(p => p.status === 'on_sale').slice(0, limit);
 
       if (activeProducts.length === 0) {
-        return { productContext: '', matchedProductIds: [] };
+        return { productContext: '', matchedProductIds: [], items: [] };
       }
 
       const productContext = activeProducts
@@ -524,11 +524,12 @@ export class ProductDetailService {
       return {
         productContext: `\n\n以下是检索到的相关商品信息：\n${productContext}`,
         matchedProductIds: activeProducts.map(p => p.id),
+        items: activeProducts,
       };
     } catch (error) {
       // Product search failure should not block the main LLM flow
       logger.api.warn('product-search-for-llm-failed', { query, error: (error as Error).message });
-      return { productContext: '', matchedProductIds: [] };
+      return { productContext: '', matchedProductIds: [], items: [] };
     }
   }
 }

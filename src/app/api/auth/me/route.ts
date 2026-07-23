@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { verifyToken, decodeTokenUnsafe, extractTokenFromCookies } from '@/lib/auth/jwt';
 import { UserRepository } from '@/server/repositories/user-repository';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 const userRepo = new UserRepository();
 
@@ -69,6 +70,22 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
+  // Get agent status from agent_sessions table
+  let agentStatus: string | null = null;
+  try {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase
+      .from('agent_sessions')
+      .select('status')
+      .eq('user_id', payload.sub)
+      .order('last_active_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    agentStatus = sessionData?.status || null;
+  } catch {
+    // Silently fail, agentStatus remains null
+  }
+
   return apiSuccess({
     user: {
       id: user.id,
@@ -76,6 +93,7 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
       name: user.name,
       role: user.role,
       avatar: user.avatar,
+      agentStatus,
     },
   });
 });
