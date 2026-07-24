@@ -21,7 +21,8 @@ import {
   BarChart3,
   ChevronDown,
   BookOpen,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import {
   Select,
@@ -132,6 +133,11 @@ export function SimulationPage() {
   const [selectedBot, setSelectedBot] = useState<{ id: string; name: string } | null>(null);
   const [botPopoverOpen, setBotPopoverOpen] = useState(false);
   const [botsLoading, setBotsLoading] = useState(false);
+
+  // Batch delete state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // P1: Reload bots function
   const reloadBots = useCallback(async () => {
@@ -515,7 +521,25 @@ export function SimulationPage() {
           error: errMsg,
           conversationId: actualConvId,
         });
-        toast.error(errMsg);
+        // Map backend error codes to user-friendly toasts
+        if (errMsg.includes('NO_LLM_PROVIDER') || errMsg.includes('未配置 LLM Provider')) {
+          toast.error('未配置 LLM Provider', {
+            description: '请先在「设置 → AI 模型」中添加并启用 LLM 提供商',
+            action: {
+              label: '去设置',
+              onClick: () => window.location.href = '/settings?tab=ai',
+            },
+          });
+        } else if (errMsg.includes('NO_SYSTEM_PROMPT')) {
+          toast.error('请先配置系统提示词', {
+            action: {
+              label: '去设置',
+              onClick: () => window.location.href = '/settings?tab=bot',
+            },
+          });
+        } else {
+          toast.error(errMsg);
+        }
         // Always refresh server-side messages/count so UI stays consistent with what was persisted.
         await refreshConversationState(actualConvId);
         updateTabState(actualConvId, { isSending: false, streamingContent: '' });
@@ -617,7 +641,15 @@ export function SimulationPage() {
       } else {
         simulationLogger.error('发送消息失败', { error: err, conversationId: actualConvId });
         const errorMessage = String(err) || '发送失败';
-        if (errorMessage.includes('NO_SYSTEM_PROMPT') || errorMessage.includes('请先在 Bot 配置或系统设置中配置系统提示词')) {
+        if (errorMessage.includes('NO_LLM_PROVIDER') || errorMessage.includes('未配置 LLM Provider')) {
+          toast.error('未配置 LLM Provider', {
+            description: '请先在「设置 → AI 模型」中添加并启用 LLM 提供商',
+            action: {
+              label: '去设置',
+              onClick: () => window.location.href = '/settings?tab=ai',
+            },
+          });
+        } else if (errorMessage.includes('NO_SYSTEM_PROMPT') || errorMessage.includes('请先在 Bot 配置或系统设置中配置系统提示词')) {
           toast.error('请先配置系统提示词', {
             action: {
               label: '去设置',
@@ -733,6 +765,95 @@ export function SimulationPage() {
       toast.error('清除失败');
     }
   }, [activeConvId, tabStates, updateItems, setTotal, updateItemsLength]);
+
+  // Batch delete conversations
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedConvIds.size === 0) return;
+
+    const count = selectedConvIds.size;
+    const confirmed = window.confirm(`确定要删除选中的 ${count} 条模拟记录吗？此操作不可撤销。`);
+    if (!confirmed) return;
+
+    setIsBatchDeleting(true);
+
+    // Stop any auto-play to prevent state conflicts during batch operation
+    if (autoPlayTimerRef.current) {
+      clearTimeout(autoPlayTimerRef.current);
+      autoPlayTimerRef.current = null;
+    }
+
+    try {
+      const deletePromises = Array.from(selectedConvIds).map(async (convId) => {
+        const res = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error(`删除失败`);
+        return convId;
+      });
+
+      const results = await Promise.allSettled(deletePromises);
+      const successIds = results
+        .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+        .map(r => r.value);
+      const failCount = results.filter(r => r.status === 'rejected').length;
+
+      updateItems(prev => prev.filter(c => !successIds.includes(c.id)));
+      setTotal(n => Math.max(0, n - successIds.length));
+      updateItemsLength(-successIds.length);
+
+      // If active conversation was deleted, reset
+      if (activeConvId && selectedConvIds.has(activeConvId)) {
+        setActiveConvId(null);
+        setSelectedScenario(TEST_SCENARIOS[0]);
+        abortRef.current[activeConvId]?.abort();
+        delete abortRef.current[activeConvId];
+        const existingInterval = pollIntervalRef.current[activeConvId];
+        if (existingInterval) {
+          clearInterval(existingInterval);
+          delete pollIntervalRef.current[activeConvId];
+        }
+        setTabStates(prev => {
+          const next = { ...prev };
+          delete next[activeConvId];
+          return next;
+        });
+      }
+
+      setSelectedConvIds(new Set());
+      setSelectionMode(false);
+
+      if (failCount > 0) {
+        toast.warning(`已删除 ${successIds.length} 条，${failCount} 条失败`);
+      } else {
+        toast.success(`已删除 ${successIds.length} 条模拟记录`);
+      }
+    } catch (err) {
+      simulationLogger.error('批量删除失败', { error: err });
+      toast.error('批量删除失败');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  }, [selectedConvIds, activeConvId, updateItems, setTotal, updateItemsLength, autoPlayTimerRef]);
+
+  // Toggle selection of a single conversation
+  const toggleConvSelection = useCallback((convId: string) => {
+    setSelectedConvIds(prev => {
+      const next = new Set(prev);
+      if (next.has(convId)) {
+        next.delete(convId);
+      } else {
+        next.add(convId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle select all / deselect all
+  const toggleSelectAll = useCallback(() => {
+    if (selectedConvIds.size === conversations.length) {
+      setSelectedConvIds(new Set());
+    } else {
+      setSelectedConvIds(new Set(conversations.map(c => c.id)));
+    }
+  }, [selectedConvIds.size, conversations]);
 
   // Duplicate conversation
   const handleDuplicateConversation = useCallback(async (convId: string) => {
@@ -990,10 +1111,61 @@ export function SimulationPage() {
         <div className="w-[300px] border-r border-border flex flex-col shrink-0 bg-card">
           {/* History Header */}
           <div className="px-4 py-2.5 border-b border-border/50 mb-1">
-            <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-              <Clock className="w-3 h-3" />
-              模拟记录
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Clock className="w-3 h-3" />
+                模拟记录
+              </div>
+              {conversations.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {selectionMode ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectionMode(false);
+                          setSelectedConvIds(new Set());
+                        }}
+                        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        取消
+                      </button>
+                      <span className="text-[10px] text-primary font-medium">
+                        已选{selectedConvIds.size}条
+                      </span>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setSelectionMode(true)}
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      选择
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+            {selectionMode && (
+              <div className="mt-2 flex items-center justify-between bg-primary/5 px-2 py-1.5 rounded-md">
+                <button
+                  onClick={toggleSelectAll}
+                  className="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                >
+                  {selectedConvIds.size === conversations.length ? '取消全选' : '全选'}
+                </button>
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={isBatchDeleting || selectedConvIds.size === 0}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[10px] bg-error/10 text-error hover:bg-error/20 transition-colors disabled:opacity-50"
+                >
+                  {isBatchDeleting ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3 h-3" />
+                  )}
+                  批量删除
+                </button>
+              </div>
+            )}
           </div>
           {/* History List */}
           <div className="flex-1 overflow-y-auto">
@@ -1015,6 +1187,11 @@ export function SimulationPage() {
                   <div
                   key={conv.id}
                   onClick={() => {
+                    // In selection mode, toggle selection instead of switching conversation
+                    if (selectionMode) {
+                      toggleConvSelection(conv.id);
+                      return;
+                    }
                     setActiveConvId(conv.id);
                     setSelectedScenario(scenarios.find(s => s.id === conv.scenario_id) || null);
                     // Sync bot selection from conversation
@@ -1036,11 +1213,29 @@ export function SimulationPage() {
                     }
                   }}
                   className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all duration-150 cursor-pointer list-item-slide conv-item-enter ${
-                    activeConvId === conv.id
+                    activeConvId === conv.id && !selectionMode
                       ? 'bg-primary/10 text-primary'
                       : 'hover:bg-muted/50 text-foreground'
                   }`}
                 >
+                  {/* Checkbox - only visible in selection mode */}
+                  {selectionMode && (
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleConvSelection(conv.id);
+                      }}
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                        selectedConvIds.has(conv.id)
+                          ? 'bg-primary border-primary'
+                          : 'border-muted-foreground/40 hover:border-primary/50'
+                      }`}
+                    >
+                      {selectedConvIds.has(conv.id) && (
+                        <Check className="w-2.5 h-2.5 text-primary-foreground" />
+                      )}
+                    </div>
+                  )}
                   <span className="text-sm">
                     {scenarios.find(s => s.id === conv.scenario_id)?.icon || '📝'}
                   </span>
@@ -1063,27 +1258,29 @@ export function SimulationPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDuplicateConversation(conv.id);
-                      }}
-                      className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                      title="复制会话"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleClearConversation(conv.id);
-                      }}
-                      className="p-1 rounded hover:bg-error/10 text-muted-foreground hover:text-error transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {!selectionMode && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateConversation(conv.id);
+                        }}
+                        className="p-1 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                        title="复制会话"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleClearConversation(conv.id);
+                        }}
+                        className="p-1 rounded hover:bg-error/10 text-muted-foreground hover:text-error transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
                 {/* Load more trigger */}

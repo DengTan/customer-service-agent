@@ -258,53 +258,57 @@ export const POST = withErrorHandler(async (
           providerId?: string;
           providerBaseUrl?: string;
           providerApiKey?: string;
-          providerType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom';
           defaultModel?: string;
         } = {};
 
         const llmProviderId = appSettings.llm_provider_id;
-        if (llmProviderId && llmProviderId !== 'coze') {
-          try {
-            const { LlmProviderService } = await import('@/server/services/llm-provider-service');
-            const llmService = new LlmProviderService();
+        try {
+          const { LlmProviderService } = await import('@/server/services/llm-provider-service');
+          const llmService = new LlmProviderService();
 
-            // First try UUID lookup, then fall back to name lookup
-            let provider = await llmService.getProvider(llmProviderId);
-            if (!provider) {
-              provider = await llmService.getProviderByName(llmProviderId);
-            }
-            if (!provider) {
-              provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
-            }
-
-            if (provider && provider.is_enabled) {
-              // Get decrypted API key for actual API calls
-              const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
-              llmProviderConfig = {
-                providerId: provider.id,
-                providerBaseUrl: provider.base_url,
-                providerApiKey: providerWithKey?.api_key || provider.api_key || '',
-                providerType: provider.api_type as 'openai_compatible' | 'anthropic' | 'custom',
-                defaultModel: provider.default_model || undefined,
-              };
-              logger.api.info('Using extended LLM provider', {
-                providerId: provider.id,
-                name: provider.name,
-                baseUrl: provider.base_url,
-                apiKeyLength: llmProviderConfig.providerApiKey?.length || 0,
-              });
-            } else {
-              logger.api.warn('Provider not enabled or not found', { providerId: llmProviderId });
-            }
-          } catch (error) {
-            logger.api.warn('Failed to load LLM provider config for simulation', {
-              error,
-              providerId: llmProviderId,
-              conversationId,
-            });
+          let provider: Awaited<ReturnType<typeof llmService.getProvider>> = null;
+          if (llmProviderId) {
+            provider = await llmService.getProvider(llmProviderId);
+            if (!provider) provider = await llmService.getProviderByName(llmProviderId);
+            if (!provider) provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
           }
-        } else {
-          logger.api.info('Using default Coze provider', { llmProviderId: llmProviderId || '(not set)' });
+          if (!provider) {
+            provider = await llmService.getDefaultProvider();
+          }
+
+          if (provider && provider.is_enabled) {
+            const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
+            llmProviderConfig = {
+              providerId: provider.id,
+              providerBaseUrl: provider.base_url,
+              providerApiKey: providerWithKey?.api_key || provider.api_key || '',
+              defaultModel: provider.default_model || undefined,
+            };
+            logger.api.info('Using LLM provider', {
+              providerId: provider.id,
+              name: provider.name,
+              baseUrl: provider.base_url,
+              apiKeyLength: llmProviderConfig.providerApiKey?.length || 0,
+            });
+          } else {
+            logger.api.warn('No enabled LLM provider found', { providerId: llmProviderId });
+          }
+        } catch (error) {
+          logger.api.warn('Failed to load LLM provider config for simulation', {
+            error,
+            providerId: llmProviderId,
+            conversationId,
+          });
+        }
+
+        // P0: Hard guard — fail fast before entering the stream if no provider is configured.
+        // This avoids a cryptic "LLM Provider 未配置" error bubbling up from deep inside
+        // LLMStreamingService and surfacing as a generic "处理消息时发生错误" toast.
+        if (!llmProviderConfig.providerBaseUrl || !llmProviderConfig.providerApiKey) {
+          return apiError('未配置 LLM Provider：请在「设置 → AI 模型」中配置并启用 LLM 提供商', {
+            status: HttpStatus.BAD_REQUEST,
+            code: 'NO_LLM_PROVIDER',
+          });
         }
 
         // Get the LLM stream
@@ -349,7 +353,6 @@ export const POST = withErrorHandler(async (
             llmProviderId: llmProviderConfig.providerId,
             llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
             llmProviderApiKey: llmProviderConfig.providerApiKey,
-            llmProviderType: llmProviderConfig.providerType,
             llmProviderDefaultModel: llmProviderConfig.defaultModel,
           }
         );
@@ -384,14 +387,21 @@ export const POST = withErrorHandler(async (
           }
         }
 
-        // If stream timed out, send partial response (strip internal markers as safety net)
+        // P0: Strip internal markers from fullContent before persisting.
+        // LLM outputs [CONF:x.x], [TOOL_CALL]..., [DELEGATE_TO]... as self-eval/delegation
+        // markers. They must not appear in stored messages or in the done event.
+        // The stream chunks themselves were already stripped by stripInternalMarkers()
+        // inside LLMStreamingService before emission, so the user never saw them in
+        // real-time, but fullContent (raw accumulator) still contains them.
         const TOOL_CALL_SIM_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
         const CONF_SIM_PATTERN = /\[CONF:[0-9]*\.?[0-9]+\]/g;
         const DELEGATE_SIM_PATTERN = /\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g;
         const stripSimMarkers = (t: string) => t.replace(TOOL_CALL_SIM_PATTERN, '').replace(CONF_SIM_PATTERN, '').replace(DELEGATE_SIM_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim();
-        const cleanContent = stripSimMarkers(fullContent);
 
-        if (streamTimedOut && cleanContent) {
+        if (streamTimedOut) {
+          // Strip internal markers from partial content before persisting
+          const cleanContent = stripSimMarkers(fullContent);
+
           // P2: On timeout, knowledge citations must be cleared.
           // The LLM did not finish the response — claim verification cannot run, and
           // we must not publish unverified KB sources for an incomplete answer.
@@ -401,7 +411,7 @@ export const POST = withErrorHandler(async (
             id: crypto.randomUUID(),
             conversation_id: conversationId,
             role: 'assistant',
-            content: cleanContent + '\n\n[响应超时，请刷新页面重试]',
+            content: (cleanContent || fullContent) + '\n\n[响应超时，请刷新页面重试]',
             sources: timedOutSources.length > 0 ? timedOutSources : undefined,
             confidence: 0.5,
             confidence_breakdown: { knowledge_score: 0, tool_score: 0, llm_self_score: 0.5, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 0.5 },
@@ -448,15 +458,34 @@ export const POST = withErrorHandler(async (
         const verifiedSources: Array<{ type: string }> = (lc?.sources as Array<{ type: string }> | undefined) ?? [];
         const verifiedHasKnowledge = verifiedSources.some(c => c.type === 'knowledge');
 
-        // Detect handoff intent via semantic pattern matching
-        const handoffIntentDetected = detectHandoffIntent(fullContent);
+        // Detect handoff intent via semantic pattern matching (run on clean content to avoid false positives from internal markers)
+        const cleanFullContent = stripSimMarkers(fullContent);
+        const handoffIntentDetected = detectHandoffIntent(cleanFullContent);
 
-        // Save assistant message
+        // P1: Guard against empty content after stripping markers.
+        // If LLM only output internal markers (e.g. [TOOL_CALL]...[/TOOL_CALL][CONF:0.8])
+        // with no actual response text, cleanFullContent will be empty.
+        // In this case, generate a summary from tool sources or delegate sources.
+        let finalContent = cleanFullContent;
+        if (!finalContent) {
+          const hasToolSources = (verifiedSources ?? []).some(s => s.type === 'tool');
+          const hasDelegationSources = (verifiedSources ?? []).some(s => s.type === 'sub_agent_delegation');
+          if (hasToolSources) {
+            finalContent = '已执行工具查询，请查看结果。';
+          } else if (hasDelegationSources) {
+            finalContent = '正在进行子Agent处理...';
+          } else {
+            // No actual content and no tools — this is an edge case
+            finalContent = '[AI 处理中...]';
+          }
+        }
+
+        // Save assistant message — strip all internal markers before persisting
         const assistantMsg = await simulationRepository.createMessage({
           id: crypto.randomUUID(),
           conversation_id: conversationId,
           role: 'assistant',
-          content: fullContent,
+          content: finalContent,
           sources: verifiedSources ?? undefined,
           confidence: verifiedConfidence,
           confidence_breakdown: verifiedConfidenceBreakdown ?? null,

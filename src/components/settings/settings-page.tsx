@@ -145,11 +145,13 @@ export function SettingsPage() {
     baseUrl: string;
     apiKeyMasked: string;
     datasetId: string;
+    searchMode: 'embedding' | 'hybrid' | 'fullText';
+    useRerank: boolean;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionType>('auto-reply');
+  const [activeSection, setActiveSection] = useState<SectionType>('profile');
   /**
    * Per-section validity reporters. Each child mounts and reports its
    * current validity via `onValidationChange`; we remember the most

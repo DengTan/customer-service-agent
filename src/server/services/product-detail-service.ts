@@ -131,7 +131,7 @@ export class ProductDetailService {
    * - Validates required fields
    * - Checks SKU uniqueness
    * - Checks content hash deduplication
-   * - Vectorizes via Coze SDK and stores doc_ids
+   * - Vectorizes via LLM SDK and stores doc_ids
    * - Inserts into product_details table
    */
   async createProduct(input: {

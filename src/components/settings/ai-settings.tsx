@@ -29,7 +29,6 @@ interface LlmProvider {
   name: string;
   display_name: string;
   description?: string | null;
-  api_type: string;
   base_url: string;
   models: string[];
   default_model?: string | null;

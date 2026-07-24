@@ -81,7 +81,6 @@ export interface LLMStreamOptions {
   llmProviderId?: string; // LLM Provider ID（优先使用）
   llmProviderBaseUrl?: string; // Provider API Base URL
   llmProviderApiKey?: string; // Provider API Key
-  llmProviderType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom'; // Provider 类型
   llmProviderDefaultModel?: string; // Provider 默认模型（用于扩展 Provider 时覆盖 aiModel）
   /** Optional provenance trace from the orchestrator (logged for observability). */
   retrievalTrace?: {
@@ -298,8 +297,8 @@ export class LLMStreamingService {
           );
 
           // Select model based on settings and whether image is present
-          const defaultAiModel = 'doubao-seed-2-0-lite-260215';
-          const defaultMultimodalModel = 'doubao-seed-2-0-pro-260215';
+          const defaultAiModel = '';
+          const defaultMultimodalModel = '';
           const multimodalEnabled = options.multimodalEnabled !== false; // default true
           let llmModel: string;
 
@@ -365,8 +364,8 @@ export class LLMStreamingService {
           const llmMaxTokens = options.maxTokens;
           const customHeaders = options.customHeaders || {};
 
-          // Check if using extended LLM provider (non-Coze)
-          const useExtendedProvider = options.llmProviderType && options.llmProviderType !== 'coze' && options.llmProviderBaseUrl && options.llmProviderApiKey;
+          // Check if using extended LLM provider
+          const useExtendedProvider = options.llmProviderBaseUrl && options.llmProviderApiKey;
 
           let llmStreamIterator: AsyncGenerator<{ content?: string }>;
 
@@ -388,22 +387,7 @@ export class LLMStreamingService {
 
             llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
           } else {
-            // Use LLMClientAdapter (OpenAI-compatible API)
-            const adapter = new LLMClientAdapter({
-              baseUrl: process.env.COZE_BASE_URL || 'https://api.coze.cn',
-              apiKey: process.env.COZE_API_KEY || '',
-              customHeaders,
-            });
-
-            const streamOptions = {
-              model: llmModel,
-              temperature: llmTemperature,
-            };
-            if (llmMaxTokens) {
-              (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
-            }
-
-            llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
+            throw new Error('LLM Provider 未配置：请在设置 → AI 模型 中配置 LLM 提供商');
           }
 
           for await (const chunk of llmStreamIterator) {
@@ -466,21 +450,7 @@ export class LLMStreamingService {
 
               continueStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
             } else {
-              const adapter = new LLMClientAdapter({
-                baseUrl: process.env.COZE_BASE_URL || 'https://api.coze.cn',
-                apiKey: process.env.COZE_API_KEY || '',
-                customHeaders: options.customHeaders || {},
-              });
-
-              const streamOptions = {
-                model: llmModel,
-                temperature: llmTemperature,
-              };
-              if (llmMaxTokens) {
-                (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
-              }
-
-              continueStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
+              throw new Error('LLM Provider 未配置：请在设置 → AI 模型 中配置 LLM 提供商');
             }
 
             for await (const contChunk of continueStreamIterator) {
@@ -580,6 +550,8 @@ export class LLMStreamingService {
           const subAgentDelegationConfidence = hasSubAgentDelegation
             ? delegationResults.reduce((sum, r) => sum + r.confidence, 0) / delegationResults.length
             : 0;
+          const hasProductContext = !!(options.productContext && typeof options.productContext === 'string' && options.productContext.trim());
+          const hasSizeChartContext = !!(options.sizeChartContext && typeof options.sizeChartContext === 'string' && options.sizeChartContext.trim());
 
           // Use shared confidence calculation with content-based extraction
           const confidenceBreakdown = buildConfidenceFromContent(fullContent, {
@@ -590,6 +562,8 @@ export class LLMStreamingService {
             llmSelfConfidence: 0, // Extracted from content by buildConfidenceFromContent
             hasSubAgentDelegation,
             subAgentDelegationConfidence,
+            hasProductContext,
+            hasSizeChartContext,
           });
 
           // Strip self-eval tags from content after extraction
@@ -768,11 +742,18 @@ if (claimVerificationResult !== null) {
         return;
       }
 
+      // P1: Guard against empty content after marker stripping.
+      // If the entire LLM response was just internal markers (e.g. only [TOOL_CALL]...[CONF:0.8]),
+      // fullContent will be empty after stripInternalMarkers(). Generate a placeholder instead.
+      const finalContent = fullContent || (toolCallsData.length > 0
+        ? '已执行工具查询，请查看结果。'
+        : '[AI 处理中...]');
+
       const knowledgeImages = extractedImages && extractedImages.length > 0 ? extractedImages : undefined;
       await this.conversationService.insertMessage({
         conversation_id: conversationId,
         role: 'assistant' as const,
-        content: fullContent,
+        content: finalContent,
         confidence: overallConfidence,
         sources: sources.length > 0 ? sources : null,
         tool_calls: toolCallsData.length > 0 ? toolCallsData : null,

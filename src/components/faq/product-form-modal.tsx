@@ -528,7 +528,7 @@ export function ProductFormModal({ open, product, onClose, onSaved }: ProductFor
                     setNewImageUrl(url);
                     // Only auto-add when URL appears to be from a completed upload
                     // (contains a recognized storage domain), not from manual typing
-                    if (url.trim() && /https?:\/\/[^/]+\.(coze\.cn|aliyuncs\.com|amazonaws\.com|bcebos\.com|七牛|qiniu|oss)/i.test(url)) {
+                    if (url.trim() && /https?:\/\/[^/]+\.(aliyuncs\.com|amazonaws\.com|bcebos\.com|七牛|qiniu|oss)/i.test(url)) {
                       setForm(f => ({ ...f, image_urls: [...f.image_urls, url.trim()] }));
                       setNewImageUrl('');
                     }

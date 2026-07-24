@@ -40,7 +40,7 @@ function makeEvidence(overrides: Partial<EvidenceTrace> = {}): EvidenceBundle {
     minScore: 0.75,
     executionTimeMs: 180,
     degradationReasons: [],
-    modelVersion: 'doubao-seed-2-0-lite-260215',
+    modelVersion: 'gpt-4o-mini',
     ...overrides,
   };
   return {
@@ -112,7 +112,7 @@ describe('RetrievalTraceService', () => {
       expect(row.accepted_count).toBe(5);
       expect(row.citation_count).toBe(3);
       expect(row.min_score).toBe(0.75);
-      expect(row.model_version).toBe('doubao-seed-2-0-lite-260215');
+      expect(row.model_version).toBe('gpt-4o-mini');
       expect(row.execution_time_ms).toBe(123);
       expect(row.bot_id).toBe('bot-1');
       expect(row.synthetic_v1_backfill).toBe(false);
@@ -255,7 +255,7 @@ describe('RetrievalTraceService', () => {
         accepted_count: 5,
         citation_count: 3,
         min_score: 0.75,
-        model_version: 'doubao',
+        model_version: 'gpt-4o',
         execution_time_ms: 100,
         degradation_reasons: [],
         synthetic_v1_backfill: false,

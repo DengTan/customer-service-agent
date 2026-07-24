@@ -4,6 +4,7 @@
  */
 
 import { getLogger } from '@/lib/logger';
+import { normalizeLlmBaseUrl } from '@/lib/url-utils';
 
 const logger = getLogger('LLMClient');
 
@@ -74,7 +75,8 @@ export class LLMClientAdapter {
   private timeout: number;
 
   constructor(options: LLMClientAdapterOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, '');
+    // Normalize base URL using shared utility
+    this.baseUrl = normalizeLlmBaseUrl(options.baseUrl);
     this.apiKey = options.apiKey;
     this.customHeaders = options.customHeaders || {};
     this.timeout = options.timeout || 60000;
@@ -87,8 +89,9 @@ export class LLMClientAdapter {
     messages: LLMMessage[],
     options: LLMChatOptions
   ): AsyncGenerator<LLMStreamChunk> {
-    const url = `${this.baseUrl}/v1/chat/completions`;
-    console.log('[LLMClient] stream() called with url:', url, 'model:', options.model);
+    // this.baseUrl already contains the full endpoint
+    const url = this.baseUrl;
+    logger.debug('[LLMClient] stream() called with url:', url, 'model:', options.model);
     console.log('[LLMClient] messages count:', messages.length);
     console.log('[LLMClient] messages[0]:', JSON.stringify(messages[0]).substring(0, 200));
     
@@ -199,7 +202,8 @@ export class LLMClientAdapter {
    * Non-streaming chat completion
    */
   async chat(messages: LLMMessage[], options: LLMChatOptions): Promise<LLMStreamChunk> {
-    const url = `${this.baseUrl}/v1/chat/completions`;
+    // this.baseUrl already contains the full endpoint
+    const url = this.baseUrl;
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

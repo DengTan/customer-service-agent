@@ -69,7 +69,6 @@ export async function PUT(
       name: body.name,
       display_name: body.display_name,
       description: body.description,
-      api_type: body.api_type,
       base_url: body.base_url,
       api_key: body.api_key,
       models: body.models,

@@ -110,13 +110,13 @@ export const CHANNEL_MAP: Record<string, { label: string; icon: string }> = {
 };
 
 export const AI_MODELS = [
-  { value: 'doubao-seed-2-0-lite-260215', label: 'Doubao Seed 2.0 Lite', desc: '轻量快速，适合日常对话' },
-  { value: 'doubao-seed-1-6-250615', label: 'Doubao Seed 1.6', desc: '均衡性能，适合复杂问答' },
-  { value: 'deepseek-v3-250324', label: 'DeepSeek V3', desc: '深度推理，适合专业场景' },
+  { value: 'gpt-4o', label: 'GPT-4o', desc: '高性能，适合复杂对话' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini', desc: '轻量快速，适合日常对话' },
+  { value: 'deepseek-chat', label: 'DeepSeek Chat', desc: '高性价比，适合专业场景' },
 ];
 
 export const MULTIMODAL_MODELS = [
-  { value: 'doubao-seed-2-0-pro-260215', label: 'Doubao Seed 2.0 Pro', desc: '多模态旗舰，支持图片理解' },
+  { value: 'gpt-4o', label: 'GPT-4o', desc: '高性能，支持图片理解' },
 ];
 
 export const THEME_OPTIONS = [

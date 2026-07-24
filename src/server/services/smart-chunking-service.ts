@@ -208,15 +208,9 @@ async function chunkTextByLLM(text: string, targetChunkSize: number): Promise<Ch
   const release = await acquireSemaphore();
   const startTime = Date.now();
 
-  // Use fallback defaults as baseline; provider-specific branches override these.
-  // Declared here (before the outer try) so the outer catch block can also reference them.
-  let baseUrl: string = process.env.COZE_BASE_URL || 'https://api.coze.cn';
-  let apiKey: string = process.env.COZE_API_KEY || '';
-  let model: string = 'doubao-seed-2-0-lite-260215';
-  let providerSource = 'error-fallback:coze';
-
   try {
     const settingsRepo = getSettingsRepository();
+    const llmProviderService = new LlmProviderService();
 
     // Get LLM configuration from settings
     const [aiModel, llmProviderId] = await Promise.all([
@@ -224,59 +218,37 @@ async function chunkTextByLLM(text: string, targetChunkSize: number): Promise<Ch
       settingsRepo.get('llm_provider_id'),
     ]);
 
-    // Initialize model with aiModel now that we have it from settings
-    model = aiModel || 'doubao-seed-2-0-lite-260215';
+    // Resolve LLM provider: explicit ID > default provider
+    let baseUrl = '';
+    let apiKey = '';
+    let model = '';
+    let providerSource = '';
 
-    try {
-      if (llmProviderId && llmProviderId !== 'coze') {
-        // 显式指定的非 Coze 提供商
-        const llmProviderService = new LlmProviderService();
-        const provider = await llmProviderService.getProviderWithDecryptedKey(llmProviderId);
-        if (!provider) {
-          throw new Error(`Provider ${llmProviderId} not found`);
-        }
-        baseUrl = provider.base_url;
-        apiKey = provider.api_key || '';
-        model = provider.default_model || aiModel || 'gpt-4o';
-        providerSource = `provider:${llmProviderId}`;
-      } else {
-        // 未指定提供商，尝试获取默认提供商
-        const llmProviderService = new LlmProviderService();
-        const defaultProvider = await llmProviderService.getDefaultProvider();
-        if (defaultProvider && defaultProvider.is_enabled) {
-          // 需要解密 API key 才能调用
-          const providerWithKey = await llmProviderService.getProviderWithDecryptedKey(defaultProvider.id);
-          if (providerWithKey?.api_key) {
-            baseUrl = providerWithKey.base_url;
-            apiKey = providerWithKey.api_key;
-            model = providerWithKey.default_model || aiModel || 'gpt-4o';
-            providerSource = `default:${defaultProvider.name}`;
-          } else if (llmProviderId === 'coze' || !llmProviderId) {
-            baseUrl = process.env.COZE_BASE_URL || 'https://api.coze.cn';
-            apiKey = process.env.COZE_API_KEY || '';
-            model = aiModel || 'doubao-seed-2-0-lite-260215';
-            providerSource = llmProviderId === 'coze' ? 'explicit:coze' : 'fallback:coze';
-          } else {
-            throw new Error('Default provider has no API key');
-          }
-        } else if (!defaultProvider || !defaultProvider.is_enabled) {
-          // 无可用默认提供商，使用 Coze
-          if (llmProviderId === 'coze' || !llmProviderId) {
-            baseUrl = process.env.COZE_BASE_URL || 'https://api.coze.cn';
-            apiKey = process.env.COZE_API_KEY || '';
-            model = aiModel || 'doubao-seed-2-0-lite-260215';
-            providerSource = llmProviderId === 'coze' ? 'explicit:coze' : 'fallback:coze';
-          } else {
-            throw new Error('No available LLM provider');
-          }
-        }
+    if (llmProviderId) {
+      const provider = await llmProviderService.getProviderWithDecryptedKey(llmProviderId);
+      if (!provider) {
+        throw new Error(`LLM 提供商 "${llmProviderId}" 未找到，请检查设置中的 LLM 提供商配置。`);
       }
-    } catch (providerError) {
-      logger.warn('[SmartChunk] Failed to get LLM provider, falling back to Coze', {
-        error: providerError instanceof Error ? providerError.message : String(providerError),
-        llmProviderId,
-      });
-      // Variables already hold fallback values from their pre-try initialization above
+      if (!provider.api_key) {
+        throw new Error(`LLM 提供商 "${provider.display_name}" 缺少 API Key，无法使用 LLM 智能切分。请在 设置 → AI 模型 中补全 API Key。`);
+      }
+      baseUrl = provider.base_url;
+      apiKey = provider.api_key;
+      model = provider.default_model || aiModel || '';
+      providerSource = `provider:${provider.name}`;
+    } else {
+      const defaultProvider = await llmProviderService.getDefaultProvider();
+      if (!defaultProvider || !defaultProvider.is_enabled) {
+        throw new Error('LLM 提供商未配置，无法使用 LLM 智能切分。请在 设置 → AI 模型 中配置 LLM 提供商，或在设置中关闭 knowledge_smart_chunking_enabled。');
+      }
+      const providerWithKey = await llmProviderService.getProviderWithDecryptedKey(defaultProvider.id);
+      if (!providerWithKey?.api_key) {
+        throw new Error(`LLM 提供商 "${defaultProvider.display_name}" 缺少 API Key，无法使用 LLM 智能切分。请在 设置 → AI 模型 中补全 API Key。`);
+      }
+      baseUrl = providerWithKey.base_url;
+      apiKey = providerWithKey.api_key;
+      model = providerWithKey.default_model || aiModel || '';
+      providerSource = `default:${defaultProvider.name}`;
     }
 
     logger.debug('[SmartChunk] Using LLM provider', { providerSource, model, baseUrl });
@@ -362,7 +334,6 @@ async function chunkTextByLLM(text: string, targetChunkSize: number): Promise<Ch
     logger.error('[SmartChunk] LLM chunking error', {
       error: error instanceof Error ? error.message : String(error),
       elapsedMs: elapsed,
-      providerSource,
     });
     throw error; // 重新抛出，让上层处理回退
   } finally {

@@ -37,7 +37,7 @@ export const sizeCharts = pgTable(
     description: text("description"),
     // image_url: 尺码表图片URL（可选，尺码示意图）
     image_url: varchar("image_url", { length: 500 }),
-    // doc_ids: Coze SDK 向量文档ID（已废弃，Ollama 不再使用此字段）
+    // doc_ids: SDK 向量文档ID（已废弃，Ollama 不再使用此字段）
     doc_ids: jsonb("doc_ids").default(sql`'[]'`),
     // embedding: Ollama 向量，存储为 JSON 数组字符串
     embedding: text("embedding"),
@@ -310,7 +310,7 @@ export const knowledgeItems = pgTable(
     type: varchar("type", { length: 20 }).notNull().default("text"), // text, url, file, image
     content: text("content"), // 文本内容或URL
     content_hash: varchar("content_hash", { length: 64 }), // SHA-256 hash for dedup
-    doc_ids: jsonb("doc_ids"), // Coze SDK 向量文档ID（已废弃，Ollama 不再使用）
+    doc_ids: jsonb("doc_ids"), // SDK 向量文档ID（已废弃，Ollama 不再使用）
     embedding: text("embedding"), // Ollama 向量，存储为 JSON 数组字符串
     category: varchar("category", { length: 100 }).default("未分类"),
     parent_category: varchar("parent_category", { length: 100 }), // 层级分类：父分类
@@ -926,7 +926,7 @@ export const productDetails = pgTable(
     // image_urls: 商品图片URL数组，最多10张
     image_urls: jsonb("image_urls").default(sql`'[]'`),
     status: varchar("status", { length: 20 }).notNull().default("on_sale"), // on_sale, off_sale, discontinued
-    // doc_ids: Coze SDK 向量化后返回的文档ID列表（已废弃）
+    // doc_ids: SDK 向量化后返回的文档ID列表（已废弃）
     doc_ids: jsonb("doc_ids").default(sql`'[]'`),
     // embedding: Ollama 向量，存储为 JSON 数组字符串
     embedding: text("embedding"),
@@ -1330,7 +1330,6 @@ export const llmProviders = pgTable(
     display_name: varchar("display_name", { length: 100 }).notNull(), // 显示名称
     description: text("description"), // 描述
     // API 配置
-    api_type: varchar("api_type", { length: 50 }).notNull().default("openai_compatible"), // openai_compatible / coze / anthropic / custom
     base_url: varchar("base_url", { length: 500 }).notNull(), // API 基础 URL
     api_key: varchar("api_key", { length: 500 }), // API Key（加密存储）
     // 模型配置

@@ -153,7 +153,7 @@ export class SizeChartService {
    * Create a new size chart.
    * - Validates required fields
    * - Checks content hash deduplication
-   * - Vectorizes via Coze SDK and stores doc_ids
+   * - Vectorizes via LLM SDK and stores doc_ids
    * - Inserts into size_charts table
    */
   async createSizeChart(input: {

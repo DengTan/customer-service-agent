@@ -33,7 +33,7 @@ let _secretWarnings: string[] = [];
  * Check if running in production mode
  */
 function isProduction(): boolean {
-  return process.env.NODE_ENV === 'production' || process.env.COZE_PROJECT_ENV === 'PROD';
+  return process.env.NODE_ENV === 'production' || process.env.PROJECT_ENV === 'PROD';
 }
 
 /**

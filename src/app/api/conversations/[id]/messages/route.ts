@@ -15,6 +15,7 @@ import { ConversationRepository } from '@/server/repositories/conversation-repos
 import { BotConfigRepository } from '@/server/repositories/bot-config-repository';
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { HTTP } from '@/lib/constants';
+import { ConfidenceBreakdown } from '@/lib/confidence-calculator';
 import { z } from 'zod';
 
 const FORWARD_HEADER_KEYS = new Set([
@@ -158,40 +159,36 @@ export const POST = withErrorHandler(async (
     providerId?: string;
     providerBaseUrl?: string;
     providerApiKey?: string;
-    providerType?: 'coze' | 'openai_compatible' | 'anthropic' | 'custom';
     defaultModel?: string;
   } = {};
-  
+
   // Try to load from LLM providers table
   const llmProviderId = appSettings.llm_provider_id;
-  if (llmProviderId && llmProviderId !== 'coze') {
-    try {
-      const { LlmProviderService } = await import('@/server/services/llm-provider-service');
-      const llmService = new LlmProviderService();
+  try {
+    const { LlmProviderService } = await import('@/server/services/llm-provider-service');
+    const llmService = new LlmProviderService();
 
-      // First try UUID lookup, then fall back to name lookup
-      let provider = await llmService.getProvider(llmProviderId);
-      if (!provider) {
-        provider = await llmService.getProviderByName(llmProviderId);
-      }
-      if (!provider) {
-        provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
-      }
-
-      if (provider && provider.is_enabled) {
-        // Get decrypted API key for actual API calls
-        const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
-        llmProviderConfig = {
-          providerId: provider.id,
-          providerBaseUrl: provider.base_url,
-          providerApiKey: providerWithKey?.api_key || provider.api_key || '',
-          providerType: provider.api_type as 'openai_compatible' | 'anthropic' | 'custom',
-          defaultModel: provider.default_model || undefined,
-        };
-      }
-    } catch (error) {
-      logger.api.warn('Failed to load LLM provider config, falling back to default', { error, providerId: llmProviderId });
+    let provider: Awaited<ReturnType<typeof llmService.getProvider>> = null;
+    if (llmProviderId) {
+      provider = await llmService.getProvider(llmProviderId);
+      if (!provider) provider = await llmService.getProviderByName(llmProviderId);
+      if (!provider) provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
     }
+    if (!provider) {
+      provider = await llmService.getDefaultProvider();
+    }
+
+    if (provider && provider.is_enabled) {
+      const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
+      llmProviderConfig = {
+        providerId: provider.id,
+        providerBaseUrl: provider.base_url,
+        providerApiKey: providerWithKey?.api_key || provider.api_key || '',
+        defaultModel: provider.default_model || undefined,
+      };
+    }
+  } catch (error) {
+    logger.api.warn('Failed to load LLM provider config, falling back to default', { error, providerId: llmProviderId });
   }
 
   // 1.6 Check session timeout from settings (max_turns check moved below — uses
@@ -383,12 +380,22 @@ export const POST = withErrorHandler(async (
         };
 
         // Save the sub-agent's response as an assistant message
+        const subAgentBreakdown: ConfidenceBreakdown = {
+          knowledge_score: 0,
+          tool_score: 0,
+          llm_self_score: 0,
+          sub_agent_score: result.confidence,
+          handoff_intent: false,
+          no_support: false,
+          final: result.confidence,
+        };
         await conversationService.insertMessage({
           conversation_id: conversationId,
           role: 'assistant',
           content: `**${result.childBot.name}** 处理结果：\n\n${result.responseContent}`,
           confidence: result.confidence,
           sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name, triggerIntent: intentResult.intent, delegationId: result.delegation.id }],
+          confidence_breakdown: subAgentBreakdown,
         });
 
         // Update message count for the assistant message
@@ -407,7 +414,7 @@ export const POST = withErrorHandler(async (
               },
             })}\n\n`));
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: result.responseContent })}\n\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, confidence: result.confidence, sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name }] })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, confidence: result.confidence, confidence_breakdown: subAgentBreakdown, sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name }] })}\n\n`));
             controller.close();
           },
         });
@@ -471,7 +478,6 @@ export const POST = withErrorHandler(async (
       llmProviderId: llmProviderConfig.providerId,
       llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
       llmProviderApiKey: llmProviderConfig.providerApiKey,
-      llmProviderType: llmProviderConfig.providerType,
       llmProviderDefaultModel: llmProviderConfig.defaultModel,
     });
   } catch (streamInitError) {

@@ -19,8 +19,8 @@ const envSchema = z.object({
   // ─── Node Environment ──────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  // ─── Coze Project Env ──────────────────────
-  COZE_PROJECT_ENV: z.enum(['DEV', 'PROD']).optional(),
+  // ─── Project Env ────────────────────────────
+  PROJECT_ENV: z.enum(['DEV', 'PROD']).optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

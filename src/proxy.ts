@@ -153,7 +153,7 @@ async function verifyTokenSignature(token: string): Promise<boolean> {
 
 /**
  * Check if running in a managed environment (preview/deploy).
- * 
+ *
  * Detection: If we're not on localhost, we're likely in a managed environment
  * where env vars are injected at runtime, not build time.
  */
@@ -163,14 +163,6 @@ function isManagedEnvironment(request: NextRequest): boolean {
   return !hostname.includes('localhost') && !hostname.includes('127.0.0.1');
 }
 
-/**
- * Check if running in preview environment specifically
- */
-function isPreviewEnvironment(request: NextRequest): boolean {
-  const hostname = request.headers.get('host') || '';
-  return hostname.includes('.dev.coze.site');
-}
-
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -178,9 +170,8 @@ export default async function middleware(request: NextRequest) {
   const cookieHeader = request.headers.get('cookie');
   const rawToken = extractAuthCookie(cookieHeader);
 
-  // Detect if we're in a managed/preview environment
+  // Detect if we're in a managed environment
   const isManaged = isManagedEnvironment(request);
-  const isPreview = isPreviewEnvironment(request);
 
   // Check if accessing a protected route
   const isProtectedRoute = PROTECTED_ROUTES.some(route =>
@@ -205,26 +196,8 @@ export default async function middleware(request: NextRequest) {
   let isAuthenticated = false;
   let userRole: string | null = null;
 
-  if (isPreview) {
-    // In preview environment, be more lenient:
-    // Just check if the token is well-formed and not clearly expired
-    // Skip signature verification since Edge Runtime may not have the secret
-    try {
-      const { role, expired } = decodePayloadWithoutVerification(rawToken);
-      if (!expired && role) {
-        isAuthenticated = true;
-        userRole = role;
-      } else if (!expired) {
-        // Even without role, if token is valid, allow through
-        // The API layer will do full verification
-        isAuthenticated = true;
-      }
-    } catch {
-      // Token decode failed - be lenient in preview
-      isAuthenticated = true;
-    }
-  } else if (isManaged) {
-    // In other managed environments (non-preview), still decode without signature
+  if (isManaged) {
+    // In managed environments, decode without signature verification
     const { role, expired } = decodePayloadWithoutVerification(rawToken);
     if (!expired) {
       isAuthenticated = true;

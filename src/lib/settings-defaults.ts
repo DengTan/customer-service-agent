@@ -90,10 +90,10 @@ export const FACTORY_DEFAULTS: Record<string, string> = {
 
   // —— AI 模型 ——
   ai_model_enabled: 'true',
-  ai_model: 'doubao-seed-2-0-lite-260215',
-  llm_provider_id: 'coze',
+  ai_model: '',
+  llm_provider_id: '',
   multimodal_enabled: 'true',
-  multimodal_model: 'doubao-seed-2-0-pro-260215',
+  multimodal_model: '',
   multimodal_disabled_action: 'fixed_message',
   multimodal_fixed_message: '抱歉，当前未开启图片识别功能，无法识别您发送的图片。如需帮助，请转接人工客服或以文字描述您的问题。',
   ai_temperature: '0.7',

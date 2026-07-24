@@ -83,7 +83,7 @@ function redact(text: string): string {
 function isProduction(): boolean {
   return (
     process.env.NODE_ENV === 'production' ||
-    process.env.COZE_PROJECT_ENV === 'PROD'
+    process.env.PROJECT_ENV === 'PROD'
   );
 }
 

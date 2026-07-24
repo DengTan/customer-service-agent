@@ -5,23 +5,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
-import { verifyToken, decodeTokenUnsafe, extractTokenFromCookies } from '@/lib/auth/jwt';
+import { verifyToken, extractTokenFromCookies } from '@/lib/auth/jwt';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 const userRepo = new UserRepository();
 
-/** Check if running in preview environment */
-function isPreviewEnvironment(request: NextRequest): boolean {
-  const hostname = request.headers.get('host') || '';
-  return hostname.includes('.dev.coze.site');
-}
-
 export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   // Extract token from cookie
   const cookieHeader = request.headers.get('cookie');
   const token = extractTokenFromCookies(cookieHeader);
-  const isPreview = isPreviewEnvironment(request);
 
   if (!token) {
     return apiError('未登录，请先登录', {
@@ -30,21 +23,7 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
-  // Try to verify token with full signature check first
-  let payload = verifyToken(token);
-
-  // In preview environment, if signature verification fails, try decode without verification
-  // This handles cases where the JWT secret might differ between serverless invocations
-  if (!payload && isPreview) {
-    const decoded = decodeTokenUnsafe(token);
-    if (decoded && decoded.sub && decoded.email) {
-      // Check if token is not expired (basic check)
-      const now = Math.floor(Date.now() / 1000);
-      if (!decoded.exp || decoded.exp > now) {
-        payload = decoded;
-      }
-    }
-  }
+  const payload = verifyToken(token);
 
   if (!payload) {
     return apiError('登录已过期，请重新登录', {

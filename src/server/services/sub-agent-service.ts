@@ -1,6 +1,8 @@
 import { BotConfigRepository, type BotConfigRow } from '@/server/repositories/bot-config-repository';
 import { LLMClientAdapter } from './llm-client-adapter';
+import { LlmProviderService } from './llm-provider-service';
 import { ToolExecutionService } from './tool-execution-service';
+import { getSettingsRepository } from '@/server/repositories/settings-repository';
 import {
   SubAgentRepository,
   type AgentDelegationRow,
@@ -373,7 +375,7 @@ export class SubAgentService {
     productContext?: string;
     /** R-2: 尺码表上下文（注入到子Agent系统提示词） */
     sizeChartContext?: string;
-    /** R-2: 子Agent专属的LLM Provider配置（覆盖默认Coze配置） */
+    /** R-2: 子Agent专属的LLM Provider配置（覆盖默认提供商配置） */
     llmProviderConfig?: LlmProviderConfig;
   }): Promise<DelegationResult> {
     try {
@@ -463,7 +465,7 @@ export class SubAgentService {
    *
    * @param productContext - Optional product context to inject into system prompt (R-2)
    * @param sizeChartContext - Optional size chart context to inject into system prompt (R-2)
-   * @param llmProviderConfig - Optional LLM provider config to override the default Coze config (R-2)
+   * @param llmProviderConfig - Optional LLM provider config to override the default provider config (R-2)
    */
   private async generateSubAgentResponse(
     childBot: BotConfigRow,
@@ -473,16 +475,45 @@ export class SubAgentService {
     sizeChartContext?: string,
     llmProviderConfig?: LlmProviderConfig,
   ): Promise<{ content: string; degraded: boolean }> {
-    // R-2: Use the provided LLM provider config if available, otherwise fall back to env defaults
-    const baseUrl = llmProviderConfig?.baseUrl ?? process.env.COZE_BASE_URL ?? 'https://api.coze.cn';
-    const apiKey = llmProviderConfig?.apiKey ?? process.env.COZE_API_KEY;
+    // Resolve LLM provider from passed config or from settings
+    let resolvedConfig = llmProviderConfig;
+    if (!resolvedConfig) {
+      const settingsRepo = getSettingsRepository();
+      const llmProviderService = new LlmProviderService();
+      const [llmProviderId, aiModel] = await Promise.all([
+        settingsRepo.get('llm_provider_id'),
+        settingsRepo.get('ai_model'),
+      ]);
+      let provider = null;
+      if (llmProviderId) {
+        provider = await llmProviderService.getProviderWithDecryptedKey(llmProviderId);
+      }
+      if (!provider) {
+        provider = await llmProviderService.getDefaultProvider();
+      }
+      if (!provider) {
+        throw new Error('LLM 提供商未配置，无法使用子 Agent。请在 设置 → AI 模型 中配置 LLM 提供商。');
+      }
+      if (!provider.api_key) {
+        throw new Error(`LLM 提供商 "${provider.display_name}" 缺少 API Key，无法使用子 Agent。请在 设置 → AI 模型 中补全 API Key。`);
+      }
+      const providerWithKey = await llmProviderService.getProviderWithDecryptedKey(provider.id);
+      resolvedConfig = {
+        baseUrl: provider.base_url,
+        apiKey: providerWithKey?.api_key || provider.api_key || '',
+        model: provider.default_model || aiModel || '',
+      };
+    }
+
+    const baseUrl = resolvedConfig.baseUrl;
+    const apiKey = resolvedConfig.apiKey;
+    const model = resolvedConfig.model || '';
 
     if (!apiKey) {
-      throw new Error('Sub-agent LLM 调用失败: COZE_API_KEY 环境变量未配置');
+      throw new Error('LLM 提供商缺少 API Key，无法使用子 Agent。请在 设置 → AI 模型 中补全 API Key。');
     }
 
     const adapter = new LLMClientAdapter({ baseUrl, apiKey });
-    const model = llmProviderConfig?.model ?? process.env.COZE_SUB_AGENT_MODEL ?? 'doubao-seed-2-0-lite-260215';
 
     let systemPrompt = childBot.system_prompt || '你是一个专业的客服助手。';
 

@@ -467,7 +467,6 @@ export interface LlmProviderRow {
   name: string;
   display_name: string;
   description?: string | null;
-  api_type: string;
   base_url: string;
   api_key?: string | null;
   models: unknown[];

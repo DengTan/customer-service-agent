@@ -44,7 +44,6 @@ describe('SettingsService.getSettingsMap — sensitive redaction', () => {
         { key: 'llm_provider_bearer_token', value: 'tok-123' },
         { key: 'openai_api_key', value: 'openai-123' },
         { key: 'anthropic_api_key', value: 'claude-123' },
-        { key: 'coze_api_key', value: 'coze-123' },
         { key: 'webhook_secret', value: 'plain-webhook-secret' },
       ],
     };
@@ -62,7 +61,6 @@ describe('SettingsService.getSettingsMap — sensitive redaction', () => {
     expect(Object.keys(result)).not.toContain('llm_provider_bearer_token');
     expect(Object.keys(result)).not.toContain('openai_api_key');
     expect(Object.keys(result)).not.toContain('anthropic_api_key');
-    expect(Object.keys(result)).not.toContain('coze_api_key');
     expect(Object.keys(result)).not.toContain('webhook_secret');
   });
 
@@ -98,10 +96,10 @@ describe('SettingsService.validateSettings — allowlist + per-key type rules', 
       alert_high_rounds_critical_threshold: '15',
       alert_auto_handoff_rounds: '6',
       ai_model_enabled: 'true',
-      ai_model: 'doubao-seed-2-0-lite-260215',
-      llm_provider_id: 'coze',
+      ai_model: 'gpt-4o-mini',
+      llm_provider_id: 'openai',
       multimodal_enabled: 'true',
-      multimodal_model: 'doubao-seed-2-0-pro-260215',
+      multimodal_model: 'gpt-4o',
       multimodal_disabled_action: 'fixed_message',
       multimodal_fixed_message: 'fallback message',
       ai_temperature: '0.7',

@@ -46,7 +46,6 @@ describe('settings-schema — WRITABLE_SETTING_KEYS', () => {
       'llm_provider_bearer_token',
       'openai_api_key',
       'anthropic_api_key',
-      'coze_api_key',
       'webhook_secret',
     ];
     for (const k of forbidden) {
@@ -92,7 +91,6 @@ describe('settings-schema — RESETTABLE_DEFAULTS', () => {
       'llm_provider_bearer_token',
       'openai_api_key',
       'anthropic_api_key',
-      'coze_api_key',
       'webhook_secret',
     ];
     for (const k of forbidden) {

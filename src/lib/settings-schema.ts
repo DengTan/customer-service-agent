@@ -143,7 +143,6 @@ export const NON_RESETTABLE_KEYS: ReadonlySet<string> = new Set<string>([
   'llm_provider_bearer_token',
   'openai_api_key',
   'anthropic_api_key',
-  'coze_api_key',
   // Legacy webhook secret
   'webhook_secret',
 ]);

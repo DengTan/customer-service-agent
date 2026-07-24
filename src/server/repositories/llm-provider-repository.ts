@@ -180,7 +180,6 @@ export class LlmProviderRepository {
         name: provider.name,
         display_name: provider.display_name,
         description: provider.description ?? null,
-        api_type: provider.api_type,
         base_url: provider.base_url,
         api_key: encryptedApiKey,
         models: provider.models ?? [],
@@ -226,7 +225,6 @@ export class LlmProviderRepository {
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.display_name !== undefined) updateData.display_name = updates.display_name;
     if (updates.description !== undefined) updateData.description = updates.description ?? null;
-    if (updates.api_type !== undefined) updateData.api_type = updates.api_type;
     if (updates.base_url !== undefined) updateData.base_url = updates.base_url;
     if (updates.models !== undefined) updateData.models = updates.models;
     if (updates.default_model !== undefined) updateData.default_model = updates.default_model ?? null;
@@ -403,15 +401,14 @@ export class LlmProviderRepository {
   private getDemoProviders(): LlmProviderRow[] {
     return [
       {
-        id: 'demo-provider-coze',
-        name: 'coze',
-        display_name: 'Coze (豆包)',
-        description: '火山引擎 Coze 平台，默认提供商',
-        api_type: 'coze',
-        base_url: 'https://ark.cn-beijing.volces.com/api/v3',
-        api_key: null,
-        models: ['doubao-seed-2-0-lite-260215', 'doubao-seed-1-6-250615', 'deepseek-v3-250324'],
-        default_model: 'doubao-seed-2-0-lite-260215',
+        id: 'demo-provider-openai',
+        name: 'openai',
+        display_name: 'OpenAI',
+        description: 'OpenAI GPT 系列模型',
+        base_url: 'https://api.openai.com/v1',
+        api_key: 'sk-***demo***',
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+        default_model: 'gpt-4o-mini',
         supports_vision: true,
         supports_streaming: true,
         max_context_tokens: 128000,
@@ -424,32 +421,10 @@ export class LlmProviderRepository {
         updated_at: null,
       },
       {
-        id: 'demo-provider-openai',
-        name: 'openai',
-        display_name: 'OpenAI',
-        description: 'OpenAI GPT 系列模型',
-        api_type: 'openai_compatible',
-        base_url: 'https://api.openai.com/v1',
-        api_key: 'sk-***demo***',
-        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-        default_model: 'gpt-4o-mini',
-        supports_vision: true,
-        supports_streaming: true,
-        max_context_tokens: 128000,
-        auth_config: null,
-        request_config: {},
-        is_enabled: true,
-        is_default: false,
-        priority: 50,
-        created_at: new Date().toISOString(),
-        updated_at: null,
-      },
-      {
         id: 'demo-provider-deepseek',
         name: 'deepseek',
         display_name: 'DeepSeek',
         description: 'DeepSeek 系列模型，高性价比',
-        api_type: 'openai_compatible',
         base_url: 'https://api.deepseek.com/v1',
         api_key: 'sk-***demo***',
         models: ['deepseek-chat', 'deepseek-reasoner'],
@@ -461,7 +436,7 @@ export class LlmProviderRepository {
         request_config: {},
         is_enabled: true,
         is_default: false,
-        priority: 40,
+        priority: 50,
         created_at: new Date().toISOString(),
         updated_at: null,
       },
@@ -472,9 +447,9 @@ export class LlmProviderRepository {
     return [
       {
         id: 'demo-model-1',
-        provider_id: 'demo-provider-coze',
-        model_id: 'doubao-seed-2-0-lite-260215',
-        display_name: 'Doubao Seed 2.0 Lite',
+        provider_id: 'demo-provider-openai',
+        model_id: 'gpt-4o-mini',
+        display_name: 'GPT-4o Mini',
         description: '轻量快速，适合日常对话',
         type: 'chat',
         max_tokens: 4096,
@@ -492,10 +467,10 @@ export class LlmProviderRepository {
       },
       {
         id: 'demo-model-2',
-        provider_id: 'demo-provider-coze',
-        model_id: 'doubao-seed-2-0-pro-260215',
-        display_name: 'Doubao Seed 2.0 Pro',
-        description: '多模态旗舰，支持图片理解',
+        provider_id: 'demo-provider-openai',
+        model_id: 'gpt-4o',
+        display_name: 'GPT-4o',
+        description: '高性能，支持图片理解',
         type: 'vision',
         max_tokens: 8192,
         supports_vision: true,

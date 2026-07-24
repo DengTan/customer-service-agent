@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, Edit3, Save, X, Check, ExternalLink,
   Bot, Globe, Key, TestTube, Star, ChevronDown, ChevronUp,
-  Eye, EyeOff, Zap, Shield, Activity,
+  Eye, EyeOff, Zap, Activity,
 } from 'lucide-react';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
@@ -15,7 +15,6 @@ interface LlmProvider {
   name: string;
   display_name: string;
   description?: string | null;
-  api_type: string;
   base_url: string;
   api_key?: string | null;
   models: string[];
@@ -48,13 +47,6 @@ interface Props {
   onProviderChange?: (providerId: string) => void;
 }
 
-const API_TYPES = [
-  { value: 'openai_compatible', label: 'OpenAI 兼容', icon: <Globe className="w-4 h-4" /> },
-  { value: 'coze', label: 'Coze (豆包)', icon: <Bot className="w-4 h-4" /> },
-  { value: 'anthropic', label: 'Anthropic (Claude)', icon: <Zap className="w-4 h-4" /> },
-  { value: 'custom', label: '自定义', icon: <Shield className="w-4 h-4" /> },
-];
-
 export function LlmProviderManager({ currentProviderId, onProviderChange }: Props) {
   const [providers, setProviders] = useState<LlmProvider[]>([]);
   const [models, setModels] = useState<Record<string, LlmModel[]>>({});
@@ -78,7 +70,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
     name: '',
     display_name: '',
     description: '',
-    api_type: 'openai_compatible',
     base_url: '',
     api_key: '',
     models: '',
@@ -123,7 +114,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
       name: '',
       display_name: '',
       description: '',
-      api_type: 'openai_compatible',
       base_url: '',
       api_key: '',
       models: '',
@@ -142,7 +132,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
       name: provider.name,
       display_name: provider.display_name,
       description: provider.description || '',
-      api_type: provider.api_type,
       base_url: provider.base_url,
       api_key: '', // Don't show existing API key
       models: provider.models.join(', '),
@@ -165,7 +154,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
       name: formData.name.toLowerCase().replace(/\s+/g, '-'),
       display_name: formData.display_name,
       description: formData.description || undefined,
-      api_type: formData.api_type,
       base_url: formData.base_url,
       models: formData.models.split(',').map(m => m.trim()).filter(Boolean),
       default_model: formData.default_model || undefined,
@@ -283,12 +271,8 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
     }
   };
 
-  const getApiTypeIcon = (type: string) => {
-    return API_TYPES.find(t => t.value === type)?.icon || <Globe className="w-4 h-4" />;
-  };
-
-  const getApiTypeLabel = (type: string) => {
-    return API_TYPES.find(t => t.value === type)?.label || type;
+  const getIconForProvider = (provider: LlmProvider) => {
+    return <Globe className="w-4 h-4" />;
   };
 
   if (loading) {
@@ -338,7 +322,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                     <div className={`p-2 rounded-lg ${
                       provider.is_default ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
                     }`}>
-                      {getApiTypeIcon(provider.api_type)}
+                      {getIconForProvider(provider)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -358,7 +342,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {provider.description || `${getApiTypeLabel(provider.api_type)} · ${provider.base_url}`}
+                        {provider.description || provider.base_url}
                       </p>
                       <div className="flex items-center gap-3 mt-2">
                         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -449,14 +433,10 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                   <div className="mt-4 pt-4 border-t border-border">
                     <div className="grid grid-cols-2 gap-4 text-xs">
                       <div>
-                        <span className="text-muted-foreground">API 类型：</span>
-                        <span className="text-foreground">{getApiTypeLabel(provider.api_type)}</span>
-                      </div>
-                      <div>
                         <span className="text-muted-foreground">Base URL：</span>
-                        <a 
-                          href={provider.base_url} 
-                          target="_blank" 
+                        <a
+                          href={provider.base_url}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline inline-flex items-center gap-0.5"
                         >
@@ -577,29 +557,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange }: Prop
                   placeholder="简要描述这个提供商"
                   className="w-full px-3 py-2 text-sm bg-muted border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-foreground mb-1">
-                  API 类型 <span className="text-destructive">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {API_TYPES.map((type) => (
-                    <button
-                      key={type.value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, api_type: type.value })}
-                      className={`flex items-center gap-2 p-2 text-xs rounded-lg border transition-colors ${
-                        formData.api_type === type.value
-                          ? 'border-primary bg-primary/5 text-primary'
-                          : 'border-border hover:border-primary/30'
-                      }`}
-                    >
-                      {type.icon}
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div>

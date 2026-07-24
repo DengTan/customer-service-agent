@@ -1,5 +1,6 @@
 import { LlmProviderRepository } from '@/server/repositories/llm-provider-repository';
 import { getLogger } from '@/lib/logger';
+import { normalizeLlmBaseUrl, isBlockedHostname } from '@/lib/url-utils';
 
 const logger = getLogger('LLMProvider');
 import type { LlmProviderRow, LlmModelRow } from '@/server/repositories/types';
@@ -121,7 +122,6 @@ export class LlmProviderService {
         name: input.name,
         display_name: input.display_name,
         description: input.description ?? null,
-        api_type: input.api_type || 'openai_compatible',
         base_url: input.base_url,
         api_key: input.api_key ?? null,
         models: input.models ?? [],
@@ -171,7 +171,6 @@ export class LlmProviderService {
       if (input.name !== undefined) updates.name = input.name;
       if (input.display_name !== undefined) updates.display_name = input.display_name;
       if (input.description !== undefined) updates.description = input.description ?? null;
-      if (input.api_type !== undefined) updates.api_type = input.api_type;
       if (input.base_url !== undefined) updates.base_url = input.base_url;
       if (input.api_key !== undefined) updates.api_key = input.api_key ?? null;
       if (input.models !== undefined) updates.models = input.models;
@@ -348,8 +347,9 @@ export class LlmProviderService {
       }
 
       // Test connection by calling /v1/chat/completions with a minimal request
-      // Note: /models endpoint is not supported by all providers (e.g. Sensenova returns 404)
-      const testResponse = await fetch(`${provider.base_url}/v1/chat/completions`, {
+      // Use shared URL normalization utility
+      const endpoint = normalizeLlmBaseUrl(provider.base_url);
+      const testResponse = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${provider.api_key}`,
@@ -394,10 +394,15 @@ export class LlmProviderService {
     if (!input.base_url || input.base_url.trim().length === 0) {
       throw new Error('Base URL is required');
     }
+    let url: URL;
     try {
-      new URL(input.base_url);
+      url = new URL(input.base_url);
     } catch {
       throw new Error('Invalid base URL format');
+    }
+    // SSRF protection: block internal IP addresses
+    if (isBlockedHostname(url.hostname)) {
+      throw new Error('Base URL cannot point to internal addresses');
     }
   }
 
@@ -418,7 +423,6 @@ export interface CreateProviderInput {
   name: string;
   display_name: string;
   description?: string;
-  api_type?: string;
   base_url: string;
   api_key?: string;
   models?: string[];
@@ -437,7 +441,6 @@ export interface UpdateProviderInput {
   name?: string;
   display_name?: string;
   description?: string;
-  api_type?: string;
   base_url?: string;
   api_key?: string;
   models?: string[];
