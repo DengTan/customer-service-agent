@@ -16,11 +16,85 @@ import type { AuxiliaryLlmResult } from './auxiliary-llm-service';
 import type { CitationItem } from './retrieval-orchestrator';
 
 // ---------------------------------------------------------------------------
+// Prompt Templates (externalized for i18n support)
+// ---------------------------------------------------------------------------
+
+/**
+ * Claim verification system prompt template.
+ * Supports i18n by reading from VERIFY_SYSTEM_PROMPT_LOCALE if set.
+ */
+export const VERIFY_SYSTEM_PROMPT_TEMPLATES: Record<string, string> = {
+  zh: `你是一个客服回答质量校验助手。给定用户问题和AI回答，识别回答中的关键事实声明，并判断每个声明是否能被提供的参考资料支持。
+
+定义：
+- 事实声明：可验证的具体陈述（数字、时间、政策、条件等）
+- 非事实：问候、感谢、要求用户提供信息、主观意见等
+
+判断标准：
+- entailed: 资料明确支持该声明
+- contradicted: 资料明确否定该声明
+- unknown: 资料未涉及该声明
+
+注意：
+- 只提取回答中的关键事实，不逐字匹配
+- 对于模糊或概括性描述使用 unknown
+- 对于明显错误陈述使用 contradicted`,
+  en: `You are a customer service answer quality verification assistant. Given a user question and AI response, identify key factual claims in the response and determine whether each claim is supported by the provided reference materials.
+
+Definitions:
+- Factual claim: Verifiable specific statements (numbers, dates, policies, conditions, etc.)
+- Non-factual: Greetings, thanks, requests for user information, subjective opinions, etc.
+
+Criteria:
+- entailed: Material explicitly supports the claim
+- contradicted: Material explicitly denies the claim
+- unknown: Material does not address the claim
+
+Notes:
+- Extract only key facts from the response, not verbatim matching
+- Use unknown for vague or general statements
+- Use contradicted for clearly incorrect statements`,
+};
+
+/**
+ * Claim verification user prompt template.
+ * Variables: {user_question}, {ai_response}, {sources_context}
+ */
+export const VERIFY_USER_PROMPT_TEMPLATE = `用户问题：{user_question}
+
+AI回答：{ai_response}
+
+参考资料（每个来源用[S{index}]标记）：
+{sources_context}
+
+要求：
+1. 从AI回答中提取关键事实声明（最多10条）
+2. 判断每条声明是否被资料支持
+3. 输出一行JSON：{"claims": [{"claimId": "C1", "text": "声明内容", "factual": true/false}], "support": [{"claimId": "C1", "sourceId": "S1", "verdict": "entailed/contradicted/unknown", "confidence": 0.0-1.0, "reason": "判断理由"}]}`;
+
+/**
+ * Get current locale for prompt templates.
+ * Falls back to 'zh' if locale is not set.
+ */
+function getPromptLocale(): string {
+  return process.env.CLAIM_VERIFIER_PROMPT_LOCALE || 'zh';
+}
+
+/**
+ * Get system prompt for current locale.
+ */
+function getSystemPrompt(): string {
+  const locale = getPromptLocale();
+  return VERIFY_SYSTEM_PROMPT_TEMPLATES[locale] || VERIFY_SYSTEM_PROMPT_TEMPLATES.zh;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface ClaimVerificationInput {
   response: string;
+  userQuestion: string;
   citations: CitationItem[];
   auxLlmConfig: {
     baseUrl: string;
@@ -41,6 +115,8 @@ export interface ClaimVerificationResult {
   }>;
   /** Supported claim count */
   supportedClaimCount: number;
+  /** Support level (none/partial/full) */
+  supportLevel?: 'none' | 'partial' | 'full';
   /** Error code if failed */
   code?: 'timeout' | 'invalid_json' | 'invalid_response' | 'provider_error' | 'empty_content';
   /** Error message */
@@ -52,6 +128,14 @@ export interface ClaimVerificationResult {
 export interface ClaimVerificationSummary {
   result: ClaimVerificationResult;
   elapsedMs: number;
+}
+
+/**
+ * Context passed to claim attestation for persistence.
+ */
+export interface ClaimAttestationContext {
+  modelVersion?: string;
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,34 +162,6 @@ interface LLMVerifyOutput {
   support: LLMSupport[];
 }
 
-const VERIFY_SYSTEM_PROMPT = `你是一个客服回答质量校验助手。给定用户问题和AI回答，识别回答中的关键事实声明，并判断每个声明是否能被提供的参考资料支持。
-
-定义：
-- 事实声明：可验证的具体陈述（数字、时间、政策、条件等）
-- 非事实：问候、感谢、要求用户提供信息、主观意见等
-
-判断标准：
-- entailed: 资料明确支持该声明
-- contradicted: 资料明确否定该声明
-- unknown: 资料未涉及该声明
-
-注意：
-- 只提取回答中的关键事实，不逐字匹配
-- 对于模糊或概括性描述使用 unknown
-- 对于明显错误陈述使用 contradicted`;
-
-const VERIFY_USER_PROMPT = `用户问题：{user_question}
-
-AI回答：{ai_response}
-
-参考资料（每个来源用[S{index}]标记）：
-{sources_context}
-
-要求：
-1. 从AI回答中提取关键事实声明（最多10条）
-2. 判断每条声明是否被资料支持
-3. 输出一行JSON：{"claims": [{"claimId": "C1", "text": "声明内容", "factual": true/false}], "support": [{"claimId": "C1", "sourceId": "S1", "verdict": "entailed/contradicted/unknown", "confidence": 0.0-1.0, "reason": "判断理由"}]}`;
-
 // ---------------------------------------------------------------------------
 // ClaimSupportVerifier
 // ---------------------------------------------------------------------------
@@ -123,6 +179,7 @@ export class ClaimSupportVerifier {
    */
   async verify(
     response: string,
+    userQuestion: string,
     citations: CitationItem[],
     auxLlmConfig: { baseUrl: string; apiKey: string; model: string },
   ): Promise<ClaimVerificationResult> {
@@ -161,17 +218,19 @@ export class ClaimSupportVerifier {
       })
       .join('\n\n');
 
-    const userPrompt = VERIFY_USER_PROMPT
-      .replace('{user_question}', '(从对话历史中推断)')
+    const userPrompt = VERIFY_USER_PROMPT_TEMPLATE
+      .replace('{user_question}', userQuestion || '(用户问题不可用)')
       .replace('{ai_response}', response)
       .replace('{sources_context}', sourcesContext);
+
+    const systemPrompt = getSystemPrompt();
 
     const result = await this.auxLlm.completeJson<LLMVerifyOutput>(
       auxLlmConfig.baseUrl,
       auxLlmConfig.apiKey,
       auxLlmConfig.model,
       [
-        { role: 'system', content: VERIFY_SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       {
@@ -196,19 +255,9 @@ export class ClaimSupportVerifier {
       };
     }
 
-    // Validate output (this also runs inside completeJson's validator, but we check again for safety)
-    const validationError = this.validateLlmOutput(result.data, response, sourceIdMap);
-    if (!validationError) {
-      return {
-        ok: false,
-        sources: [],
-        claims: [],
-        supportedClaimCount: 0,
-        code: 'invalid_response',
-        message: 'LLM output failed validation',
-        elapsedMs,
-      };
-    }
+    // Note: Validation is already performed inside completeJson via the validate option.
+    // The validator checks claim structure, source IDs, and fabricated claim text.
+    // Only entailed claims with confidence >= 0.5 and factual=true are accepted.
 
     // Process verified support relations
     const supportedSourceIds = new Set<string>();

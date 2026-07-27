@@ -55,7 +55,8 @@ export interface SizeChartItem {
   chart_type: string;
   category: string;
   sku: string | null;
-  product_id: string | null;
+  product_ids: string[];
+  product_names: string[];
   size_columns: Array<{ key: string; label: string }>;
   size_rows: Array<Record<string, string>>;
   recommend_params: {

@@ -28,16 +28,16 @@ import { deleteStorageFile } from '@/lib/storage-cleanup';
 export function buildSizeChartContentHash(chart: {
   name: string;
   chart_type?: string;
+  category?: string;
   size_columns?: Array<{ key: string; label: string }>;
   size_rows?: Array<Record<string, string>>;
-  product_id?: string | null;
 }): string {
   const raw = [
     chart.name,
     chart.chart_type || '',
+    chart.category || '',
     JSON.stringify(chart.size_columns || []),
     JSON.stringify(chart.size_rows || []),
-    chart.product_id || '',
   ].join('||');
   return createHash('sha256').update(raw).digest('hex');
 }
@@ -183,13 +183,13 @@ export class SizeChartService {
     }
 
     // ── Content hash deduplication ──────────────────────────────────────────
-    const contentHash = buildSizeChartContentHash({
-      name: input.name.trim(),
-      chart_type: input.chart_type,
-      size_columns: input.size_columns,
-      size_rows: input.size_rows,
-      product_id: input.product_id,
-    });
+      const contentHash = buildSizeChartContentHash({
+        name: input.name.trim(),
+        chart_type: input.chart_type,
+        category: input.category,
+        size_columns: input.size_columns,
+        size_rows: input.size_rows,
+      });
 
     try {
       const existingByHash = await this.repository.findByContentHash(contentHash);
@@ -204,9 +204,6 @@ export class SizeChartService {
       throw toServiceError(error, '内容去重检查失败', 'DB_ERROR');
     }
 
-    // ── Vectorize ───────────────────────────────────────────────────────────
-    const doc_ids = await this.vectorizeSizeChart(input);
-
     // ── Save ───────────────────────────────────────────────────────────────
     try {
       const createInput: CreateSizeChartInput = {
@@ -216,26 +213,34 @@ export class SizeChartService {
         chart_type: (input.chart_type as CreateSizeChartInput['chart_type']) || 'clothing',
         size_columns: input.size_columns,
         size_rows: input.size_rows,
-        product_id: input.product_id ?? null,
+        product_ids: input.product_id ? [input.product_id] : undefined,
         sku: input.sku ?? null,
         recommend_params: input.recommend_params ?? null,
         recommend_rules: input.recommend_rules ?? null,
         description: input.description ?? null,
         image_url: input.image_url ?? null,
-        doc_ids,
+        doc_ids: [],
         content_hash: contentHash,
         platform_connection_id: input.platform_connection_id ?? null,
       };
-      return await this.repository.create(createInput);
-    } catch (error) {
-      // Rollback: delete vector documents if DB write fails
-      if (doc_ids.length > 0) {
-        try {
-          await this.deleteVectorDocuments(doc_ids);
-        } catch {
-          logger.api.warn('size-chart-vector-rollback-failed', { docIds: doc_ids });
+      const created = await this.repository.create(createInput);
+
+      // Vectorize after insert so the chart ID is available
+      try {
+        const docIds = await this.vectorizeSizeChart({
+          ...input,
+          id: created.id,
+        });
+        // Update doc_ids if vectorization succeeded
+        if (docIds.length > 0 && created.id) {
+          await this.repository.update({ id: created.id, doc_ids: docIds });
         }
+      } catch {
+        // Vectorization is non-critical; chart is already saved
       }
+
+      return created;
+    } catch (error) {
       throw toServiceError(error, '创建尺码表失败', 'DB_ERROR');
     }
   }
@@ -283,6 +288,7 @@ export class SizeChartService {
         await this.deleteVectorDocuments(existing.doc_ids);
         // Re-vectorize with new data
         newDocIds = await this.vectorizeSizeChart({
+          id: input.id,
           name: input.name ?? existing.name,
           chart_type: input.chart_type ?? existing.chart_type,
           category: input.category ?? existing.category,
@@ -301,7 +307,7 @@ export class SizeChartService {
         chart_type: input.chart_type as UpdateSizeChartInput['chart_type'],
         size_columns: input.size_columns,
         size_rows: input.size_rows,
-        product_id: input.product_id,
+        product_ids: input.product_id ? [input.product_id] : undefined,
         sku: input.sku,
         recommend_params: input.recommend_params,
         recommend_rules: input.recommend_rules,
@@ -311,9 +317,9 @@ export class SizeChartService {
         content_hash: sizeDataChanged ? buildSizeChartContentHash({
           name: input.name ?? existing.name,
           chart_type: input.chart_type ?? existing.chart_type,
+          category: input.category ?? existing.category,
           size_columns: input.size_columns ?? existing.size_columns,
           size_rows: input.size_rows ?? existing.size_rows,
-          product_id: input.product_id ?? existing.product_id,
         }) : undefined,
         status: input.status as UpdateSizeChartInput['status'],
         platform_connection_id: input.platform_connection_id,

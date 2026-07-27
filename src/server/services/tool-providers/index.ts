@@ -11,6 +11,7 @@ export { OrderProvider, getOrderProvider } from './order-provider';
 export { LogisticsProvider, getLogisticsProvider } from './logistics-provider';
 export { RefundProvider, getRefundProvider } from './refund-provider';
 export { ProductProvider, getProductProvider } from './product-provider';
+export { SizeChartProvider, getSizeChartProvider } from './size-chart-provider';
 
 // Factory
 export {

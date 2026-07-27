@@ -1,5 +1,4 @@
 import { ServiceError } from './service-error';
-import { toServiceError } from './service-utils';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { executeTool, ToolProviderFactory, ToolProviderType } from './tool-providers';
 import { logger } from '@/lib/logger';
@@ -8,6 +7,7 @@ export interface ToolExecutionResult {
   result: string;
   confidence: number;
   isMockData?: boolean;  // Whether the result comes from mock data (not real API)
+  failed?: boolean;     // Whether the tool execution failed
 }
 
 export interface ParsedToolCall {
@@ -101,7 +101,7 @@ export class ToolExecutionService {
   async executeTool(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult> {
     // Validate tool name exists
     if (!TOOL_DEFINITIONS[name]) {
-      return { result: '未知工具', confidence: 0.3, isMockData: true };
+      return { result: '未知工具', confidence: 0.3, isMockData: true, failed: true };
     }
 
     // Validate argument values
@@ -110,7 +110,7 @@ export class ToolExecutionService {
     // Map tool to provider type
     const providerType = this.toolToProviderMap[name];
     if (!providerType) {
-      return { result: '该工具暂未实现', confidence: 0.3, isMockData: true };
+      return { result: '该工具暂未实现', confidence: 0.3, isMockData: true, failed: true };
     }
 
     try {
@@ -128,6 +128,7 @@ export class ToolExecutionService {
         result: `工具执行失败: ${error instanceof Error ? error.message : '未知错误'}`,
         confidence: 0.3,
         isMockData: true,
+        failed: true,
       };
     }
   }
@@ -164,17 +165,28 @@ export class ToolExecutionService {
   }
 
   /**
-   * Verify that the current user context has authorization to execute the requested tool.
-   * For sensitive tools (refund, modify_address):
-   * 1. Verify the conversation exists
-   * 2. Verify the conversation is in a state that allows the operation
-   * 3. Validate that the required arguments are present and well-formed
+   * Extra authorization layer for money/PII operations only.
+   *
+   * Non-sensitive tools (order/logistics/product/size-chart query) skip all
+   * DB lookups here — their providers already handle their own data validation
+   * and would otherwise pay for an unconditional conversation fetch on every
+   * tool call.
+   *
+   * For tools in SENSITIVE_TOOLS (refund / address change):
+   *   1. Verify the conversation exists
+   *   2. Verify the conversation is in a state that allows the operation
+   *   3. Validate that the required arguments are present and well-formed
    */
   async verifyToolAuthorization(
     conversationId: string,
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> {
+    // Non-sensitive tools skip the conversation lookup entirely.
+    if (!SENSITIVE_TOOLS.has(toolName)) {
+      return;
+    }
+
     // 1. Verify conversation exists and is accessible
     const conversation = await this.conversations.findById(conversationId);
     if (!conversation) {
@@ -189,44 +201,41 @@ export class ToolExecutionService {
       });
     }
 
-    // 3. Sensitive tools require extra validation
-    if (SENSITIVE_TOOLS.has(toolName)) {
-      // Verify required arguments are present
-      if (toolName === 'apply_refund') {
-        if (!args.order_id || typeof args.order_id !== 'string') {
-          throw new ServiceError('apply_refund requires a valid order_id', {
-            status: 400,
-            code: 'INVALID_TOOL_ARGS',
-          });
-        }
-        if (!args.reason || typeof args.reason !== 'string') {
-          throw new ServiceError('apply_refund requires a valid reason', {
-            status: 400,
-            code: 'INVALID_TOOL_ARGS',
-          });
-        }
+    // 3. Validate required arguments for the specific sensitive tool
+    if (toolName === 'apply_refund') {
+      if (!args.order_id || typeof args.order_id !== 'string') {
+        throw new ServiceError('apply_refund requires a valid order_id', {
+          status: 400,
+          code: 'INVALID_TOOL_ARGS',
+        });
       }
-
-      if (toolName === 'modify_shipping_address') {
-        if (!args.order_id || typeof args.order_id !== 'string') {
-          throw new ServiceError('modify_shipping_address requires a valid order_id', {
-            status: 400,
-            code: 'INVALID_TOOL_ARGS',
-          });
-        }
-        if (!args.new_address || typeof args.new_address !== 'string') {
-          throw new ServiceError('modify_shipping_address requires a valid new_address', {
-            status: 400,
-            code: 'INVALID_TOOL_ARGS',
-          });
-        }
+      if (!args.reason || typeof args.reason !== 'string') {
+        throw new ServiceError('apply_refund requires a valid reason', {
+          status: 400,
+          code: 'INVALID_TOOL_ARGS',
+        });
       }
-
-      // In a real system, you would also verify:
-      // - The current user owns this conversation or has admin privileges
-      // - The order_id belongs to the external_user_id of this conversation
-      // - Rate limiting on sensitive operations per conversation
     }
+
+    if (toolName === 'modify_shipping_address') {
+      if (!args.order_id || typeof args.order_id !== 'string') {
+        throw new ServiceError('modify_shipping_address requires a valid order_id', {
+          status: 400,
+          code: 'INVALID_TOOL_ARGS',
+        });
+      }
+      if (!args.new_address || typeof args.new_address !== 'string') {
+        throw new ServiceError('modify_shipping_address requires a valid new_address', {
+          status: 400,
+          code: 'INVALID_TOOL_ARGS',
+        });
+      }
+    }
+
+    // In a real system, you would also verify:
+    // - The current user owns this conversation or has admin privileges
+    // - The order_id belongs to the external_user_id of this conversation
+    // - Rate limiting on sensitive operations per conversation
   }
 
   /**

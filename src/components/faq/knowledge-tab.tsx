@@ -901,22 +901,17 @@ export function KnowledgeTab() {
                           onClick={(e) => e.stopPropagation()}
                           className="w-3.5 h-3.5 rounded border-border mt-1 shrink-0 accent-primary cursor-pointer" />
                         {/* Icon/thumbnail */}
-                        {item.image_urls && item.image_urls.length > 0 ? (
+                        {item.image_url ? (
                           <div className="relative shrink-0 group">
                             <button type="button"
-                              onClick={() => setPreviewImage({ url: item.image_urls![0], title: item.name })}
+                              onClick={() => setPreviewImage({ url: item.image_url!, title: item.name })}
                               className="relative w-12 h-12 rounded-lg overflow-hidden border border-border bg-muted cursor-zoom-in"
                               title="点击预览图片">
-                              <Image src={item.image_urls[0]} alt={item.name}
+                              <Image src={item.image_url} alt={item.name}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                 loading="lazy"
                                 fill
                                 sizes="48px" />
-                              {item.image_urls.length > 1 && (
-                                <div className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] px-1 rounded-tl">
-                                  +{item.image_urls.length - 1}
-                                </div>
-                              )}
                             </button>
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors opacity-0 group-hover:opacity-100 rounded-lg flex items-center justify-center">
                               <ZoomIn className="w-4 h-4 text-white drop-shadow" />
@@ -979,9 +974,9 @@ export function KnowledgeTab() {
                                 <Eye className="w-3 h-3" />{item.hit_count} 次引用
                               </span>
                             )}
-                            {item.image_urls && item.image_urls.length > 0 && (
-                              <button type="button" onClick={() => setPreviewImage({ url: item.image_urls![0], title: item.name })} className="inline-flex items-center gap-1 text-primary/70 hover:text-primary hover:underline cursor-zoom-in">
-                                <ImageIcon className="w-3 h-3" />查看{item.image_urls.length > 1 ? `${item.image_urls.length}张` : '图片'}
+                            {item.image_url && (
+                              <button type="button" onClick={() => setPreviewImage({ url: item.image_url!, title: item.name })} className="inline-flex items-center gap-1 text-primary/70 hover:text-primary hover:underline cursor-zoom-in">
+                                <ImageIcon className="w-3 h-3" />查看图片
                               </button>
                             )}
                             {item.expires_at && !isExpired && (

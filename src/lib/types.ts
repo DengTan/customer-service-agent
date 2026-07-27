@@ -94,6 +94,8 @@ export interface Message {
   confidence_breakdown?: ConfidenceBreakdown | null;
   tool_calls?: unknown[] | null;
   tool_results?: unknown[] | null;
+  /** Whether the tool execution failed (set when message_type is a card type with actions) */
+  failed?: boolean;
   message_type?: 'text' | 'image' | 'card' | 'order' | 'logistics' | 'action_buttons' | 'internal_note' | 'knowledge_images';
   rich_content?: RichContent | null;
   mentions?: string[];

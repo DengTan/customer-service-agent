@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import { ToolExecutionService } from './tool-execution-service';
 import { SummaryService } from './summary-service';
 import { AlertService } from './alert-service';
@@ -11,7 +12,7 @@ import { LLMClientAdapter } from './llm-client-adapter';
 import { RetrievalTraceService } from './retrieval-trace-service';
 import type { CitationItem, EvidenceBundle } from './retrieval-orchestrator';
 import type { RetrievalGateDecision } from './retrieval-gating-service';
-import type { KnowledgeImageRef } from './knowledge-search-service';
+import type { KnowledgeImageRef, KnowledgeSourceItem } from './knowledge-search-service';
 import type { MessageHistoryItem } from '@/server/repositories/conversation-repository';
 import {
   buildConfidenceFromContent,
@@ -106,6 +107,17 @@ export interface LLMStreamOptions {
     apiKey: string;
     model: string;
   };
+  /** [P0-B] Bot-scoped knowledge item IDs from routing match.
+   *  Already applied in the orchestrator (messages/route passes scoped results),
+   *  so this is a forward-compatibility marker for future callers. */
+  routedBotKnowledgeIds?: string[];
+  /** [P0-B] Allowed tool names from routing match — when provided, the LLM system
+   *  prompt is filtered to only expose these tools. */
+  routedBotTools?: string[];
+  /** [P0-C] Abort signal propagated from the route's AbortController.
+   *  When the SSE stream is cancelled (client disconnect / abort),
+   *  all fire-and-forget post-stream DB operations are skipped. */
+  abortSignal?: AbortSignal;
 }
 
 type ImageUrlPart = { type: 'image_url'; image_url: { url: string; detail?: string } };
@@ -133,40 +145,6 @@ const SYSTEM_PROMPT = `你是 SmartAssist 智能客服助手，专注于为用�
 - 如果引用了知识库信息，在回复末尾用【引用来源：xxx】标注
 - 分步骤说明时使用编号列表
 - 关键信息使用加粗标记`;
-
-const TOOL_SYSTEM_PROMPT = `
-
-你可以使用以下工具来帮助用户完成操作型请求。当需要调用工具时，请在回复中使用以下格式：
-
-[TOOL_CALL]工具名|参数JSON[/TOOL_CALL]
-
-可用工具：
-1. query_order_status - 查询订单状态
-   参数: {"order_id": "订单编号"}
-   
-2. query_logistics - 查询物流信息
-   参数: {"tracking_number": "物流单号或订单编号"}
-
-3. apply_refund - 申请退款
-   参数: {"order_id": "订单编号", "reason": "退款原因", "amount": 退款金额(可选)}
-
-4. modify_shipping_address - 修改收货地址
-   参数: {"order_id": "订单编号", "new_address": "新地址", "new_name": "收件人(可选)", "new_phone": "电话(可选)"}
-
-5. query_product_detail - 查询商品详情（价格、规格、卖点、在售状态等）
-   参数: {"sku": "商品SKU(可选)", "name": "商品名称(可选)", "product_id": "商品ID(可选)"}
-   注：至少提供 sku/name/product_id 之一，优先使用 sku 精确查询
-
-6. query_size_chart - 查询尺码表信息（尺码对照表、尺码推荐等）
-   参数: {"sku": "商品SKU(可选)", "category": "尺码表分类(可选)", "name": "尺码表名称(可选)", "size_chart_id": "尺码表ID(可选)", "height": 身高cm(可选), "weight": 体重kg(可选)}
-   注：至少提供 sku/category/name/size_chart_id 之一；提供身高体重参数时可生成个性化尺码推荐
-
-规则：
-- 只有当用户明确需要执行操作时才调用工具（如查订单、查物流、退款、改地址）
-- 工具调用标记只出现一次，放在回复的合适位置
-- 调用工具后，继续用自然语言解释结果
-- 如果不确定参数，先询问用户
-`;
 
 const IMAGE_UNDERSTANDING_PROMPT = `
 【图片理解模式】
@@ -229,20 +207,6 @@ const TOOL_CALL_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
 // Image reference pattern: [IMG:url](alt text)
 const IMAGE_REF_PATTERN = /\[IMG:([^\]]+)\]\(([^)]+)\)/g;
 
-/**
- * Strip internal markers from LLM output before sending to client.
- * Removes: [TOOL_CALL]...[/TOOL_CALL], [CONF:x.x], [DELEGATE_TO]...[/DELEGATE_TO]
- * Preserves: [IMG:url](alt) — these are rendered as images on the client side.
- */
-function stripInternalMarkers(text: string): string {
-  return text
-    .replace(/\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g, '')
-    .replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '')
-    .replace(/\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 export class LLMStreamingService {
   private readonly toolExecution = new ToolExecutionService();
   private readonly summaryService = new SummaryService();
@@ -267,7 +231,7 @@ export class LLMStreamingService {
     const encoder = new TextEncoder();
     let isAborted = false;
     let fullContent = '';
-    const toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string }> = [];
+    const toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string; failed?: boolean }> = [];
     const sources: PublicCitationItem[] = [];
     let knowledgeConfidence = options.knowledgeConfidence || 0;
     const knowledgeMinScore = options.knowledgeMinScore || 0.75;
@@ -294,6 +258,7 @@ export class LLMStreamingService {
             options.knowledgeImages,
             options.productContext,
             options.sizeChartContext,
+            options.routedBotTools,
           );
 
           // Select model based on settings and whether image is present
@@ -396,7 +361,7 @@ export class LLMStreamingService {
               const text = chunk.content.toString();
               fullContent += text;
               // Strip internal markers before sending to client (never expose TOOL_CALL/CONF/DELEGATE markers)
-              const safeText = stripInternalMarkers(text);
+              const safeText = stripInternalMarkersFromResponse(text);
               if (safeText) {
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: safeText })}\n\n`));
               }
@@ -404,18 +369,19 @@ export class LLMStreamingService {
           }
 
           // Post-processing: detect and execute tool calls from LLM output
-          const toolExecutions = await parseAndExecuteToolCalls(fullContent, toolExecution, conversationId);
+          const toolExecutions = await parseAndExecuteToolCalls(fullContent, toolExecution, conversationId, options.routedBotTools);
 
           // If tool calls were detected, execute them and get follow-up response
           if (toolExecutions.length > 0) {
             for (const te of toolExecutions) {
-              toolCallsData.push({ name: te.name, args: te.args, result: te.result });
+              toolCallsData.push({ name: te.name, args: te.args, result: te.result, failed: te.failed });
               knowledgeConfidence = Math.max(knowledgeConfidence, te.confidence);
 
               // Send tool result to client
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({
                 tool_call: { name: te.name, args: te.args },
                 tool_result: te.result,
+                failed: te.failed ?? false,
               })}\n\n`));
             }
 
@@ -458,7 +424,7 @@ export class LLMStreamingService {
                 const text = contChunk.content.toString();
                 fullContent += text;
                 // Strip internal markers before sending to client
-                const safeText = stripInternalMarkers(text);
+                const safeText = stripInternalMarkersFromResponse(text);
                 if (safeText) {
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: safeText })}\n\n`));
                 }
@@ -510,7 +476,7 @@ export class LLMStreamingService {
                   })}\n\n`));
 
                   // Append sub-agent response to the content (strip internal markers as safety net)
-                  const delegationContent = stripInternalMarkers(`\n\n---\n**${result.childBot.name}** 处理结果：\n${result.responseContent}`);
+                  const delegationContent = stripInternalMarkersFromResponse(`\n\n---\n**${result.childBot.name}** 处理结果：\n${result.responseContent}`);
                   fullContent += delegationContent;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: delegationContent })}\n\n`));
                 } catch (delegationError) {
@@ -527,13 +493,17 @@ export class LLMStreamingService {
           // P2: Claim verification — runs BEFORE confidence calculation so that hasKnowledge
           // reflects verified citations. This ensures SSE done.sources and confidence_breakdown
           // are always consistent. Verification failures result in empty knowledge sources.
+          // [P0-C] Use cleanedContent so internal markers ([CONF:x], [TOOL_CALL]...) are not
+          // treated as factual claims — they must be stripped BEFORE the verifier sees the text.
           let claimVerificationResult: ClaimVerificationResult | null = null;
+          const cleanedContent = stripInternalMarkersFromResponse(fullContent);
           if (options.claimVerificationConfig && options.evidenceCitations && options.evidenceCitations.length > 0) {
             const verifier = new ClaimSupportVerifier();
             // Cast PublicCitationItem[] to CitationItem[] — the streaming service is the
             // canonical producer of PublicCitationItem, so this is safe.
             claimVerificationResult = await verifier.verify(
-              fullContent,
+              cleanedContent,
+              userMessage,
               options.evidenceCitations as CitationItem[],
               options.claimVerificationConfig
             );
@@ -554,7 +524,9 @@ export class LLMStreamingService {
           const hasSizeChartContext = !!(options.sizeChartContext && typeof options.sizeChartContext === 'string' && options.sizeChartContext.trim());
 
           // Use shared confidence calculation with content-based extraction
-          const confidenceBreakdown = buildConfidenceFromContent(fullContent, {
+          // [P0-C] Pass cleanedContent — CONF/TOOL_CALL markers must not interfere with
+          // confidence parsing or end up in the SSE done event / DB persistence.
+          const confidenceBreakdown = buildConfidenceFromContent(cleanedContent, {
             hasKnowledge,
             knowledgeConfidence,
             hasTools,
@@ -565,9 +537,6 @@ export class LLMStreamingService {
             hasProductContext,
             hasSizeChartContext,
           });
-
-          // Strip self-eval tags from content after extraction
-          fullContent = fullContent.replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '').trim();
 
           const overallConfidence = confidenceBreakdown.final;
 
@@ -653,25 +622,49 @@ if (claimVerificationResult !== null) {
 }
 
           // Extract image references from LLM output: [IMG:url](alt)
+          // [P0-C] Use cleanedContent — markers have been stripped so regex only matches real [IMG:...] refs.
           const extractedImages: Array<{ url: string; alt: string }> = [];
           let imageMatch;
           const imageRefRegex = new RegExp(IMAGE_REF_PATTERN.source, IMAGE_REF_PATTERN.flags);
-          while ((imageMatch = imageRefRegex.exec(fullContent)) !== null) {
+          while ((imageMatch = imageRefRegex.exec(cleanedContent)) !== null) {
             extractedImages.push({ url: imageMatch[1], alt: imageMatch[2] });
           }
 
-          // Strip all internal markers from final content before storing/sending to client.
-          // Note: TOOL_CALL markers have already been filtered from streamed output above,
-          // but may still be present in fullContent (e.g. from continuation stream).
-          // CONF markers were stripped after conf parsing above.
-          // DELEGATE markers were stripped after delegation processing above.
-          // This is a safety net — remove any remaining internal markers before DB persist and done event.
-          fullContent = stripInternalMarkers(fullContent);
+          // P4: Filter extracted images by URL whitelist (security measure)
+          const allowedImageDomains = [
+            'supabase.co',
+            's3.',
+            'amazonaws.com',
+            'cdn.',
+            'img.',
+            'image.',
+          ];
+          const isAllowedImageUrl = (url: string): boolean => {
+            try {
+              const urlObj = new URL(url);
+              return allowedImageDomains.some(domain => urlObj.hostname.includes(domain));
+            } catch {
+              return false;
+            }
+          };
+          const whitelistedImages = extractedImages.filter(img => isAllowedImageUrl(img.url));
+          if (extractedImages.length > 0 && whitelistedImages.length === 0) {
+            logger.agent.warn('[LLMStreamingService] All extracted image URLs rejected by whitelist', {
+              conversationId,
+              extractedUrls: extractedImages.map(img => img.url),
+            });
+          }
+
+          // [P0-C] The safety-net strip is now redundant — cleanedContent was already produced
+          // by stripInternalMarkersFromResponse(fullContent) above. fullContent is preserved
+          // only for the parseAndExecuteToolCalls call at line ~413 (needs raw markers).
+          // No assignment here; cleanedContent is the canonical clean version for SSE/DB.
 
           // Send extracted images as separate SSE event before final done
-          if (extractedImages.length > 0) {
+          // Only send whitelisted images to client for security
+          if (whitelistedImages.length > 0) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              images: extractedImages,
+              images: whitelistedImages,
             })}\n\n`));
           }
 
@@ -683,22 +676,26 @@ if (claimVerificationResult !== null) {
             confidence_breakdown: confidenceBreakdown,
             tool_calls: toolCallsData.length > 0 ? toolCallsData : undefined,
             delegations: delegationResults.length > 0 ? delegationResults : undefined,
-            images: extractedImages.length > 0 ? extractedImages : undefined,
+            images: whitelistedImages.length > 0 ? whitelistedImages : undefined,
             botId: options.parentBotId,
             botName: options.parentBotName,
           })}\n\n`));
 
           // Post-stream operations (fire-and-forget, non-blocking)
+          // [P0-C] Pass cleanedContent — DB persistence and summary generation must not
+          // store internal markers.
+          // Skip entirely if the stream was aborted (client disconnect).
           handlePostStreamOperations(
             conversationId,
             userMessage,
-            fullContent,
+            cleanedContent,
             overallConfidence,
             toolCallsData,
             sources,
             customHeaders,
             extractedImages,
             confidenceBreakdown,
+            options.abortSignal,
           );
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : '生成回复失败';
@@ -725,14 +722,22 @@ if (claimVerificationResult !== null) {
   private async handlePostStreamOperations(
     conversationId: string,
     userMessage: string,
-    fullContent: string,
+    cleanedContent: string,
     overallConfidence: number,
-    toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string }>,
+    toolCallsData: Array<{ name: string; args: Record<string, unknown>; result: string; failed?: boolean }>,
     sources: PublicCitationItem[],
     customHeaders: Record<string, string>,
     extractedImages?: Array<{ url: string; alt: string }>,
     confidenceBreakdown?: ConfidenceBreakdown,
+    abortSignal?: AbortSignal,
   ): Promise<void> {
+    // [P0-C] Skip ALL post-stream DB operations if the SSE was aborted (client disconnect).
+    // This prevents incrementMessageCount / qualityCheck / knowledgeGap from running
+    // against stale or incomplete assistant responses.
+    if (abortSignal?.aborted) {
+      logger.agent.debug('[LLMStreamingService] Stream aborted, skipping post-stream operations', { conversationId });
+      return;
+    }
     try {
       // 1. Insert assistant message with confidence, tool calls, and knowledge images
       // Skip for in-memory simulation conversations (no DB row → FK violation);
@@ -744,8 +749,10 @@ if (claimVerificationResult !== null) {
 
       // P1: Guard against empty content after marker stripping.
       // If the entire LLM response was just internal markers (e.g. only [TOOL_CALL]...[CONF:0.8]),
-      // fullContent will be empty after stripInternalMarkers(). Generate a placeholder instead.
-      const finalContent = fullContent || (toolCallsData.length > 0
+      // cleanedContent will be empty. Generate a placeholder instead.
+      // [P0-C] No re-strip needed here — cleanedContent is already produced by
+      // stripInternalMarkersFromResponse(fullContent) in the stream callback.
+      const finalContent = cleanedContent || (toolCallsData.length > 0
         ? '已执行工具查询，请查看结果。'
         : '[AI 处理中...]');
 
@@ -772,7 +779,7 @@ if (claimVerificationResult !== null) {
       this.summaryService.generateIncrementalSummary(
         conversationId,
         userMessage,
-        fullContent,
+        cleanedContent,
         customHeaders,
       ).catch((err) => {
         logger.agent.warn('[LLMStreamingService] Failed to generate incremental summary', { error: err, conversationId });
@@ -802,7 +809,7 @@ if (claimVerificationResult !== null) {
           const firstAssistantReplyAt = await this.conversationService.getFirstAssistantReplyAt(conversationId);
           const qualityContext: QualityCheckContext = {
             conversationId,
-            aiReplyContent: fullContent,
+            aiReplyContent: cleanedContent,
             messageCount: sessionInfo?.message_count ?? messageCount,
             aiReplyCreatedAt: new Date().toISOString(),
             conversationCreatedAt: sessionInfo?.created_at ?? new Date().toISOString(),
@@ -872,10 +879,66 @@ if (claimVerificationResult !== null) {
 
     await this.knowledgeGapService.analyzeAndRecord({
       userQuestion: userMessage,
-      sources: sources as never,
+      sources: sources.map(s => ({
+        type: s.type,
+        content: s.content ?? '',
+        score: s.score ?? 0,
+        knowledge_item_id: s.knowledge_item_id,
+        chunk_id: s.chunk_id,
+        chunk_index: s.chunk_index,
+        content_hash: s.content_hash,
+        name: s.name,
+        category: s.category,
+      })) as KnowledgeSourceItem[],
       triggeredHandoff,
       conversationId,
     });
+  }
+
+  /**
+   * Build the tools section of the system prompt.
+   * When routedBotTools is non-empty, only the listed tools are included.
+   */
+  private buildToolsPrompt(routedBotTools?: string[]): string {
+    const allowed = routedBotTools && routedBotTools.length > 0
+      ? routedBotTools
+      : null;
+
+    const allTools: Array<{ name: string; desc: string; params: string }> = [
+      { name: 'query_order_status', desc: '查询订单状态', params: '{"order_id": "订单编号"}' },
+      { name: 'query_logistics', desc: '查询物流信息', params: '{"tracking_number": "物流单号或订单编号"}' },
+      { name: 'apply_refund', desc: '申请退款', params: '{"order_id": "订单编号", "reason": "退款原因", "amount": 退款金额(可选)}' },
+      { name: 'modify_shipping_address', desc: '修改收货地址', params: '{"order_id": "订单编号", "new_address": "新地址", "new_name": "收件人(可选)", "new_phone": "电话(可选)"}' },
+      { name: 'query_product_detail', desc: '查询商品详情（价格、规格、卖点、在售状态等）', params: '{"sku": "商品SKU(可选)", "name": "商品名称(可选)", "product_id": "商品ID(可选)"}' },
+      { name: 'query_size_chart', desc: '查询尺码表信息（尺码对照表、尺码推荐等）', params: '{"sku": "商品SKU(可选)", "category": "尺码表分类(可选)", "name": "尺码表名称(可选)", "size_chart_id": "尺码表ID(可选)", "height": 身高cm(可选), "weight": 体重kg(可选)}' },
+    ];
+
+    const toolsToInclude = allowed !== null
+      ? allTools.filter(t => allowed.includes(t.name))
+      : allTools;
+
+    if (toolsToInclude.length === 0) return '';
+
+    const toolLines = toolsToInclude
+      .map((t, i) => `${i + 1}. ${t.name} - ${t.desc}\n   参数: ${t.params}`)
+      .join('\n\n');
+
+    return `
+
+你可以使用以下工具来帮助用户完成操作型请求。当需要调用工具时，请在回复中使用以下格式：
+
+[TOOL_CALL]工具名|参数JSON[/TOOL_CALL]
+
+可用工具：
+${toolLines}
+
+规则：
+- 当用户询问商品信息（价格、规格、库存、卖点等）时，调用 query_product_detail
+- 当用户询问尺码、尺码推荐、尺码对照表等信息时，调用 query_size_chart
+- 当用户需要执行操作时（查订单、查物流、退款、改地址等），调用对应工具
+- 工具调用标记只出现一次，放在回复的合适位置
+- 调用工具后，继续用自然语言解释结果
+- 如果不确定参数，先询问用户`;
   }
 
   /**
@@ -893,10 +956,14 @@ if (claimVerificationResult !== null) {
     knowledgeImages?: KnowledgeImageRef[],
     productContext?: string,
     sizeChartContext?: string,
+    /** [P0-B] Allowed tool names from routing match — filters TOOL_SYSTEM_PROMPT. */
+    routedBotTools?: string[],
   ): LLMMessage[] {
-    // Use custom system prompt from settings if provided, otherwise use default
+    // [P0-B] Build the effective tools prompt: use routed allowlist when specified,
+    // otherwise fall back to the default full tool list.
+    const toolsPrompt = this.buildToolsPrompt(routedBotTools);
     const baseSystemPrompt = customSystemPrompt || SYSTEM_PROMPT;
-    let systemPrompt = baseSystemPrompt + TOOL_SYSTEM_PROMPT + CONFIDENCE_SELF_EVAL_PROMPT;
+    let systemPrompt = baseSystemPrompt + toolsPrompt + CONFIDENCE_SELF_EVAL_PROMPT;
 
     // Add sub-agent delegation prompt if enabled
     if (enableSubAgentDelegation) {
@@ -998,8 +1065,10 @@ async function parseAndExecuteToolCalls(
   content: string,
   toolExecution: ToolExecutionService,
   conversationId: string,
-): Promise<Array<{ name: string; args: Record<string, unknown>; result: string; confidence: number }>> {
-  const toolExecutions: Array<{ name: string; args: Record<string, unknown>; result: string; confidence: number }> = [];
+  /** [P0-B] Allowed tool names from routing match — reject non-listed tools. */
+  routedBotTools?: string[],
+): Promise<Array<{ name: string; args: Record<string, unknown>; result: string; confidence: number; failed?: boolean }>> {
+  const toolExecutions: Array<{ name: string; args: Record<string, unknown>; result: string; confidence: number; failed?: boolean }> = [];
   const toolCallRegex = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
   let match: RegExpExecArray | null;
 
@@ -1008,6 +1077,18 @@ async function parseAndExecuteToolCalls(
     const argsStr = match[2];
     try {
       const args = JSON.parse(argsStr);
+
+      // [P0-B] Tool allowlist: if routing specified tools, reject non-listed tools
+      if (routedBotTools && routedBotTools.length > 0 && !routedBotTools.includes(toolName)) {
+        toolExecutions.push({
+          name: toolName,
+          args,
+          result: `该工具不在当前会话允许范围内（允许列表：${routedBotTools.join(', ')}）`,
+          confidence: 0.3,
+          failed: true,
+        });
+        continue;
+      }
 
       // Verify authorization before executing
       try {
@@ -1019,12 +1100,13 @@ async function parseAndExecuteToolCalls(
           args,
           result: `工具 ${toolName} 执行被拒绝：${authMsg}`,
           confidence: 0.1,
+          failed: true,
         });
         continue;
       }
 
       const toolResult = await toolExecution.executeTool(toolName, args);
-      toolExecutions.push({ name: toolName, args, result: toolResult.result, confidence: toolResult.confidence });
+      toolExecutions.push({ name: toolName, args, result: toolResult.result, confidence: toolResult.confidence, failed: toolResult.failed });
     } catch (err) {
       logger.warn('Tool call parse failed', { toolName, error: String(err) });
     }

@@ -37,6 +37,8 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Check authentication status (fetch from /api/auth/me) */
   checkAuth: () => Promise<boolean>;
+  /** Refresh user data from server */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -131,6 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result;
   }, []);
 
+  /**
+   * Refresh user data from server
+   */
+  const refreshUser = useCallback(async (): Promise<void> => {
+    await checkAuthInternal();
+  }, []);
+
 
   const value: AuthContextValue = {
     user,
@@ -138,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     logout,
     checkAuth,
+    refreshUser,
   };
 
   return (

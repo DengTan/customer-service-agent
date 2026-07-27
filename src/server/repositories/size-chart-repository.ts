@@ -41,7 +41,8 @@ export interface NormalizedSizeChart {
   chart_type: SizeChartType;
   size_columns: SizeChartColumn[];
   size_rows: SizeChartRow[];
-  product_id: string | null;
+  product_ids: string[];
+  product_names: string[];
   sku: string | null;
   recommend_params: { dimensions: SizeChartRecommendDimension[] } | null;
   recommend_rules: string | null;
@@ -74,7 +75,7 @@ export interface CreateSizeChartInput {
   chart_type?: SizeChartType;
   size_columns: SizeChartColumn[];
   size_rows: SizeChartRow[];
-  product_id?: string | null;
+  product_ids?: string[];
   sku?: string | null;
   recommend_params?: { dimensions: SizeChartRecommendDimension[] } | null;
   recommend_rules?: string | null;
@@ -94,7 +95,7 @@ export interface UpdateSizeChartInput {
   chart_type?: SizeChartType;
   size_columns?: SizeChartColumn[];
   size_rows?: SizeChartRow[];
-  product_id?: string | null;
+  product_ids?: string[];
   sku?: string | null;
   recommend_params?: { dimensions: SizeChartRecommendDimension[] } | null;
   recommend_rules?: string | null;
@@ -130,7 +131,8 @@ const DEMO_SIZE_CHARTS: NormalizedSizeChart[] = [
       { size: 'XL', bust: '94-98', waist: '74-78', shoulder: '44', length: '66' },
       { size: 'XXL', bust: '98-102', waist: '78-82', shoulder: '46', length: '68' },
     ],
-    product_id: null,
+    product_ids: [],
+    product_names: [],
     sku: null,
     recommend_params: {
       dimensions: [
@@ -172,7 +174,8 @@ const DEMO_SIZE_CHARTS: NormalizedSizeChart[] = [
       { cn_size: '43', eu_size: '43', us_size: '10', foot_length: '26.5' },
       { cn_size: '44', eu_size: '44', us_size: '11', foot_length: '27.0' },
     ],
-    product_id: null,
+    product_ids: [],
+    product_names: [],
     sku: null,
     recommend_params: {
       dimensions: [
@@ -200,7 +203,7 @@ export class SizeChartRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
   /** Normalize a raw DB row to NormalizedSizeChart */
-  private normalize(row: Record<string, unknown>): NormalizedSizeChart {
+  private normalize(row: Record<string, unknown>, extra?: { product_ids?: string[]; product_names?: string[] }): NormalizedSizeChart {
     return {
       id: (row.id as string) || '',
       name: (row.name as string) || '',
@@ -209,7 +212,8 @@ export class SizeChartRepository {
       chart_type: ((row.chart_type as string) || 'clothing') as SizeChartType,
       size_columns: (Array.isArray(row.size_columns) ? row.size_columns : []) as SizeChartColumn[],
       size_rows: (Array.isArray(row.size_rows) ? row.size_rows : []) as SizeChartRow[],
-      product_id: (row.product_id as string) || null,
+      product_ids: extra?.product_ids || [],
+      product_names: extra?.product_names || [],
       sku: (row.sku as string) || null,
       recommend_params: (row.recommend_params as { dimensions: SizeChartRecommendDimension[] }) || null,
       recommend_rules: (row.recommend_rules as string) || null,
@@ -248,7 +252,7 @@ export class SizeChartRepository {
       if (filters.status) filtered = filtered.filter(s => s.status === filters.status);
       if (filters.category) filtered = filtered.filter(s => s.category === filters.category);
       if (filters.chart_type) filtered = filtered.filter(s => s.chart_type === filters.chart_type);
-      if (filters.product_id) filtered = filtered.filter(s => s.product_id === filters.product_id);
+      if (filters.product_id) filtered = filtered.filter(s => s.product_ids?.includes(filters.product_id as string));
       if (filters.search) {
         const q = (filters.search as string).toLowerCase();
         filtered = filtered.filter(s =>
@@ -274,12 +278,25 @@ export class SizeChartRepository {
       };
     }
 
+    // Handle product_id filter via junction table
+    let chartIdsByProduct: string[] | null = null;
+    if (filters.product_id) {
+      const { data: jData } = await this.client
+        .from('size_chart_products')
+        .select('size_chart_id')
+        .eq('product_id', filters.product_id);
+      if (!jData || jData.length === 0) {
+        return { items: [], categories: {}, statuses: {}, chartTypes: {}, total: 0 };
+      }
+      chartIdsByProduct = (jData as Array<{ size_chart_id: string }>).map(j => j.size_chart_id);
+    }
+
     let query = this.client.from('size_charts').select('*', { count: 'exact' });
 
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.category) query = query.eq('category', filters.category);
     if (filters.chart_type) query = query.eq('chart_type', filters.chart_type);
-    if (filters.product_id) query = query.eq('product_id', filters.product_id);
+    if (chartIdsByProduct) query = query.in('id', chartIdsByProduct);
     if (filters.platform_connection_id) query = query.eq('platform_connection_id', filters.platform_connection_id);
     if (filters.search) {
       const q = (filters.search as string).toLowerCase();
@@ -297,6 +314,44 @@ export class SizeChartRepository {
     }
 
     const items = (data || []).map(row => this.normalize(row as Record<string, unknown>));
+
+    // Batch-fetch product associations for all charts via junction table
+    const chartIds = items.map(s => s.id);
+    if (chartIds.length > 0) {
+      const { data: junctions } = await this.client
+        .from('size_chart_products')
+        .select('size_chart_id, product_id')
+        .in('size_chart_id', chartIds);
+
+      if (junctions && junctions.length > 0) {
+        const productIds = [...new Set(junctions.map((j: Record<string, unknown>) => j.product_id as string))];
+        const { data: products } = await this.client
+          .from('product_details')
+          .select('id, name')
+          .in('id', productIds);
+
+        const nameMap: Record<string, string> = {};
+        (products || []).forEach((p: unknown) => {
+          const product = p as { id: string; name: string };
+          nameMap[product.id] = product.name;
+        });
+
+        const productIdMap: Record<string, string[]> = {};
+        const productNameMap: Record<string, string[]> = {};
+        (junctions as Array<{ size_chart_id: string; product_id: string }>).forEach(j => {
+          if (!productIdMap[j.size_chart_id]) productIdMap[j.size_chart_id] = [];
+          if (!productNameMap[j.size_chart_id]) productNameMap[j.size_chart_id] = [];
+          productIdMap[j.size_chart_id].push(j.product_id);
+          productNameMap[j.size_chart_id].push(nameMap[j.product_id] || j.product_id);
+        });
+
+        items.forEach(s => {
+          s.product_ids = productIdMap[s.id] || [];
+          s.product_names = productNameMap[s.id] || [];
+        });
+      }
+    }
+
     const categories: Record<string, number> = {};
     const statuses: Record<string, number> = {};
     const chartTypes: Record<string, number> = {};
@@ -325,27 +380,86 @@ export class SizeChartRepository {
     if (error) {
       throw new RepositoryError('find size chart by id', error.message, error.code);
     }
-    return data ? this.normalize(data as Record<string, unknown>) : null;
+    if (!data) return null;
+
+    const item = this.normalize(data as Record<string, unknown>);
+
+    // Fetch product associations via junction table
+    const { data: junctions } = await this.client
+      .from('size_chart_products')
+      .select('product_id')
+      .eq('size_chart_id', id);
+
+    if (junctions && junctions.length > 0) {
+      const productIds = (junctions as Array<{ product_id: string }>).map(j => j.product_id);
+      const { data: products } = await this.client
+        .from('product_details')
+        .select('id, name')
+        .in('id', productIds);
+
+      const nameMap: Record<string, string> = {};
+      (products || []).forEach((p: unknown) => {
+        const product = p as { id: string; name: string };
+        nameMap[product.id] = product.name;
+      });
+
+      item.product_ids = productIds;
+      item.product_names = productIds.map(pid => nameMap[pid] || pid);
+    }
+
+    return item;
   }
 
   /**
-   * Find a size chart by product ID (may be multiple per product).
+   * Find size charts by product ID via junction table (may be multiple per product).
    */
   async findByProductId(productId: string): Promise<NormalizedSizeChart[]> {
     if (isDemoMode()) {
-      return DEMO_SIZE_CHARTS.filter(s => s.product_id === productId);
+      return DEMO_SIZE_CHARTS.filter(s => s.product_ids?.includes(productId));
     }
+
+    // First get chart IDs from junction table
+    const { data: junctions, error: jError } = await this.client
+      .from('size_chart_products')
+      .select('size_chart_id')
+      .eq('product_id', productId);
+
+    if (jError) {
+      throw new RepositoryError('find size charts by product id', jError.message, jError.code);
+    }
+
+    if (!junctions || junctions.length === 0) return [];
+
+    const chartIds = (junctions as Array<{ size_chart_id: string }>).map(j => j.size_chart_id);
+
+    // Then fetch charts with junction data
     const { data, error } = await this.client
       .from('size_charts')
       .select('*')
-      .eq('product_id', productId)
+      .in('id', chartIds)
       .eq('status', 'active')
       .order('created_at', { ascending: false });
 
     if (error) {
       throw new RepositoryError('find size charts by product id', error.message, error.code);
     }
-    return (data || []).map(row => this.normalize(row as Record<string, unknown>));
+
+    const items = (data || []).map(row => this.normalize(row as Record<string, unknown>));
+
+    // Attach product info
+    const { data: products } = await this.client
+      .from('product_details')
+      .select('id, name')
+      .eq('id', productId);
+
+    const productName = (products?.[0] as { name: string } | undefined)?.name || productId;
+
+    items.forEach(s => {
+      s.product_ids = [productId];
+      s.product_names = [productName];
+    });
+
+    return items;
   }
 
   /**
@@ -399,7 +513,8 @@ export class SizeChartRepository {
         chart_type: input.chart_type || 'clothing',
         size_columns: input.size_columns || [],
         size_rows: input.size_rows || [],
-        product_id: input.product_id ?? null,
+        product_ids: input.product_ids || [],
+        product_names: [],
         sku: input.sku ?? null,
         recommend_params: input.recommend_params ?? null,
         recommend_rules: input.recommend_rules ?? null,
@@ -425,7 +540,6 @@ export class SizeChartRepository {
       chart_type: input.chart_type ?? 'clothing',
       size_columns: input.size_columns ?? [],
       size_rows: input.size_rows ?? [],
-      product_id: input.product_id ?? null,
       sku: input.sku ?? null,
       recommend_params: input.recommend_params ?? null,
       recommend_rules: input.recommend_rules ?? null,
@@ -450,7 +564,34 @@ export class SizeChartRepository {
       throw new RepositoryError('create size chart', error.message, error.code);
     }
 
-    return this.normalize(data as Record<string, unknown>);
+    // Insert product associations into junction table
+    if (input.product_ids && input.product_ids.length > 0) {
+      const junctions = input.product_ids.map(product_id => ({
+        size_chart_id: data.id as string,
+        product_id,
+      }));
+      await this.client.from('size_chart_products').insert(junctions);
+    }
+
+    // Fetch product names for the response
+    let productNames: string[] = [];
+    if (input.product_ids && input.product_ids.length > 0) {
+      const { data: products } = await this.client
+        .from('product_details')
+        .select('id, name')
+        .in('id', input.product_ids);
+      const nameMap: Record<string, string> = {};
+      (products || []).forEach((p: unknown) => {
+        const product = p as { id: string; name: string };
+        nameMap[product.id] = product.name;
+      });
+      productNames = input.product_ids.map(pid => nameMap[pid] || pid);
+    }
+
+    return this.normalize(data as Record<string, unknown>, {
+      product_ids: input.product_ids || [],
+      product_names: productNames,
+    });
   }
 
   /**
@@ -465,7 +606,6 @@ export class SizeChartRepository {
     if (input.chart_type !== undefined) updateData.chart_type = input.chart_type;
     if (input.size_columns !== undefined) updateData.size_columns = input.size_columns;
     if (input.size_rows !== undefined) updateData.size_rows = input.size_rows;
-    if (input.product_id !== undefined) updateData.product_id = input.product_id;
     if (input.sku !== undefined) updateData.sku = input.sku;
     if (input.recommend_params !== undefined) updateData.recommend_params = input.recommend_params;
     if (input.recommend_rules !== undefined) updateData.recommend_rules = input.recommend_rules;
@@ -485,6 +625,24 @@ export class SizeChartRepository {
     if (error) {
       throw new RepositoryError('update size chart', error.message, error.code);
     }
+
+    // Update product associations via junction table
+    if (input.product_ids !== undefined) {
+      // Delete existing associations
+      await this.client
+        .from('size_chart_products')
+        .delete()
+        .eq('size_chart_id', input.id);
+
+      // Insert new associations
+      if (input.product_ids.length > 0) {
+        const junctions = input.product_ids.map(product_id => ({
+          size_chart_id: input.id,
+          product_id,
+        }));
+        await this.client.from('size_chart_products').insert(junctions);
+      }
+    }
   }
 
   /**
@@ -492,6 +650,8 @@ export class SizeChartRepository {
    */
   async delete(id: string): Promise<void> {
     if (isDemoMode()) return;
+    // Clean up junction table associations first
+    await this.deleteProductAssociations(id);
     const { error } = await this.client
       .from('size_charts')
       .delete()
@@ -530,6 +690,42 @@ export class SizeChartRepository {
       .eq('id', id);
     if (error) {
       logger.error(`[SizeChartRepo] updateEmbedding failed for ${id}`, { message: error.message });
+    }
+  }
+
+  /**
+   * Set product associations for a size chart.
+   * Replaces all existing associations with the provided product_ids.
+   */
+  async setProductAssociations(sizeChartId: string, productIds: string[]): Promise<void> {
+    if (isDemoMode()) return;
+    // Delete existing associations
+    await this.deleteProductAssociations(sizeChartId);
+    // Insert new associations if any
+    if (productIds.length === 0) return;
+    const inserts = productIds.map(pid => ({
+      size_chart_id: sizeChartId,
+      product_id: pid,
+    }));
+    const { error } = await this.client
+      .from('size_chart_products')
+      .insert(inserts);
+    if (error) {
+      throw new RepositoryError('set product associations', error.message, error.code);
+    }
+  }
+
+  /**
+   * Delete all product associations for a size chart.
+   */
+  async deleteProductAssociations(sizeChartId: string): Promise<void> {
+    if (isDemoMode()) return;
+    const { error } = await this.client
+      .from('size_chart_products')
+      .delete()
+      .eq('size_chart_id', sizeChartId);
+    if (error) {
+      throw new RepositoryError('delete product associations', error.message, error.code);
     }
   }
 }

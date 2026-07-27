@@ -45,6 +45,7 @@ interface LlmModel {
 interface Props {
   currentProviderId?: string;
   onProviderChange?: (providerId: string) => void;
+  onModelsChange?: (providerId: string) => void;
 }
 
 export function LlmProviderManager({ currentProviderId, onProviderChange }: Props) {

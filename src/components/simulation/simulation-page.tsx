@@ -44,6 +44,7 @@ import { useLazyList } from '@/hooks/use-lazy-list';
 import { SourcePanel } from '@/components/chat/source-panel';
 import { SimulationEvaluationPanel } from './simulation-evaluation-panel';
 import { parseSSEStream, SourceItem } from '@/lib/sse-parser';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import { BotSelector } from './bot-selector';
 import { ABComparisonView, ABResult } from './ab-comparison-view';
 import { BatchTestPanel, BatchResult } from './batch-test-panel';
@@ -1502,7 +1503,7 @@ export function SimulationPage() {
                           }
                         }}
                       >
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">{stripInternalMarkersFromResponse(msg.content)}</p>
                         {/* Sources hint */}
                         {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
                           <div className="mt-1.5 pt-1.5 border-t border-border/30 flex items-center gap-1 flex-wrap">
@@ -1535,7 +1536,7 @@ export function SimulationPage() {
                     </div>
                     <div className="max-w-[70%]">
                       <div className="inline-block bg-muted rounded-2xl rounded-tl-md px-3.5 py-2.5" style={{ maxWidth: '100%' }}>
-                        <p className="text-sm whitespace-pre-wrap">{activeTabState.streamingContent}</p>
+                        <p className="text-sm whitespace-pre-wrap">{stripInternalMarkersFromResponse(activeTabState.streamingContent)}</p>
                         <span className="inline-block w-2 h-4 bg-primary/60 animate-pulse ml-1" />
                       </div>
                     </div>

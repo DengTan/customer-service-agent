@@ -8,6 +8,7 @@ import { SubAgentService } from '@/server/services/sub-agent-service';
 import { SettingsService } from '@/server/services/settings-service';
 import { HandoffService } from '@/server/services/handoff-service';
 import { RoutingService } from '@/server/services/routing-service';
+import type { RoutingMatchResult } from '@/server/services/routing-service';
 import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
 import { evaluateMaxTurns } from '@/server/services/max-turns';
 import type { KnowledgeSearchResult } from '@/server/services/knowledge-search-service';
@@ -275,18 +276,47 @@ export const POST = withErrorHandler(async (
   // 6. Get message history for context
   const historyMessages = await conversationService.listMessageHistory(conversationId, 20);
 
-  // P0/P1: Use shared RetrievalOrchestrator — same gating + evidence contract as
-  // the simulation route. This replaces the old pattern of calling
-  // KnowledgeSearchService + ProductDetailService + SizeChartService in parallel
-  // and then letting the LLM streaming service auto-publish raw knowledgeSources
-  // as final citations.
+  // [P0-B] Route FIRST — must happen before retrieval so we know which bot's
+  // knowledge_ids to use for the knowledge search, and which tools are allowed.
+  let routingMatch: RoutingMatchResult | null = null;
+  try {
+    const routingService = new RoutingService();
+    routingMatch = await routingService.matchRule(processedMessage);
+    if (routingMatch) {
+      logger.api.info('[messages/route] Routing rule matched', {
+        ruleId: routingMatch.rule.id,
+        botId: routingMatch.bot.id,
+        botName: routingMatch.bot.name,
+        hasTools: Array.isArray(routingMatch.bot.tools) && routingMatch.bot.tools.length > 0,
+        hasKnowledgeIds: Array.isArray(routingMatch.bot.knowledge_ids) && routingMatch.bot.knowledge_ids.length > 0,
+      });
+    }
+  } catch (err) {
+    logger.agent.debug('[messages/route] routing match error, falling back to default', { error: err });
+  }
+
+  // P0/P1: Use shared RetrievalOrchestrator
   const orchestrator = new RetrievalOrchestrator();
   const recentMessages = historyMessages.slice(-10).map(m => ({
     role: (m as unknown as { role: string }).role,
     content: (m as unknown as { content: string }).content,
   }));
 
-  const retrievalResult = await orchestrator.retrieve(processedMessage, recentMessages, { useHybrid: true });
+  // [P0-B] Build the bot-scoped knowledge_ids list from routing match.
+  // routingMatch.bot.knowledge_ids is typed as string[] (bot-config-repository.ts).
+  const routedBotKnowledgeIds: string[] | undefined =
+    routingMatch?.bot?.knowledge_ids
+      ? (Array.isArray(routingMatch.bot.knowledge_ids) && routingMatch.bot.knowledge_ids.length > 0
+          ? routingMatch.bot.knowledge_ids as string[]
+          : undefined)
+      : undefined;
+
+  // [P0-B] Thread routed knowledge_ids into the orchestrator so the knowledge search
+  // is scoped to the matched bot's knowledge base (not global).
+  const retrievalResult = await orchestrator.retrieve(processedMessage, recentMessages, {
+    useHybrid: true,
+    routedKnowledgeIds: routedBotKnowledgeIds,
+  });
   const { evidence: evidenceBundle } = retrievalResult;
   const orchestratorCitations = evidenceBundle.citations;
 
@@ -336,24 +366,15 @@ export const POST = withErrorHandler(async (
     logger.api.error('Failed to lookup shop bot, falling back to default', { error: botLookupError, conversationId });
   }
 
-  // 9.5 Evaluate routing rules — if a rule matches, use the target bot's system_prompt
-  // Routing system_prompt takes priority over shop-bound bot (for global keyword routing)
-  const routingService = new RoutingService();
+  // [P0-B] Routing system_prompt takes priority over shop-bound bot.
+  // routingMatch is already computed above (before retrieval). Re-use it here.
   let routingSystemPrompt: string | undefined;
-  try {
-    const routingMatch = await routingService.matchRule(processedMessage);
-    if (routingMatch) {
-      if (routingMatch.bot.system_prompt) {
-        routingSystemPrompt = routingMatch.bot.system_prompt;
-        // Update parentBotId for sub-agent delegation
-        if (enableSubAgent && !routingMatch.bot.is_sub_agent) {
-          shopBotId = routingMatch.bot.id;
-        }
-        logger.api.info('Routing rule matched', { ruleId: routingMatch.rule.id, botId: routingMatch.bot.id });
-      }
+  if (routingMatch?.bot?.system_prompt) {
+    routingSystemPrompt = routingMatch.bot.system_prompt;
+    // Update parentBotId for sub-agent delegation — routing bot overrides shop bot
+    if (enableSubAgent && !routingMatch.bot.is_sub_agent) {
+      shopBotId = routingMatch.bot.id;
     }
-  } catch {
-    // Routing evaluation failure should not block message processing
   }
 
   // 9.7 Proactive sub-agent intent detection — if a sub-agent matches with high confidence,
@@ -436,6 +457,10 @@ export const POST = withErrorHandler(async (
   // 10. Read AI model settings (appSettings already loaded in step 1.5)
 
   // 11. Stream LLM response with error boundary (using filtered content)
+  // [P0-C] Create AbortController so that post-stream DB operations
+  // (incrementMessageCount / qualityCheck / knowledgeGap) are skipped when the
+  // client aborts the SSE stream (disconnect / navigation).
+  const abortController = new AbortController();
   let stream: ReadableStream<Uint8Array>;
   try {
     stream = llmStreamingService.createStream(conversationId, processedMessage, historyMessages, {
@@ -479,6 +504,18 @@ export const POST = withErrorHandler(async (
       llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
       llmProviderApiKey: llmProviderConfig.providerApiKey,
       llmProviderDefaultModel: llmProviderConfig.defaultModel,
+      // [P0-B] Route bot scoping — pass routed bot's knowledge_ids and tools so:
+      //   1. knowledge search is scoped to the bot's knowledge base (via orchestrator)
+      //   2. LLM system prompt only exposes allowed tools (via routedBotTools)
+      routedBotKnowledgeIds,
+      routedBotTools: routingMatch?.bot?.tools
+        ? (Array.isArray(routingMatch.bot.tools) && routingMatch.bot.tools.length > 0
+            ? routingMatch.bot.tools as string[]
+            : undefined)
+        : undefined,
+      // [P0-C] Abort signal: passed to createStream so handlePostStreamOperations
+      // skips all DB side-effects when the SSE stream is cancelled.
+      abortSignal: abortController.signal,
     });
   } catch (streamInitError) {
     logger.api.error('Failed to create LLM stream', { error: streamInitError, conversationId });
@@ -495,12 +532,17 @@ export const POST = withErrorHandler(async (
 
   // Return streaming response
   // Note: Post-stream operations (insert assistant message, generate summary, check alerts)
-  // are handled internally by the LLMStreamingService
+  // are handled internally by the LLMStreamingService.
+  // [P0-C] Pass abortController.signal so that when the client disconnects and the
+  // Response is cancelled, abortController.abort() fires → handlePostStreamOperations
+  // detects signal.aborted and skips all DB side-effects.
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     },
+    // @ts-expect-error - signal is supported by Next.js / Node.js Response but not in TS lib <5.3
+    signal: abortController.signal,
   });
 });

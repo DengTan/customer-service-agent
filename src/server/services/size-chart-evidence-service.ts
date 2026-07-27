@@ -4,7 +4,9 @@
  * Extracts evidence metadata from size chart search results and computes stable
  * content hashes for citation stability.
  */
+import { createHash } from 'node:crypto';
 import type { NormalizedSizeChart } from '@/server/repositories/size-chart-repository';
+import { SizeChartRepository } from '@/server/repositories/size-chart-repository';
 import { logger } from '@/lib/logger';
 
 export interface SizeChartEvidence {
@@ -26,16 +28,10 @@ export interface SearchSizeChartsResult {
 }
 
 /**
- * Simple non-crypto hash for stable context hashing.
+ * Build a stable SHA-256 content hash for citation stability.
  */
-function simpleHash(input: string): string {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return `size_${Math.abs(hash).toString(36)}`;
+function buildContextHash(input: string): string {
+  return createHash('sha256').update(input).digest('hex');
 }
 
 export class SizeChartEvidenceService {
@@ -48,7 +44,7 @@ export class SizeChartEvidenceService {
       chart.name,
       chart.category,
       chart.chart_type,
-      chart.product_id ?? '',
+      chart.product_ids[0] ?? '',
       chart.sku ?? '',
     ].join('|');
 
@@ -57,12 +53,12 @@ export class SizeChartEvidenceService {
       name: chart.name,
       category: chart.category,
       chart_type: chart.chart_type,
-      product_id: chart.product_id,
+      product_id: chart.product_ids[0] ?? null,
       sku: chart.sku,
       content_hash: chart.content_hash,
       doc_ids: Array.isArray(chart.doc_ids) ? chart.doc_ids : [],
       hit_count: chart.hit_count ?? 0,
-      context_hash: simpleHash(contextSource),
+      context_hash: buildContextHash(contextSource),
     };
   }
 
@@ -78,9 +74,8 @@ export class SizeChartEvidenceService {
    */
   async recordHit(chartId: string): Promise<void> {
     try {
-      const { getSupabaseClient } = await import('@/storage/database/supabase-client');
-      const client = getSupabaseClient();
-      await client.rpc('increment_hit_count', { chart_id: chartId });
+      const repo = new SizeChartRepository();
+      await repo.incrementHitCount(chartId);
     } catch (err) {
       logger.agent.debug('[SizeChartEvidenceService] Failed to record hit', { chartId, error: err });
     }

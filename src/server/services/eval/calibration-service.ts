@@ -355,14 +355,12 @@ export class CalibrationService {
     const orchestrator = new RetrievalOrchestrator();
 
     // Step 1: retrieval — replay through orchestrator (read-only)
-    const retrievalResult = await orchestrator.retrieve(turn.input_user_message, evalConvId, turn.input_recent_messages, {
+    const retrievalResult = await orchestrator.retrieve(turn.input_user_message, turn.input_recent_messages, {
       minScore: config.min_score,
     });
 
     // P2 FIX: When external knowledge base is enabled, use externalContext as knowledge context
-    const hasExternalContext = !!retrievalResult.externalContext;
-    const effectiveKnowledgeContext = retrievalResult.knowledgeContext?.context
-      ?? (hasExternalContext ? retrievalResult.externalContext!.context : undefined);
+    const effectiveKnowledgeContext = retrievalResult.knowledgeContext?.context;
 
     const predictedCitations: PredictedCitation[] = retrievalResult.evidence.citations.map(c => ({
       type: c.type as 'knowledge' | 'product' | 'size_chart',
@@ -724,6 +722,9 @@ export class CalibrationService {
   // Turn evaluation
   // ---------------------------------------------------------------------------
 
+  // Maximum concurrent LLM calls to avoid overwhelming the API
+  private static readonly MAX_CONCURRENT_LLM_CALLS = 3;
+
   private async evaluateAllTurns(
     turns: EvalDatasetTurn[],
     configs: CalibrationConfig[],
@@ -734,26 +735,37 @@ export class CalibrationService {
       const key = CalibrationService.configKey(config);
       const configResults: ReplayResult[] = [];
 
-      for (const turn of turns) {
-        try {
-          const replay = await this.replayTurn(turn, config);
-          configResults.push(replay);
-        } catch (err) {
-          logger.warn('[CalibrationService] Turn replay failed', {
-            turnId: turn.id,
-            configKey: key,
-            error: err,
-          });
-          configResults.push({
-            config,
-            turn_id: turn.id,
-            predictedAnswer: '',
-            predictedCitations: [],
-            predictedHandoff: false,
-            recallHit: false,
-            executionTimeMs: 0,
-          });
-        }
+      // Batch turns into chunks of MAX_CONCURRENT_LLM_CALLS for parallel execution
+      const chunkSize = CalibrationService.MAX_CONCURRENT_LLM_CALLS;
+      for (let i = 0; i < turns.length; i += chunkSize) {
+        const chunk = turns.slice(i, i + chunkSize);
+
+        // Execute chunk in parallel
+        const chunkResults = await Promise.all(
+          chunk.map(async (turn): Promise<ReplayResult> => {
+            try {
+              const replay = await this.replayTurn(turn, config);
+              return replay;
+            } catch (err) {
+              logger.warn('[CalibrationService] Turn replay failed', {
+                turnId: turn.id,
+                configKey: key,
+                error: err,
+              });
+              return {
+                config,
+                turn_id: turn.id,
+                predictedAnswer: '',
+                predictedCitations: [],
+                predictedHandoff: false,
+                recallHit: false,
+                executionTimeMs: 0,
+              };
+            }
+          })
+        );
+
+        configResults.push(...chunkResults);
       }
 
       results.set(key, configResults);

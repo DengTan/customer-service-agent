@@ -399,7 +399,7 @@ export class ProductDetailService {
     for (const chart of charts) {
       await this.sizeChartRepository.update({
         id: chart.id,
-        product_id: null,
+        product_ids: [],
         sku: null,
       });
     }

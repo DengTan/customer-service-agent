@@ -40,6 +40,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatMessageTime, shouldShowTimeDivider } from '@/lib/chat-utils';
 import { useThemeSettings } from '@/lib/theme-settings-context';
 import { logger } from '@/lib/logger';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 
 interface Attachment {
   id: string;
@@ -519,9 +520,9 @@ export function ConversationDetail({
                           ) : (
                             <>
                               {msg.message_type && msg.message_type !== 'text' && msg.rich_content && (
-                                <RichMessageCard type={msg.message_type} content={msg.rich_content} onAction={handleCardAction} />
+                                <RichMessageCard type={msg.message_type} content={msg.rich_content} onAction={handleCardAction} failed={msg.failed} />
                               )}
-                              {msg.content && <MarkdownRenderer content={msg.content} />}
+                              {msg.content && <MarkdownRenderer content={stripInternalMarkersFromResponse(msg.content)} />}
                               {msg.message_type === 'knowledge_images' && msg.rich_content?.images && msg.rich_content.images.length > 0 && (
                                 <div className="mt-2 space-y-2">
                                   {msg.rich_content.images.map((img, imgIdx) => (

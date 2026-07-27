@@ -177,10 +177,18 @@ export class RetrievalOrchestrator {
       useHybrid?: boolean;
       minScore?: number;
       skipRetrieval?: boolean; // for testing
+      /** [P0-B] Bot-scoped knowledge item IDs — when provided, only these IDs are returned.
+       *  Falls back to global search when empty/undefined. */
+      routedKnowledgeIds?: string[];
     }
   ): Promise<RetrievalResult> {
     const startTime = Date.now();
     const useHybrid = options?.useHybrid ?? false;
+    // [P0-B] Resolve effective knowledge_ids: routed bot takes priority over global.
+    const effectiveKnowledgeIds: string[] =
+      Array.isArray(options?.routedKnowledgeIds) && options!.routedKnowledgeIds!.length > 0
+        ? options!.routedKnowledgeIds!
+        : [];
 
     // Step 1: Query gate decision
     const decision = this.gating.shouldRetrieve(userMessage, recentMessages);
@@ -236,6 +244,17 @@ export class RetrievalOrchestrator {
 
       // Process knowledge search result
       if (searchResult) {
+        // [P0-B] Post-filter by routed bot's knowledge_ids when provided.
+        // This ensures the routed bot only sees its own knowledge base.
+        let filteredSources = 'sources' in searchResult
+          ? (searchResult as { sources: KnowledgeSourceItem[] }).sources
+          : [];
+        if (effectiveKnowledgeIds.length > 0) {
+          filteredSources = filteredSources.filter(s =>
+            effectiveKnowledgeIds.includes(s.knowledge_item_id ?? s.id ?? '')
+          );
+        }
+
         const hybridMeta = 'hybridMetadata' in searchResult ? (searchResult as { hybridMetadata?: { rerankApplied: boolean; rerankBackend?: string; rerankDegraded?: boolean; vectorResults: number; bm25Results: number } }).hybridMetadata : undefined;
 
         // Reranker backend truthfulness: the orchestrator must report
@@ -255,11 +274,16 @@ export class RetrievalOrchestrator {
           degradationReasons.push('reranker_fallback');
         }
 
-        knowledgeBundle = this.buildKnowledgeBundle(searchResult, rerankDegraded, effectiveMinScore);
+        // [P0-B] Pass scoped sources to buildKnowledgeBundle so it operates on the
+        // routed-bot-filtered list, not the global search result.
+        knowledgeBundle = this.buildKnowledgeBundle(
+          { sources: filteredSources, confidence: 'confidence' in searchResult ? (searchResult as { confidence: number }).confidence : 0, hybridMetadata: hybridMeta },
+          rerankDegraded,
+          effectiveMinScore,
+        );
 
-        const knowledgeSources = 'sources' in searchResult
-          ? (searchResult as { sources: KnowledgeSourceItem[] }).sources
-          : [];
+        // [P0-B] Use filteredSources (routed-bot-scoped) instead of raw searchResult.sources
+        const knowledgeSources = filteredSources;
         const knowledgeContextText = 'context' in searchResult ? (searchResult as { context: string }).context : '';
         const knowledgeImages = 'images' in searchResult
           ? (searchResult as { images: Array<{ url: string; name: string; category: string }> }).images

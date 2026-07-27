@@ -91,16 +91,16 @@ export class LLMClientAdapter {
   ): AsyncGenerator<LLMStreamChunk> {
     // this.baseUrl already contains the full endpoint
     const url = this.baseUrl;
-    logger.debug('[LLMClient] stream() called with url:', url, 'model:', options.model);
-    console.log('[LLMClient] messages count:', messages.length);
-    console.log('[LLMClient] messages[0]:', JSON.stringify(messages[0]).substring(0, 200));
+    logger.debug('[LLMClient] stream() called', { url, model: options.model });
+    logger.debug('[LLMClient] messages count:', { count: messages.length });
+    logger.debug('[LLMClient] messages[0]:', { preview: JSON.stringify(messages[0]).substring(0, 200) });
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.apiKey}`,
       ...this.customHeaders,
     };
-    console.log('[LLMClient] headers:', JSON.stringify(headers).replace(/Bearer [^"]+/, 'Bearer ***'));
+    logger.debug('[LLMClient] headers:', { headers: JSON.stringify(headers).replace(/Bearer [^"]+/, 'Bearer __API_KEY_MASKED__') });
 
     const body: Record<string, unknown> = {
       model: options.model,
@@ -124,13 +124,11 @@ export class LLMClientAdapter {
         signal: AbortSignal.timeout(this.timeout),
       });
 
-      console.log('[LLMClient] response status:', response.status);
-      console.log('[LLMClient] response ok:', response.ok);
-      console.log('[LLMClient] response body type:', typeof response.body, response.body ? 'exists' : 'null');
+      logger.debug('[LLMClient] response status:', { status: response.status, ok: response.ok, bodyType: typeof response.body, bodyExists: !!response.body });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('[LLMClient] error response:', errorText);
+        logger.debug('[LLMClient] error response:', { error: errorText });
         logger.error('LLM stream request failed', {
           status: response.status,
           error: errorText,
@@ -140,28 +138,27 @@ export class LLMClientAdapter {
       }
 
       if (!response.body) {
-        console.log('[LLMClient] response body is null!');
+        logger.debug('[LLMClient] response body is null');
         throw new Error('Response body is null');
       }
 
-      console.log('[LLMClient] starting to read stream...');
+      logger.debug('[LLMClient] starting to read stream');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
       try {
-        const readCount = 0;
         while (true) {
           const result = await reader.read();
-          console.log('[LLMClient] read() result:', JSON.stringify({ done: result.done, valueLen: result.value?.length, valueFirstBytes: result.value ? Array.from(result.value.slice(0, 20)) : null }));
+          logger.debug('[LLMClient] read() result:', { done: result.done, valueLen: result.value?.length, valueFirstBytes: result.value ? Array.from(result.value.slice(0, 20)) : null });
           const { done, value } = result;
           if (done) {
-            console.log('[LLMClient] stream done, buffer remaining:', buffer.length, 'chars');
+            logger.debug('[LLMClient] stream done', { bufferRemaining: buffer.length });
             break;
           }
 
           const decoded = decoder.decode(value, { stream: true });
-          console.log('[LLMClient] decoded chunk length:', decoded.length, 'preview:', decoded.substring(0, 100));
+          logger.debug('[LLMClient] decoded chunk length:', { length: decoded.length, preview: decoded.substring(0, 100) });
           buffer += decoded;
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
@@ -306,8 +303,7 @@ export class LLMClientAdapter {
     const delta = choice?.delta as Record<string, unknown> | undefined;
     const message = choice?.message as Record<string, unknown> | undefined;
 
-    // DEBUG
-    console.log('[LLMClient DEBUG] parsed:', JSON.stringify(data).substring(0, 300));
+    logger.debug('[LLMClient DEBUG] parsed:', { data: JSON.stringify(data).substring(0, 300) });
 
     if (!delta && !message) return null;
 
@@ -341,7 +337,7 @@ export class LLMClientAdapter {
 
     // Only yield if there's actual content to return
     if (chunk.content !== undefined && chunk.content !== '') {
-      console.log('[LLMClient DEBUG] parsed chunk content:', chunk.content.substring(0, 50));
+      logger.debug('[LLMClient DEBUG] parsed chunk content:', { content: chunk.content.substring(0, 50) });
       return chunk;
     }
 
@@ -362,7 +358,7 @@ export class LLMClientAdapter {
       };
     }
 
-    console.log('[LLMClient DEBUG] parsed chunk:', JSON.stringify(chunk));
+    logger.debug('[LLMClient DEBUG] parsed chunk:', { chunk: JSON.stringify(chunk) });
     return chunk;
   }
 }

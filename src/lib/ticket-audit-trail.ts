@@ -89,6 +89,7 @@ export async function auditTicketWrite<T>(params: {
     [hook],
     {
       userId: params.operatorId,
+      operation: params.operation,
       payload: {
         ticket_id: params.ticketId,
         from_status: params.details?.from_status ?? null,

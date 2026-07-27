@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Upload, Ruler, Eye, Edit3 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Plus, Trash2, Upload, Ruler, Eye, Edit3, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
 
@@ -40,11 +40,26 @@ const DEFAULT_SHOES_DIMENSIONS: RecommendDimension[] = [
   { key: 'foot_width', label: '脚宽', unit: 'cm', range: [7, 14], required: false },
 ];
 
+function normalizeDimensions(dims?: RecommendDimension[] | null): RecommendDimension[] {
+  if (!Array.isArray(dims) || dims.length === 0) {
+    return [...DEFAULT_CLOTHING_DIMENSIONS];
+  }
+  return dims.map(d => {
+    if (!d.range || !Array.isArray(d.range) || d.range.length < 2) {
+      return { ...d, range: [0, 100] as [number, number] };
+    }
+    return {
+      ...d,
+      range: [Number(d.range[0]) || 0, Number(d.range[1]) || 100] as [number, number],
+    };
+  });
+}
+
 interface SizeChartFormData {
   name: string;
   chart_type: string;
   category: string;
-  product_id: string;
+  product_ids: string[];
   sku: string;
   size_columns: SizeColumn[];
   size_rows: SizeRow[];
@@ -58,12 +73,16 @@ interface SizeChartFormData {
 
 interface SizeChartFormModalProps {
   open: boolean;
+  /** Pre-fill product_id and auto-select this product in the dropdown */
+  defaultProductId?: string;
+  defaultProductName?: string;
+  defaultProductSku?: string;
   sizeChart?: {
     id: string;
     name: string;
     chart_type: string;
     category: string;
-    product_id: string | null;
+    product_ids: string[];
     sku: string | null;
     size_columns: SizeColumn[];
     size_rows: SizeRow[];
@@ -80,6 +99,9 @@ interface SizeChartFormModalProps {
 
 export function SizeChartFormModal({
   open,
+  defaultProductId,
+  defaultProductName,
+  defaultProductSku,
   sizeChart,
   onClose,
   onSaved,
@@ -91,11 +113,18 @@ export function SizeChartFormModal({
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productList, setProductList] = useState(productOptions);
 
+  // Product search dropdown state
+  const [productSearch, setProductSearch] = useState('');
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [filteredProducts, setFilteredProducts] = useState<typeof productList>([]);
+  const productDropdownRef = useRef<HTMLDivElement>(null);
+  const productInputRef = useRef<HTMLInputElement>(null);
+
   const [form, setForm] = useState<SizeChartFormData>({
     name: '',
     chart_type: 'clothing',
     category: '',
-    product_id: '',
+    product_ids: [],
     sku: '',
     size_columns: [
       { key: 'size', label: '尺码' },
@@ -127,7 +156,7 @@ export function SizeChartFormModal({
         name: sizeChart.name,
         chart_type: sizeChart.chart_type || 'clothing',
         category: sizeChart.category || '',
-        product_id: sizeChart.product_id || '',
+        product_ids: sizeChart.product_ids || [],
         sku: sizeChart.sku || '',
         size_columns: sizeChart.size_columns?.length > 0
           ? sizeChart.size_columns
@@ -136,7 +165,7 @@ export function SizeChartFormModal({
           ? sizeChart.size_rows
           : [{ size: 'S', bust: '', waist: '' }],
         recommend_enabled: true,
-        recommend_dimensions: sizeChart.recommend_params?.dimensions || [...DEFAULT_CLOTHING_DIMENSIONS],
+        recommend_dimensions: normalizeDimensions(sizeChart.recommend_params?.dimensions),
         recommend_rules: sizeChart.recommend_rules || '',
         description: sizeChart.description || '',
         image_url: sizeChart.image_url || '',
@@ -147,8 +176,8 @@ export function SizeChartFormModal({
         name: '',
         chart_type: 'clothing',
         category: '',
-        product_id: '',
-        sku: '',
+        product_ids: defaultProductId ? [defaultProductId] : [],
+        sku: defaultProductSku || '',
         size_columns: [
           { key: 'size', label: '尺码' },
           { key: 'bust', label: '胸围(cm)' },
@@ -167,7 +196,7 @@ export function SizeChartFormModal({
         status: 'active',
       });
     }
-  }, [open, sizeChart]);
+  }, [open, sizeChart, defaultProductId, defaultProductSku]);
 
   // Load product list when opening new modal
   useEffect(() => {
@@ -186,6 +215,42 @@ export function SizeChartFormModal({
       .finally(() => setLoadingProducts(false));
   }, [open, productOptions.length]);
 
+  // Filter products based on search query (exclude already selected)
+  useEffect(() => {
+    if (!productSearch.trim()) {
+      setFilteredProducts(productList.filter(p => !form.product_ids.includes(p.id)));
+    } else {
+      const query = productSearch.toLowerCase();
+      setFilteredProducts(
+        productList.filter(p =>
+          !form.product_ids.includes(p.id) &&
+          (p.name.toLowerCase().includes(query) ||
+          (p.sku && p.sku.toLowerCase().includes(query)))
+        )
+      );
+    }
+  }, [productSearch, productList, form.product_ids]);
+
+  // Initialize filtered products when dropdown opens
+  useEffect(() => {
+    if (showProductDropdown && filteredProducts.length === 0) {
+      setFilteredProducts(productList);
+    }
+  }, [showProductDropdown]);
+
+  // Click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (productDropdownRef.current && !productDropdownRef.current.contains(event.target as Node)) {
+        setShowProductDropdown(false);
+      }
+    };
+    if (showProductDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showProductDropdown]);
+
   // Switch default dimensions when chart type changes
   const handleChartTypeChange = (type: string) => {
     setForm(prev => ({
@@ -202,12 +267,44 @@ export function SizeChartFormModal({
   };
 
   const handleProductChange = (productId: string) => {
+    if (!productId || form.product_ids.includes(productId)) {
+      setProductSearch('');
+      setShowProductDropdown(false);
+      return;
+    }
     const selected = productList.find(p => p.id === productId);
     setForm(prev => ({
       ...prev,
-      product_id: productId,
-      sku: selected?.sku || '',
+      product_ids: [...prev.product_ids, productId],
+      sku: selected?.sku || prev.sku,
     }));
+    setProductSearch('');
+    setShowProductDropdown(false);
+  };
+
+  const removeProduct = (productId: string) => {
+    setForm(prev => ({
+      ...prev,
+      product_ids: prev.product_ids.filter(id => id !== productId),
+    }));
+  };
+
+  // Clear all product selections (select "通用尺码表")
+  const clearProductSelection = () => {
+    setForm(prev => ({
+      ...prev,
+      product_ids: [],
+      sku: '',
+    }));
+    setProductSearch('');
+    setShowProductDropdown(false);
+  };
+
+  // Get selected product names for display chips
+  const getSelectedProducts = () => {
+    return form.product_ids
+      .map(id => productList.find(p => p.id === id))
+      .filter(Boolean) as typeof productList;
   };
 
   const addColumn = () => {
@@ -300,7 +397,7 @@ export function SizeChartFormModal({
         name: form.name.trim(),
         chart_type: form.chart_type,
         category: form.category.trim() || '未分类',
-        product_id: form.product_id || null,
+        product_ids: form.product_ids.length > 0 ? form.product_ids : null,
         sku: form.sku || null,
         size_columns: form.size_columns,
         size_rows: form.size_rows,
@@ -413,19 +510,106 @@ export function SizeChartFormModal({
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">关联商品</label>
-                <select
-                  value={form.product_id}
-                  onChange={e => handleProductChange(e.target.value)}
-                  disabled={loadingProducts}
-                  className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">— 无（通用尺码表）—</option>
-                  {productList.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.sku ? `(${p.sku})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div ref={productDropdownRef} className="relative">
+                  {/* Selected chips + search input */}
+                  <div className="flex flex-wrap gap-1.5 p-2 rounded-lg bg-muted border border-border min-h-[42px]">
+                    {/* Chips for selected products */}
+                    {getSelectedProducts().map(p => (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-xs"
+                      >
+                        <span className="text-primary font-medium max-w-[120px] truncate">
+                          {p.name}
+                          {p.sku && <span className="text-muted-foreground font-normal ml-1">({p.sku})</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeProduct(p.id)}
+                          className="flex-shrink-0 w-4 h-4 rounded hover:bg-primary/20 flex items-center justify-center transition-colors"
+                        >
+                          <X className="w-3 h-3 text-primary/60 hover:text-primary" />
+                        </button>
+                      </div>
+                    ))}
+                    {/* Search input */}
+                    {form.product_ids.length === 0 && !productSearch && (
+                      <div
+                        className="flex-1 min-w-[120px] cursor-pointer flex items-center"
+                        onClick={() => {
+                          setShowProductDropdown(true);
+                          setFilteredProducts(productList.filter(p => !form.product_ids.includes(p.id)));
+                          productInputRef.current?.focus();
+                        }}
+                      >
+                        <Search className="w-4 h-4 text-muted-foreground/50 mr-2 flex-shrink-0" />
+                        <span className="text-sm text-muted-foreground/50">搜索并选择商品...</span>
+                      </div>
+                    )}
+                    {(form.product_ids.length > 0 || productSearch) && (
+                      <input
+                        ref={productInputRef}
+                        type="text"
+                        value={productSearch}
+                        onChange={e => {
+                          setProductSearch(e.target.value);
+                          setShowProductDropdown(true);
+                          setFilteredProducts(productList.filter(p => !form.product_ids.includes(p.id)));
+                        }}
+                        onFocus={() => {
+                          setShowProductDropdown(true);
+                          setFilteredProducts(productList.filter(p => !form.product_ids.includes(p.id)));
+                        }}
+                        placeholder={form.product_ids.length > 0 ? '继续搜索...' : '搜索商品名称或SKU...'}
+                        className="flex-1 min-w-[120px] bg-transparent border-none text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                      />
+                    )}
+                  </div>
+
+                  {/* Dropdown list */}
+                  {showProductDropdown && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-card rounded-lg border border-border shadow-lg max-h-60 overflow-y-auto">
+                      {/* "通用尺码表" option - only show when no products selected */}
+                      {form.product_ids.length === 0 && (
+                        <div
+                          className="px-3 py-2 text-sm text-muted-foreground hover:bg-muted cursor-pointer border-b border-border/50"
+                          onClick={() => {
+                            clearProductSelection();
+                          }}
+                        >
+                          通用尺码表（无关联）
+                        </div>
+                      )}
+                      {/* Product options */}
+                      {filteredProducts.length > 0 ? (
+                        filteredProducts.map(p => (
+                          <div
+                            key={p.id}
+                            className="px-3 py-2 cursor-pointer hover:bg-muted transition-colors"
+                            onClick={() => {
+                              handleProductChange(p.id);
+                            }}
+                          >
+                            <div className="text-sm text-foreground truncate">{p.name}</div>
+                            {p.sku && (
+                              <div className="text-xs text-muted-foreground">SKU: {p.sku}</div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                          {loadingProducts ? '加载中...' : (productSearch ? '未找到匹配商品' : '暂无可选商品')}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {loadingProducts && productList.length === 0 && (
+                  <div className="text-xs text-muted-foreground mt-1">加载商品中...</div>
+                )}
+                <div className="text-xs text-muted-foreground/60 mt-1">
+                  可关联多个商品，或留空创建通用尺码表
+                </div>
               </div>
             </div>
 
@@ -551,11 +735,11 @@ export function SizeChartFormModal({
                         <div className="flex items-center gap-2">
                           <input
                             type="number"
-                            value={dim.range[0]}
+                            value={dim.range?.[0] ?? 0}
                             onChange={e => setForm(p => ({
                               ...p,
                               recommend_dimensions: p.recommend_dimensions.map(d =>
-                                d.key === dim.key ? { ...d, range: [parseFloat(e.target.value) || 0, dim.range[1]] } : d,
+                                d.key === dim.key ? { ...d, range: [parseFloat(e.target.value) || 0, d.range?.[1] ?? 100] } : d,
                               ),
                             }))}
                             className="flex-1 px-2 py-1 rounded bg-card border-none text-xs text-foreground focus:outline-none"
@@ -564,11 +748,11 @@ export function SizeChartFormModal({
                           <span className="text-muted-foreground text-xs">—</span>
                           <input
                             type="number"
-                            value={dim.range[1]}
+                            value={dim.range?.[1] ?? 100}
                             onChange={e => setForm(p => ({
                               ...p,
                               recommend_dimensions: p.recommend_dimensions.map(d =>
-                                d.key === dim.key ? { ...d, range: [dim.range[0], parseFloat(e.target.value) || 0] } : d,
+                                d.key === dim.key ? { ...d, range: [d.range?.[0] ?? 0, parseFloat(e.target.value) || 0] } : d,
                               ),
                             }))}
                             className="flex-1 px-2 py-1 rounded bg-card border-none text-xs text-foreground focus:outline-none"

@@ -433,6 +433,7 @@ export function ProductsTab() {
         onClose={handleCloseProductModal}
         onSaved={handleProductSaved}
         product={editingProduct}
+        productOptions={productList.map(p => ({ id: p.id, name: p.name, sku: p.sku }))}
       />
 
       {/* Toggle Confirm Dialog */}

@@ -7,6 +7,8 @@ interface RichMessageCardProps {
   type: string;
   content: RichContent;
   onAction?: (action: CardAction) => void;
+  /** Whether the tool execution failed — disables action buttons and shows an error strip */
+  failed?: boolean;
 }
 
 function str(val: unknown): string {
@@ -33,7 +35,7 @@ function stepArr(val: unknown): Array<{ label: string; time: string; completed: 
   });
 }
 
-export function RichMessageCard({ type, content, onAction }: RichMessageCardProps) {
+export function RichMessageCard({ type, content, onAction, failed }: RichMessageCardProps) {
   const d = content.data as Record<string, unknown>;
   const orderId = str(d.order_id);
   const productName = str(d.product_name);
@@ -86,8 +88,9 @@ export function RichMessageCard({ type, content, onAction }: RichMessageCardProp
             {actions.map((action, i) => (
               <button
                 key={i}
-                className="text-xs px-3 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                onClick={() => onAction?.({
+                disabled={failed}
+                className={`text-xs px-3 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors ${failed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={() => !failed && onAction?.({
                   type: action.action as CardAction['type'],
                   label: action.label,
                   data: action.data,
@@ -96,6 +99,11 @@ export function RichMessageCard({ type, content, onAction }: RichMessageCardProp
                 {action.label}
               </button>
             ))}
+          </div>
+        )}
+        {failed && (
+          <div className="mt-2 px-2 py-1 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40">
+            <p className="text-xs text-red-600 dark:text-red-400">工具执行失败，请重试</p>
           </div>
         )}
       </div>
@@ -199,14 +207,15 @@ export function RichMessageCard({ type, content, onAction }: RichMessageCardProp
             {actions.map((action, i) => (
               <button
                 key={i}
+                disabled={failed}
                 className={`text-xs px-3 py-1 rounded-md transition-colors ${
                   action.action === 'confirm_refund'
-                    ? 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400 hover:bg-green-300 dark:hover:bg-green-800'
+                    ? `bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400 ${failed ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-300 dark:hover:bg-green-800'}`
                     : action.action === 'cancel_refund'
-                    ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-                    : 'bg-primary/10 text-primary hover:bg-primary/20'
+                    ? `bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 ${failed ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`
+                    : `bg-primary/10 text-primary ${failed ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary/20'}`
                 }`}
-                onClick={() => onAction?.({
+                onClick={() => !failed && onAction?.({
                   type: action.action as CardAction['type'],
                   label: action.label,
                   data: action.data,
@@ -215,6 +224,11 @@ export function RichMessageCard({ type, content, onAction }: RichMessageCardProp
                 {action.label}
               </button>
             ))}
+          </div>
+        )}
+        {failed && (
+          <div className="mt-2 px-2 py-1 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40">
+            <p className="text-xs text-red-600 dark:text-red-400">工具执行失败，请重试</p>
           </div>
         )}
       </div>

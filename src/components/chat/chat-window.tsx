@@ -14,6 +14,7 @@ import { SourcePanel } from './source-panel';
 import { formatMessageTime, shouldShowTimeDivider } from '@/lib/chat-utils';
 import { shouldShowRatingCard, type RatingSubmitResult } from './rating-gating';
 import { useThemeSettings } from '@/lib/theme-settings-context';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 
 interface ChatWindowProps {
   conversation: Conversation | undefined;
@@ -869,9 +870,9 @@ export function ChatWindow({
                         ) : (
                           <>
                             {msg.message_type && msg.message_type !== 'text' && msg.rich_content ? (
-                              <RichMessageCard type={msg.message_type} content={msg.rich_content} onAction={handleCardAction} />
+                              <RichMessageCard type={msg.message_type} content={msg.rich_content} onAction={handleCardAction} failed={msg.failed} />
                             ) : null}
-                            {msg.content && <MarkdownRenderer content={msg.content} />}
+                            {msg.content && <MarkdownRenderer content={stripInternalMarkersFromResponse(msg.content)} />}
                             {/* Knowledge images from AI reply */}
                             {msg.message_type === 'knowledge_images' && msg.rich_content?.images && msg.rich_content.images.length > 0 && (
                               <div className="mt-2 space-y-2">
@@ -1016,7 +1017,7 @@ export function ChatWindow({
                 <div>
                   <div className="bg-blue-100 dark:bg-blue-900 rounded-lg px-3 py-2 text-foreground">
                     <div className="text-sm leading-relaxed">
-                      <MarkdownRenderer content={streamingContent} />
+                      <MarkdownRenderer content={stripInternalMarkersFromResponse(streamingContent)} />
                       <span className="inline-block w-1.5 h-4 bg-primary/50 animate-pulse ml-0.5 align-middle" />
                     </div>
                   </div>

@@ -100,6 +100,7 @@ const CITATION_S2: CitationItem = {
 };
 
 const RESPONSE = '根据我们的退货政策，7天内无理由退货，退款3个工作日处理。';
+const USER_QUESTION = '退货政策是什么？';
 
 const BASE_CONFIG = {
   baseUrl: 'https://fake.example.com/v1',
@@ -134,7 +135,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -161,7 +162,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -184,7 +185,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -210,7 +211,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1, CITATION_S2], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1, CITATION_S2], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -237,7 +238,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify('退货政策和退款时间', [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify('退货政策和退款时间', USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -260,7 +261,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify('我不知道', [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify('我不知道', USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -282,7 +283,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     // fail-closed: unknown claim ID in support → whole verification fails
     expect(result.ok).toBe(false);
@@ -305,7 +306,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -329,7 +330,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -346,7 +347,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -363,7 +364,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -380,7 +381,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -403,7 +404,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -429,7 +430,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     // fail-closed: C2's claim text is not in the response → whole verification fails
     expect(result.ok).toBe(false);
@@ -449,7 +450,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify(RESPONSE, [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify(RESPONSE, USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -475,7 +476,7 @@ describe('ClaimSupportVerifier.verify', () => {
     });
 
     const verifier = new ClaimSupportVerifier();
-    const result = await verifier.verify('退货政策和退货规则', [CITATION_S1], BASE_CONFIG);
+    const result = await verifier.verify('退货政策和退货规则', USER_QUESTION, [CITATION_S1], BASE_CONFIG);
 
     expect(result.ok).toBe(true);
     if (result.ok) {

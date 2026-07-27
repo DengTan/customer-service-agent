@@ -3,6 +3,7 @@ import { withErrorHandler, parseJsonBody, apiSuccess, apiError, HttpStatus, getA
 import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
+import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { logger } from '@/lib/logger';
 import { SettingsService } from '@/server/services/settings-service';
 import { type KnowledgeSearchResult } from '@/server/services/knowledge-search-service';
@@ -311,6 +312,22 @@ export const POST = withErrorHandler(async (
           });
         }
 
+        // P2-A: Check AI max concurrent conversations — same guard as conversation path.
+        // Simulation messages also consume LLM capacity; without this check, a user could
+        // bypass the ai_max_concurrent limit by routing messages through /simulations.
+        const maxConcurrent = parseInt(appSettings.ai_max_concurrent || '0', 10);
+        if (maxConcurrent > 0) {
+          const convRepo = new ConversationRepository();
+          const activeCount = await convRepo.countActiveConversations();
+          if (activeCount >= maxConcurrent) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              error: `当前 AI 客服繁忙（同时服务 ${activeCount} 个对话，上限 ${maxConcurrent}），请稍后再试。`,
+            })}\n`));
+            controller.close();
+            return;
+          }
+        }
+
         // Get the LLM stream
         const llmStream = llmStreamingService.createStream(
           conversationId,
@@ -394,9 +411,20 @@ export const POST = withErrorHandler(async (
         // inside LLMStreamingService before emission, so the user never saw them in
         // real-time, but fullContent (raw accumulator) still contains them.
         const TOOL_CALL_SIM_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
-        const CONF_SIM_PATTERN = /\[CONF:[0-9]*\.?[0-9]+\]/g;
+        const CONF_SIM_PATTERN = /\[CONF:[0-9]*\.?[0-9]+(?:\s*\([^)]*\))?\]/g;
+        const CONF_BRACKET_SIM_PATTERN = /【CONF:[0-9]*\.?[0-9]+(?:\s*\([^)]*\))?】/g;
+        const CONF_PARENS_SIM_PATTERN = /\[CONF\([^)]*\)\]/g;
         const DELEGATE_SIM_PATTERN = /\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g;
-        const stripSimMarkers = (t: string) => t.replace(TOOL_CALL_SIM_PATTERN, '').replace(CONF_SIM_PATTERN, '').replace(DELEGATE_SIM_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim();
+        const PENDING_CHOICE_SIM_PATTERN = /\[PENDING_CHOICE:[^\]]+\]/g;
+        const stripSimMarkers = (t: string) => t
+          .replace(TOOL_CALL_SIM_PATTERN, '')
+          .replace(CONF_SIM_PATTERN, '')
+          .replace(CONF_BRACKET_SIM_PATTERN, '')
+          .replace(CONF_PARENS_SIM_PATTERN, '')
+          .replace(DELEGATE_SIM_PATTERN, '')
+          .replace(PENDING_CHOICE_SIM_PATTERN, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
 
         if (streamTimedOut) {
           // Strip internal markers from partial content before persisting

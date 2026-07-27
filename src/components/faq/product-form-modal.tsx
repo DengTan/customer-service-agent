@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Plus, Trash2, Upload, ImageIcon, Ruler, ExternalLink } from 'lucide-react';
+import { X, Plus, Trash2, Upload, ImageIcon, Ruler, Search, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
+import { SizeChartFormModal } from './size-chart-form-modal';
 
 interface ProductSpec {
   key: string;
@@ -13,6 +14,7 @@ interface ProductSpec {
 interface SizeChartRow {
   id: string;
   name: string;
+  sku?: string | null;
   chart_type: string;
   status: string;
   hit_count: number;
@@ -57,6 +59,8 @@ interface ProductFormModalProps {
   } | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Pre-loaded product list for SizeChartFormModal product selector */
+  productOptions?: Array<{ id: string; name: string; sku: string }>;
 }
 
 const STATUS_OPTIONS = [
@@ -72,26 +76,393 @@ const CHART_TYPE_LABELS: Record<string, string> = {
   custom: '自定义',
 };
 
-export function ProductFormModal({ open, product, onClose, onSaved }: ProductFormModalProps) {
+const CHART_TYPE_OPTIONS = [
+  { value: '', label: '全部类型' },
+  { value: 'clothing', label: '服装' },
+  { value: 'shoes', label: '鞋类' },
+  { value: 'accessories', label: '配饰' },
+  { value: 'custom', label: '自定义' },
+];
+
+interface SizeChartSelectorModalProps {
+  open: boolean;
+  productId: string;
+  alreadyAssocIds: string[];
+  onClose: () => void;
+  onAssociated: () => void;
+}
+
+interface SizeChartListItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  chart_type: string;
+  category: string;
+  status: string;
+  hit_count: number;
+}
+
+function SizeChartSelectorModal({ open, productId, alreadyAssocIds, onClose, onAssociated }: SizeChartSelectorModalProps) {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [charts, setCharts] = useState<SizeChartListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  const loadCharts = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = new URLSearchParams({ page: '1', page_size: '200', status: 'active' });
+      if (typeFilter) params.set('chart_type', typeFilter);
+      const res = await fetch(`/api/knowledge/size-charts?${params}`);
+      if (!res.ok) throw new Error('加载失败');
+      const data = await res.json();
+      setCharts(data.items || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter]);
+
+  useEffect(() => {
+    if (open) {
+      loadCharts();
+      setSearch('');
+      setTypeFilter('');
+      setSelectedIds(new Set());
+      setSaving(false);
+    }
+  }, [open, loadCharts]);
+
+  const handleConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    setSaving(true);
+    let hasError = false;
+    for (const chartId of selectedIds) {
+      try {
+        const res = await fetch('/api/knowledge/size-charts', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: chartId, product_id: productId }),
+        });
+        if (!res.ok) { hasError = true; break; }
+      } catch {
+        hasError = true;
+        break;
+      }
+    }
+    setSaving(false);
+    if (hasError) {
+      toast.error('部分关联失败，请重试');
+    } else {
+      toast.success('关联成功');
+    }
+    onAssociated();
+    onClose();
+  };
+
+  const filteredCharts = charts.filter(c => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return c.name.toLowerCase().includes(q) || (c.sku && c.sku.toLowerCase().includes(q));
+  });
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <h3 className="text-sm font-semibold text-foreground">选择尺码表</h3>
+          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜索名称或SKU"
+              className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {CHART_TYPE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {loading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-destructive">{error}</p>
+              <button onClick={loadCharts} className="mt-2 text-xs text-primary hover:underline">重试</button>
+            </div>
+          ) : filteredCharts.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">
+                {search || typeFilter ? '没有符合条件的尺码表' : '暂无可用尺码表'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {filteredCharts.map(chart => {
+                const isAssoc = alreadyAssocIds.includes(chart.id);
+                const isSelected = selectedIds.has(chart.id);
+                const toggleId = () => {
+                  if (isAssoc) return;
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(chart.id)) next.delete(chart.id);
+                    else next.add(chart.id);
+                    return next;
+                  });
+                };
+                return (
+                  <div
+                    key={chart.id}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${isAssoc
+                      ? 'border-primary/30 bg-primary/5 opacity-70'
+                      : isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    }`}
+                    onClick={toggleId}
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${isAssoc || isSelected
+                      ? 'bg-primary border-primary'
+                      : 'border-border bg-background'
+                    }`}>
+                      {(isAssoc || isSelected) && (
+                        <Check className="w-3 h-3 text-white" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-foreground truncate">{chart.name}</span>
+                        {chart.sku && (
+                          <span className="text-xs text-muted-foreground truncate">{chart.sku}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {CHART_TYPE_LABELS[chart.chart_type] || chart.chart_type}
+                        </span>
+                        {chart.category && (
+                          <span className="text-xs text-muted-foreground">{chart.category}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${chart.status === 'active'
+                        ? 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                      }`}>
+                        {chart.status === 'active' ? '启用' : '禁用'}
+                      </span>
+                      {isAssoc && (
+                        <span className="text-xs text-primary">已关联</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-border shrink-0">
+          <div className="text-xs text-muted-foreground">
+            {selectedIds.size > 0 ? (
+              <span className="text-primary font-medium">已选择 {selectedIds.size} 项</span>
+            ) : (
+              <span>点击选择尺码表</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={saving || selectedIds.size === 0}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              确认关联
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface SizeChartSearchAddProps {
+  productId: string;
+  alreadyAssocIds: string[];
+  onAdded: () => void;
+}
+
+function SizeChartSearchAdd({ productId, alreadyAssocIds, onAdded }: SizeChartSearchAddProps) {
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const [charts, setCharts] = useState<SizeChartListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch('/api/knowledge/size-charts?page_size=200&status=active')
+      .then(r => r.json())
+      .then(data => {
+        setCharts(data.items || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const filtered = charts.filter(c => {
+    if (alreadyAssocIds.includes(c.id)) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return c.name.toLowerCase().includes(q) || (c.sku && c.sku.toLowerCase().includes(q));
+  });
+
+  const handleSelect = async (chartId: string) => {
+    const chart = charts.find(c => c.id === chartId);
+    if (!chart) return;
+    try {
+      const res = await fetch('/api/knowledge/size-charts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: chartId, product_id: productId }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`已添加尺码表"${chart.name}"`);
+      setOpen(false);
+      setSearch('');
+      onAdded();
+    } catch {
+      toast.error('添加失败，请重试');
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          value={search}
+          onChange={e => { setSearch(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="搜索并添加尺码表..."
+          className="w-full pl-8 pr-3 py-2 rounded-lg border border-dashed border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground/50"
+        />
+      </div>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card rounded-lg border border-border shadow-lg z-50 max-h-60 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+              {search ? '没有符合条件的尺码表' : '暂无可添加的尺码表'}
+            </div>
+          ) : (
+            <div className="py-1">
+              {filtered.map(chart => (
+                <button
+                  key={chart.id}
+                  onClick={() => handleSelect(chart.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                >
+                  <Ruler className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-foreground truncate">{chart.name}</span>
+                  {chart.sku && (
+                    <span className="text-xs text-muted-foreground shrink-0">{chart.sku}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {open && (
+        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+export function ProductFormModal({ open, product, onClose, onSaved, productOptions = [] }: ProductFormModalProps) {
   const isEditing = !!product?.id;
 
   // 关联尺码表
   const [assocCharts, setAssocCharts] = useState<SizeChartRow[]>([]);
   const [loadingCharts, setLoadingCharts] = useState(false);
+  const [showNewChart, setShowNewChart] = useState(false);
 
   const loadAssocCharts = useCallback(async () => {
     if (!product?.id) return;
     setLoadingCharts(true);
     try {
-      const res = await fetch(`/api/knowledge/size-charts?product_id=${product.id}`);
+      // Use findByProductId endpoint (no pagination limit) instead of paginated list API
+      const res = await fetch(`/api/knowledge/size-charts/by-product/${product.id}`);
       if (res.ok) {
         const data = await res.json();
         setAssocCharts(data.items || []);
+      } else {
+        // Fallback: use paginated list with large page size
+        const fallbackRes = await fetch(`/api/knowledge/size-charts?product_id=${product.id}&page_size=1000`);
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          setAssocCharts(fallbackData.items || []);
+        }
       }
     } finally {
       setLoadingCharts(false);
     }
   }, [product?.id]);
+
+  const removeAssoc = useCallback(async (chartId: string) => {
+    try {
+      const res = await fetch('/api/knowledge/size-charts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: chartId, product_id: null }),
+      });
+      if (!res.ok) throw new Error('移除失败');
+      toast.success('已移除关联');
+      await loadAssocCharts();
+    } catch {
+      toast.error('移除失败，请重试');
+    }
+  }, [loadAssocCharts]);
 
   useEffect(() => {
     if (open && product?.id) loadAssocCharts();
@@ -418,36 +789,62 @@ export function ProductFormModal({ open, product, onClose, onSaved }: ProductFor
           </div>
 
           {/* 关联尺码表 */}
-          {isEditing && (
+          {isEditing && product?.id ? (
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">关联尺码表</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">关联尺码表</h3>
+                <button
+                  onClick={() => setShowNewChart(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 text-xs text-muted-foreground hover:text-primary transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  新建尺码表
+                </button>
+              </div>
+
+              {/* Associated chart badges */}
               {loadingCharts ? (
-                <p className="text-sm text-muted-foreground">加载中...</p>
-              ) : assocCharts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">暂无关联尺码表，可在「尺码配置」中为当前商品创建尺码表</p>
-              ) : (
-                <div className="space-y-2">
+                <p className="text-sm text-muted-foreground py-2 text-center">加载中...</p>
+              ) : assocCharts.length > 0 ? (
+                <div className="flex flex-wrap gap-2 mb-3">
                   {assocCharts.map(chart => (
-                    <div key={chart.id} className="flex items-center justify-between px-3 py-2 rounded-lg border border-border bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <Ruler className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm font-medium">{chart.name}</span>
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                          {CHART_TYPE_LABELS[chart.chart_type as keyof typeof CHART_TYPE_LABELS] || chart.chart_type}
-                        </span>
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${chart.status === 'active' ? 'bg-green-200 dark:bg-green-900/30 text-green-800 dark:text-green-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
-                          {chart.status === 'active' ? '启用' : '禁用'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>引用 {chart.hit_count} 次</span>
-                      </div>
-                    </div>
+                    <span
+                      key={chart.id}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
+                    >
+                      <Ruler className="w-3 h-3 shrink-0" />
+                      {chart.name}
+                      <button
+                        onClick={() => removeAssoc(chart.id)}
+                        className="ml-0.5 hover:text-destructive/70 rounded-full focus:outline-none"
+                        title="移除关联"
+                      >
+                        ×
+                      </button>
+                    </span>
                   ))}
                 </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-2 px-3 rounded-lg bg-muted/30 border border-dashed border-border mb-3">
+                  暂无关联尺码表
+                </p>
               )}
+
+              {/* Inline searchable add dropdown */}
+              <SizeChartSearchAdd
+                productId={product.id}
+                alreadyAssocIds={assocCharts.map(c => c.id)}
+                onAdded={() => { loadAssocCharts(); }}
+              />
             </div>
-          )}
+          ) : !isEditing ? (
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">关联尺码表</h3>
+              <p className="text-sm text-muted-foreground py-3 px-3 rounded-lg bg-muted/30 border border-dashed border-border">
+                请先保存商品后再关联尺码表
+              </p>
+            </div>
+          ) : null}
 
           {/* 卖点 */}
           <div>
@@ -592,6 +989,22 @@ export function ProductFormModal({ open, product, onClose, onSaved }: ProductFor
             {saving ? '保存中...' : (isEditing ? '保存修改' : '创建商品')}
           </button>
         </div>
+
+        {/* Selector & creation modals */}
+        {showNewChart && (
+          <SizeChartFormModal
+            open={true}
+            defaultProductId={product?.id}
+            defaultProductName={product?.name}
+            defaultProductSku={product?.sku}
+            onClose={() => setShowNewChart(false)}
+            onSaved={() => {
+              setShowNewChart(false);
+              loadAssocCharts();
+            }}
+            productOptions={productOptions}
+          />
+        )}
       </div>
     </div>
   );

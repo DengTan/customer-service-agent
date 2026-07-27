@@ -13,6 +13,14 @@ export interface CreateAutoReplyRuleInput {
   priority?: number;
 }
 
+export interface UpdateAutoReplyRuleInput {
+  keyword?: string;
+  match_mode?: AutoReplyRule['match_mode'];
+  reply_content?: string;
+  is_enabled?: boolean;
+  priority?: number;
+}
+
 export class AutoReplyRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
@@ -109,5 +117,38 @@ export class AutoReplyRepository {
     
     const { error } = await this.client.from('auto_reply_rules').delete().eq('id', id);
     if (error) throw new RepositoryError('delete auto reply rule', error.message, error.code);
+  }
+
+  async update(id: string, input: UpdateAutoReplyRuleInput): Promise<AutoReplyRule | null> {
+    if (isDemoMode()) {
+      const rule = DEMO_AUTO_REPLY_RULES.find(r => r.id === id);
+      if (rule) {
+        if (input.keyword !== undefined) rule.keyword = input.keyword;
+        if (input.match_mode !== undefined) rule.match_mode = input.match_mode;
+        if (input.reply_content !== undefined) rule.reply_content = input.reply_content;
+        if (input.is_enabled !== undefined) rule.is_enabled = input.is_enabled;
+        if (input.priority !== undefined) rule.priority = input.priority;
+        rule.updated_at = new Date().toISOString();
+        return rule;
+      }
+      return null;
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.keyword !== undefined) updates.keyword = input.keyword;
+    if (input.match_mode !== undefined) updates.match_mode = input.match_mode;
+    if (input.reply_content !== undefined) updates.reply_content = input.reply_content;
+    if (input.is_enabled !== undefined) updates.is_enabled = input.is_enabled;
+    if (input.priority !== undefined) updates.priority = input.priority;
+
+    const { data, error } = await this.client
+      .from('auto_reply_rules')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new RepositoryError('update auto reply rule', error.message, error.code);
+    return (data as AutoReplyRule) ?? null;
   }
 }

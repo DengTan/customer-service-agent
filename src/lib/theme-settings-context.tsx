@@ -48,6 +48,7 @@ interface ThemeSettingsContextValue {
   setShowTimestamps: (show: boolean) => void;
   setCompactMode: (compact: boolean) => void;
   isLoading: boolean;
+  syncFromServer: (appearance: ThemeSettings) => void;
 }
 
 /** Sentinel null value for when hook is used outside provider */
@@ -251,6 +252,21 @@ export function ThemeSettingsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const syncFromServer = useCallback((appearance: ThemeSettings) => {
+    setSettings((prev) => {
+      const next: ThemeSettings = {
+        theme: appearance.theme || prev.theme,
+        fontSize: appearance.fontSize || prev.fontSize,
+        showTimestamps: appearance.showTimestamps,
+        compactMode: appearance.compactMode,
+      };
+      saveSettings(next);
+      applyTheme(next.theme);
+      applyCssVars(next);
+      return next;
+    });
+  }, []);
+
   const value = useMemo<ThemeSettingsContextValue>(
     () => ({
       settings,
@@ -259,8 +275,9 @@ export function ThemeSettingsProvider({ children }: { children: ReactNode }) {
       setShowTimestamps,
       setCompactMode,
       isLoading,
+      syncFromServer,
     }),
-    [settings, setTheme, setFontSize, setShowTimestamps, setCompactMode, isLoading],
+    [settings, setTheme, setFontSize, setShowTimestamps, setCompactMode, isLoading, syncFromServer],
   );
 
   return (

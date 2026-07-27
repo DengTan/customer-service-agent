@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils';
 import type { AgentQueueItem } from '@/lib/types';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import {
   type ChatMessage,
   type Attachment,
@@ -471,7 +472,7 @@ export function ChatPanel({
                           <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</div>
                         ) : (
                           <>
-                            {msg.content && <MarkdownRenderer content={msg.content} />}
+                            {msg.content && <MarkdownRenderer content={stripInternalMarkersFromResponse(msg.content)} />}
                           </>
                         )}
                       </div>

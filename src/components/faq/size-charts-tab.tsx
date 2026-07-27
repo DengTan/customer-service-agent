@@ -59,12 +59,40 @@ export function SizeChartsTab() {
   const [sizeChartSearch, setSizeChartSearch] = useState('');
   const [sizeChartFilterType, setSizeChartFilterType] = useState('');
   const [sizeChartFilterStatus, setSizeChartFilterStatus] = useState('');
+  const [productFilter, setProductFilter] = useState('');
+  const [productOptions, setProductOptions] = useState<Array<{ id: string; name: string; sku: string }>>([]);
   const [sizeChartTypes, setSizeChartTypes] = useState<Record<string, number>>({});
   const [showSizeChartModal, setShowSizeChartModal] = useState(false);
   const [editingSizeChart, setEditingSizeChart] = useState<SizeChartItem | null>(null);
   const [confirmToggleSizeChart, setConfirmToggleSizeChart] = useState<SizeChartItem | null>(null);
 
   const { confirm: confirmDialog } = useConfirmDialog();
+
+  // Load product list for filter dropdown
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const res = await fetch('/api/knowledge/products?page_size=200');
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        setProductOptions(items.map((p: { id: string; name: string; sku: string }) => ({
+          id: p.id,
+          name: p.name,
+          sku: p.sku || '',
+        })));
+      } catch {
+        // Silently fail, product filter just won't have options
+      }
+    }
+    loadProducts();
+  }, []);
+
+  // Build product name map from loaded products
+  const productNameMap = productOptions.reduce<Record<string, string>>((acc, p) => {
+    acc[p.id] = p.name;
+    return acc;
+  }, {});
 
   const fetchSizeCharts = useCallback(async () => {
     setLoadingSizeCharts(true);
@@ -73,6 +101,7 @@ export function SizeChartsTab() {
       if (sizeChartSearch) params.set('search', sizeChartSearch);
       if (sizeChartFilterType) params.set('chart_type', sizeChartFilterType);
       if (sizeChartFilterStatus) params.set('status', sizeChartFilterStatus);
+      if (productFilter) params.set('product_id', productFilter);
       const res = await fetch(`/api/knowledge/size-charts?${params}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
@@ -84,7 +113,7 @@ export function SizeChartsTab() {
     } finally {
       setLoadingSizeCharts(false);
     }
-  }, [sizeChartSearch, sizeChartFilterType, sizeChartFilterStatus]);
+  }, [sizeChartSearch, sizeChartFilterType, sizeChartFilterStatus, productFilter]);
 
   useEffect(() => {
     fetchSizeCharts();
@@ -208,6 +237,18 @@ export function SizeChartsTab() {
             <option value="active">启用中</option>
             <option value="disabled">已禁用</option>
           </select>
+          <select
+            value={productFilter}
+            onChange={e => setProductFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+          >
+            <option value="">全部商品</option>
+            {productOptions.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name} {p.sku ? `(${p.sku})` : ''}
+              </option>
+            ))}
+          </select>
           <button
             onClick={() => { setEditingSizeChart(null); setShowSizeChartModal(true); }}
             className="ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 active:scale-[0.97] transition-all shadow-sm shadow-primary/20"
@@ -233,13 +274,13 @@ export function SizeChartsTab() {
             </div>
             <h3 className="text-base font-semibold text-foreground/80 mb-1.5">暂无尺码表</h3>
             <p className="text-sm text-muted-foreground max-w-xs">
-              {sizeChartSearch || sizeChartFilterType || sizeChartFilterStatus
+              {sizeChartSearch || sizeChartFilterType || sizeChartFilterStatus || productFilter
                 ? '没有找到符合条件的尺码表，请调整筛选条件'
                 : '点击右上角「添加尺码表」开始配置您的第一个尺码表'}
             </p>
-            {(sizeChartSearch || sizeChartFilterType || sizeChartFilterStatus) && (
+            {(sizeChartSearch || sizeChartFilterType || sizeChartFilterStatus || productFilter) && (
               <button
-                onClick={() => { setSizeChartSearch(''); setSizeChartFilterType(''); setSizeChartFilterStatus(''); }}
+                onClick={() => { setSizeChartSearch(''); setSizeChartFilterType(''); setSizeChartFilterStatus(''); setProductFilter(''); }}
                 className="mt-3 text-xs text-primary hover:underline flex items-center gap-1"
               >
                 <RefreshCw className="w-3 h-3" />
@@ -312,10 +353,25 @@ export function SizeChartsTab() {
                           {chart.category}
                         </span>
                       )}
-                      {chart.sku && (
+                      {chart.product_names && chart.product_names.length > 0 ? (
+                        <span className="flex items-center gap-1 flex-wrap">
+                          <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
+                          {chart.product_names.map((name, idx) => (
+                            <span key={idx} className="text-primary/80">
+                              {name}{idx < chart.product_names.length - 1 ? ', ' : ''}
+                            </span>
+                          ))}
+                          {chart.sku && <span className="text-muted-foreground/60">({chart.sku})</span>}
+                        </span>
+                      ) : chart.sku ? (
                         <span className="flex items-center gap-1 font-mono">
                           <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
                           {chart.sku}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-muted-foreground/70 italic">
+                          <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
+                          通用尺码表
                         </span>
                       )}
                       <span className="flex items-center gap-1">

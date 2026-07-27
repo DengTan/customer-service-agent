@@ -105,13 +105,13 @@ export class SizeChartProvider extends BaseToolProvider {
         category: chart.category,
         columns: chart.size_columns,
         rows: chart.size_rows,
-        is_product_specific: !!chart.product_id,
+        is_product_specific: !!chart.product_ids[0],
         source_type: 'size_chart',
         ...(recommendation ? { recommendation } : {}),
       };
 
       // Confidence: found chart + has recommendation = higher
-      const baseConfidence = chart.product_id ? 0.7 : 0.6;
+      const baseConfidence = chart.product_ids[0] ? 0.7 : 0.6;
       const confidence = recommendation ? 0.75 : baseConfidence;
 
       return {

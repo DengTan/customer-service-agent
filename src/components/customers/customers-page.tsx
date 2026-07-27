@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/command';
 import type { Customer, CustomerTag, CustomerSource } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
@@ -1680,7 +1681,7 @@ export default function CustomersPage() {
                             {msg.role === 'user' ? '客户' : msg.role === 'assistant' ? 'AI 客服' : '系统'}
                           </span>
                         </div>
-                        {msg.role === 'user' ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
+                        {msg.role === 'user' ? msg.content : <MarkdownRenderer content={stripInternalMarkersFromResponse(msg.content || '')} />}
                       </div>
                     </div>
                   ))}

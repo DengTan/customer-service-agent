@@ -362,6 +362,7 @@ function ChatPageInner() {
         let knowledgeImages: Array<{ url: string; alt: string }> = [];
         let lastConfidence: number | null = null;
         let lastConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null = null;
+        let toolFailed = false;
 
         // Timeout: if no data received for 60 seconds, abort the stream
         let timeoutId = setTimeout(() => {
@@ -389,8 +390,20 @@ function ChatPageInner() {
                   fullContent += parsed.content;
                   updateTabState(convId, { streamingContent: fullContent });
                 }
+                // Capture failed from individual tool_result SSE events
+                if (parsed.failed === true) {
+                  toolFailed = true;
+                }
                 if (parsed.done) {
                   sources = parsed.sources || null;
+                  // Capture failed from done event tool_calls array
+                  if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
+                    for (const tc of parsed.tool_calls) {
+                      if ((tc as { failed?: boolean }).failed === true) {
+                        toolFailed = true;
+                      }
+                    }
+                  }
                   // Capture confidence and breakdown from SSE
                   if (parsed.confidence !== undefined) {
                     lastConfidence = parsed.confidence;
@@ -457,6 +470,7 @@ function ChatPageInner() {
           delegations: delegations.length > 0 ? delegations : undefined,
           message_type: knowledgeImages.length > 0 ? 'knowledge_images' : undefined,
           rich_content: knowledgeImages.length > 0 ? { type: 'knowledge_images', data: {}, images: knowledgeImages } : undefined,
+          failed: toolFailed || undefined,
           created_at: new Date().toISOString(),
         };
 

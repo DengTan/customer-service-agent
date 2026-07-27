@@ -24,8 +24,6 @@ export const sizeCharts = pgTable(
     size_columns: jsonb("size_columns").notNull().default(sql`'[]'`),
     // size_rows: 尺码数据行，如 [{"size":"S","bust":"82-86","waist":"62-66"}]
     size_rows: jsonb("size_rows").notNull().default(sql`'[]'`),
-    // 关联商品：NULL=通用尺码表（非NULL=商品专属尺码表）
-    product_id: varchar("product_id", { length: 36 }).references(() => productDetails.id, { onDelete: "set null" }),
     // sku: 商品SKU（冗余字段，方便快速查询）
     sku: varchar("sku", { length: 100 }),
     // recommend_params: AI 尺码推荐参数结构化定义
@@ -53,7 +51,6 @@ export const sizeCharts = pgTable(
   },
   (table) => [
     index("size_charts_category_idx").on(table.category),
-    index("size_charts_product_id_idx").on(table.product_id),
     index("size_charts_sku_idx").on(table.sku),
     index("size_charts_status_idx").on(table.status),
     index("size_charts_content_hash_idx").on(table.content_hash),
@@ -87,6 +84,25 @@ export const sizeChartVersions = pgTable(
   (table) => [
     index("scv_chart_id_idx").on(table.size_chart_id),
     index("scv_version_number_idx").on(table.version_number),
+  ]
+);
+
+// ============================================
+// 尺码配置-商品关联表（多对多）
+// ============================================
+
+export const sizeChartProducts = pgTable(
+  "size_chart_products",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    size_chart_id: varchar("size_chart_id", { length: 36 }).notNull().references(() => sizeCharts.id, { onDelete: "cascade" }),
+    product_id: varchar("product_id", { length: 36 }).notNull().references(() => productDetails.id, { onDelete: "cascade" }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("scp_size_chart_id_idx").on(table.size_chart_id),
+    index("scp_product_id_idx").on(table.product_id),
+    uniqueIndex("scp_unique_idx").on(table.size_chart_id, table.product_id),
   ]
 );
 

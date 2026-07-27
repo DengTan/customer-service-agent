@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useMemo } from 'react';
+import { useDebounce } from '@/hooks/use-debounce';
 import {
   Plus,
   Trash2,
@@ -41,8 +42,10 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
   const [showAddRule, setShowAddRule] = useState(false);
   const [editingRule, setEditingRule] = useState<AutoReplyRule | null>(null);
   const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounce(searchInput, 300);
   const [filterMode, setFilterMode] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [newRule, setNewRule] = useState<{
     keyword: string;
@@ -52,20 +55,22 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
   }>({ keyword: '', match_mode: 'fuzzy', reply_content: '', priority: 0 });
 
   // Filter and sort rules
-  const filteredRules = rules
-    .filter((rule) => {
-      if (filterMode === 'enabled' && !rule.is_enabled) return false;
-      if (filterMode === 'disabled' && rule.is_enabled) return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        return (
-          rule.keyword.toLowerCase().includes(query) ||
-          rule.reply_content.toLowerCase().includes(query)
-        );
-      }
-      return true;
-    })
-    .sort((a, b) => b.priority - a.priority);
+  const filteredRules = useMemo(() => {
+    return rules
+      .filter((rule) => {
+        if (filterMode === 'enabled' && !rule.is_enabled) return false;
+        if (filterMode === 'disabled' && rule.is_enabled) return false;
+        if (debouncedSearch) {
+          const query = debouncedSearch.toLowerCase();
+          return (
+            rule.keyword.toLowerCase().includes(query) ||
+            rule.reply_content.toLowerCase().includes(query)
+          );
+        }
+        return true;
+      })
+      .sort((a, b) => b.priority - a.priority);
+  }, [rules, filterMode, debouncedSearch]);
 
   // Stats
   const enabledCount = rules.filter((r) => r.is_enabled).length;
@@ -134,11 +139,12 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
   };
 
   const handleUpdateRule = async () => {
-    if (!editingRule) return;
+    if (!editingRule || isSubmitting) return;
     if (!editingRule.keyword || !editingRule.reply_content) {
       toast.error('请填写完整信息');
       return;
     }
+    setIsSubmitting(true);
     try {
       const res = await fetch('/api/auto-reply', {
         method: 'PUT',
@@ -162,6 +168,8 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
       }
     } catch {
       toast.error('更新失败');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -288,8 +296,8 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="搜索关键词或回复内容..."
             className="w-full pl-10 pr-4 py-2 rounded-lg bg-muted border border-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
           />
@@ -412,186 +420,191 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
         </Card>
       )}
 
-      {/* Edit Rule Form */}
-      {editingRule && (
-        <Card className="border-primary/30 bg-primary/5 dark:bg-primary/10 animate-in slide-in-from-top-2 duration-200 border-0">
-          <CardContent className="!px-4 !py-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-primary" />
-                编辑规则
-              </h3>
-              <button
-                onClick={() => setEditingRule(null)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="lg:col-span-2">
-                <label className="text-xs font-medium text-foreground mb-1.5 block">关键词 *</label>
-                <input
-                  type="text"
-                  value={editingRule.keyword}
-                  onChange={(e) => setEditingRule((prev) => prev ? { ...prev, keyword: e.target.value } : null)}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-foreground mb-1.5 block">匹配模式</label>
-                <select
-                  value={editingRule.match_mode}
-                  onChange={(e) => setEditingRule((prev) => prev ? { ...prev, match_mode: e.target.value as 'exact' | 'fuzzy' } : null)}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-                >
-                  <option value="fuzzy">模糊匹配</option>
-                  <option value="exact">精确匹配</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-foreground mb-1.5 block">优先级</label>
-                <input
-                  type="number"
-                  value={editingRule.priority}
-                  onChange={(e) => setEditingRule((prev) => prev ? { ...prev, priority: parseInt(e.target.value) || 0 } : null)}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-                />
-              </div>
-            </div>
-            <div className="mt-4">
-              <label className="text-xs font-medium text-foreground mb-1.5 block">回复内容 *</label>
-              <textarea
-                value={editingRule.reply_content}
-                onChange={(e) => setEditingRule((prev) => prev ? { ...prev, reply_content: e.target.value } : null)}
-                rows={3}
-                className="w-full resize-none px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-              />
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-4">
-              <button
-                onClick={() => setEditingRule(null)}
-                className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleUpdateRule}
-                disabled={!editingRule.keyword || !editingRule.reply_content}
-                className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                保存修改
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Rules List */}
       <div className="space-y-2">
-        {filteredRules.map((rule, index) => (
-          <Card
-            key={rule.id}
-            className={cn(
-              'transition-all duration-200 hover:shadow-md group bg-gradient-to-br from-card to-muted/20 shadow-sm border-0',
-              !rule.is_enabled && 'opacity-60'
-            )}
-          >
-            <CardContent className="!px-4 !py-3">
-              <div className="flex items-start gap-4">
-                {/* Priority Column */}
-                <div className="flex flex-col items-center gap-0.5 shrink-0 pt-1">
-                  <button
-                    onClick={() => handlePriorityChange(rule.id, 'up')}
-                    disabled={rule.priority >= maxPriority}
-                    className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    title="提高优先级"
-                  >
-                    <ChevronUp className="w-4 h-4" />
-                  </button>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      'font-mono text-xs px-2 py-0.5',
-                      getPriorityColor(rule.priority, maxPriority || 1)
-                    )}
-                  >
-                    {rule.priority}
-                  </Badge>
-                  <button
-                    onClick={() => handlePriorityChange(rule.id, 'down')}
-                    disabled={rule.priority <= getBottomPriority()}
-                    className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                    title="降低优先级"
-                  >
-                    <ChevronDown className="w-4 h-4" />
-                  </button>
-                </div>
+        {filteredRules.map((rule, index) => {
+          // When editing this rule, show the edit form instead of the card
+          if (editingRule?.id === rule.id) {
+            return (
+              <Card key={rule.id} className="border-primary/30 bg-primary/5 dark:bg-primary/10 animate-in slide-in-from-top-2 duration-200 border-0">
+                <CardContent className="!px-4 !py-3">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Edit3 className="w-4 h-4 text-primary" />
+                      编辑规则
+                    </h3>
+                    <button
+                      onClick={() => setEditingRule(null)}
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="lg:col-span-2">
+                      <label className="text-xs font-medium text-foreground mb-1.5 block">关键词 *</label>
+                      <input
+                        type="text"
+                        value={editingRule.keyword}
+                        onChange={(e) => setEditingRule((prev) => prev ? { ...prev, keyword: e.target.value } : null)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-foreground mb-1.5 block">匹配模式</label>
+                      <select
+                        value={editingRule.match_mode}
+                        onChange={(e) => setEditingRule((prev) => prev ? { ...prev, match_mode: e.target.value as 'exact' | 'fuzzy' } : null)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                      >
+                        <option value="fuzzy">模糊匹配</option>
+                        <option value="exact">精确匹配</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-foreground mb-1.5 block">优先级</label>
+                      <input
+                        type="number"
+                        value={editingRule.priority}
+                        onChange={(e) => setEditingRule((prev) => prev ? { ...prev, priority: parseInt(e.target.value) || 0 } : null)}
+                        className="w-full px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className="text-xs font-medium text-foreground mb-1.5 block">回复内容 *</label>
+                    <textarea
+                      value={editingRule.reply_content}
+                      onChange={(e) => setEditingRule((prev) => prev ? { ...prev, reply_content: e.target.value } : null)}
+                      rows={3}
+                      className="w-full resize-none px-3 py-2 rounded-lg bg-background border border-input text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2 mt-4">
+                    <button
+                      onClick={() => setEditingRule(null)}
+                      className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={handleUpdateRule}
+                      disabled={!editingRule.keyword || !editingRule.reply_content || isSubmitting}
+                      className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmitting ? '保存中...' : '保存修改'}
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
 
-                {/* Drag Handle */}
-                <div className="shrink-0 pt-1 cursor-grab active:cursor-grabbing">
-                  <GripVertical className="w-4 h-4 text-muted-foreground/30" />
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="text-sm font-semibold text-foreground">{rule.keyword}</span>
+          // Normal rule card
+          return (
+            <Card
+              key={rule.id}
+              className={cn(
+                'transition-all duration-200 hover:shadow-md group bg-gradient-to-br from-card to-muted/20 shadow-sm border-0',
+                !rule.is_enabled && 'opacity-60'
+              )}
+            >
+              <CardContent className="!px-4 !py-3">
+                <div className="flex items-start gap-4">
+                  {/* Priority Column */}
+                  <div className="flex flex-col items-center gap-0.5 shrink-0 pt-1">
+                    <button
+                      onClick={() => handlePriorityChange(rule.id, 'up')}
+                      disabled={rule.priority >= maxPriority}
+                      className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                      title="提高优先级"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
                     <Badge
-                      variant={rule.match_mode === 'exact' ? 'default' : 'outline'}
+                      variant="secondary"
                       className={cn(
-                        'text-xs',
-                        rule.match_mode === 'exact'
-                          ? 'bg-primary/10 text-primary border-primary/20'
-                          : ''
+                        'font-mono text-xs px-2 py-0.5',
+                        getPriorityColor(rule.priority, maxPriority || 1)
                       )}
                     >
-                      {rule.match_mode === 'exact' ? '精确匹配' : '模糊匹配'}
+                      {rule.priority}
                     </Badge>
-                    {!rule.is_enabled && (
-                      <Badge variant="outline" className="text-xs border-orange-200 text-orange-600 dark:border-orange-800 dark:text-orange-400">
-                        已禁用
-                      </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground ml-auto">#{index + 1}</span>
+                    <button
+                      onClick={() => handlePriorityChange(rule.id, 'down')}
+                      disabled={rule.priority <= getBottomPriority()}
+                      className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                      title="降低优先级"
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                    {rule.reply_content}
-                  </p>
-                </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => setEditingRule(rule)}
-                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                    title="编辑"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleToggleRule(rule.id, !rule.is_enabled)}
-                    className="p-2 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
-                    title={rule.is_enabled ? '禁用' : '启用'}
-                  >
-                    {rule.is_enabled ? (
-                      <ToggleRight className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <ToggleLeft className="w-5 h-5" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setDeleteRuleId(rule.id)}
-                    className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    title="删除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Drag Handle */}
+                  <div className="shrink-0 pt-1 cursor-grab active:cursor-grabbing">
+                    <GripVertical className="w-4 h-4 text-muted-foreground/30" />
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-foreground">{rule.keyword}</span>
+                      <Badge
+                        variant={rule.match_mode === 'exact' ? 'default' : 'outline'}
+                        className={cn(
+                          'text-xs',
+                          rule.match_mode === 'exact'
+                            ? 'bg-primary/10 text-primary border-primary/20'
+                            : ''
+                        )}
+                      >
+                        {rule.match_mode === 'exact' ? '精确匹配' : '模糊匹配'}
+                      </Badge>
+                      {!rule.is_enabled && (
+                        <Badge variant="outline" className="text-xs border-orange-200 text-orange-600 dark:border-orange-800 dark:text-orange-400">
+                          已禁用
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground ml-auto">#{index + 1}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      {rule.reply_content}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 shrink-0 opacity-100 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => setEditingRule(rule)}
+                      className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      title="编辑"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleToggleRule(rule.id, !rule.is_enabled)}
+                      className="p-2 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+                      title={rule.is_enabled ? '禁用' : '启用'}
+                    >
+                      {rule.is_enabled ? (
+                        <ToggleRight className="w-5 h-5 text-green-500" />
+                      ) : (
+                        <ToggleLeft className="w-5 h-5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setDeleteRuleId(rule.id)}
+                      className="p-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      title="删除"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
 
         {/* Empty State */}
         {filteredRules.length === 0 && (
@@ -602,14 +615,14 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
                   <MessageSquare className="w-8 h-8 text-muted-foreground/50" />
                 </div>
                 <h3 className="text-sm font-medium text-foreground mb-1">
-                  {searchQuery || filterMode !== 'all' ? '没有找到匹配的规则' : '暂无自动回复规则'}
+                  {searchInput || filterMode !== 'all' ? '没有找到匹配的规则' : '暂无自动回复规则'}
                 </h3>
                 <p className="text-xs text-muted-foreground mb-4">
-                  {searchQuery || filterMode !== 'all'
+                  {searchInput || filterMode !== 'all'
                     ? '尝试调整搜索条件或筛选器'
                     : '点击「添加规则」创建第一条自动回复规则'}
                 </p>
-                {!searchQuery && filterMode === 'all' && (
+                {!searchInput && filterMode === 'all' && (
                   <button
                     onClick={() => setShowAddRule(true)}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"

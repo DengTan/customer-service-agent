@@ -458,3 +458,71 @@ export function withErrorHandlerSimple(handler: SimpleHandlerFn): SimpleHandlerF
     }
   };
 }
+
+// ─── Audit Trail ─────────────────────────────────────────────
+
+/**
+ * Context passed to audit hooks when an operation is executed.
+ */
+export interface AuditContext {
+  /** ID of the user performing the operation */
+  userId: string | null;
+  /** Additional context about the operation */
+  payload: Record<string, unknown>;
+  /** Operation type (create, update, delete, etc.) */
+  operation?: string;
+}
+
+/**
+ * A hook that runs alongside an audited operation.
+ * Should throw if the audit fails in fail-closed mode.
+ */
+export type AuditHook = (ctx: AuditContext) => Promise<void>;
+
+/**
+ * Options for withAuditTrail.
+ */
+interface AuditTrailOptions {
+  /** Table being audited (for logging) */
+  table: string;
+  /** Operation type (create, update, delete, etc.) */
+  operation: string;
+  /** Field names to redact from logs */
+  redact?: readonly string[];
+  /** If true, throw on hook failure; if false, log and continue (default: true) */
+  failClosed?: boolean;
+}
+
+/**
+ * Wrap an async operation with audit trail hooks.
+ * Hooks run after the operation completes (for logging purposes).
+ * If failClosed is true and any hook throws, the error propagates.
+ */
+export async function withAuditTrail<T>(
+  options: AuditTrailOptions,
+  run: () => Promise<T>,
+  hooks: AuditHook[] = [],
+  context: AuditContext = { userId: null, payload: {} },
+): Promise<T> {
+  const result = await run();
+
+  // Run all hooks (fire-and-forget unless failClosed is true)
+  const hookPromises = hooks.map(async (hook) => {
+    try {
+      await hook(context);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      apiLogger.warn('[AuditTrail] Hook failed', {
+        table: options.table,
+        operation: options.operation,
+        error: msg,
+      });
+      if (options.failClosed !== false) {
+        throw err;
+      }
+    }
+  });
+
+  await Promise.all(hookPromises);
+  return result;
+}

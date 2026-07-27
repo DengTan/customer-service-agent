@@ -13,6 +13,7 @@
 import { logger } from '@/lib/logger';
 import { AuxiliaryLLMService, AUX_LLM, type AuxiliaryLlmResult } from './auxiliary-llm-service';
 import type { EvidenceBundle } from './retrieval-orchestrator';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -252,12 +253,7 @@ export class QueryRewriteService {
    * Strip internal markers that may have been injected by previous processing.
    */
   stripInternalMarkers(query: string): string {
-    // Remove tool call markers
-    return query
-      .replace(/\[TOOL_CALL\].*?\[\/TOOL_CALL\]/g, '')
-      // Remove confidence tags
-      .replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '')
-      .trim();
+    return stripInternalMarkersFromResponse(query);
   }
 }
 

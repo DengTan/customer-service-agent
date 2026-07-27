@@ -3,6 +3,7 @@ import { LLMClientAdapter } from './llm-client-adapter';
 import { LlmProviderService } from './llm-provider-service';
 import { ToolExecutionService } from './tool-execution-service';
 import { getSettingsRepository } from '@/server/repositories/settings-repository';
+import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import {
   SubAgentRepository,
   type AgentDelegationRow,
@@ -550,6 +551,9 @@ export class SubAgentService {
       return { content: this.buildFallbackResponse(childBot), degraded: true };
     }
 
+    // P0: Strip internal markers (CONF, TOOL_CALL, DELEGATE) from first-pass response
+    llmContent = stripInternalMarkersFromResponse(llmContent);
+
     if (!llmContent.trim()) {
       return { content: this.buildFallbackResponse(childBot), degraded: true };
     }
@@ -591,6 +595,9 @@ export class SubAgentService {
       // Graceful degradation: return first-pass LLM content + raw tool results
       return { content: `${llmContent}\n\n---\n${toolResultsSummary}`, degraded: false };
     }
+
+    // P0: Strip internal markers from second-pass response as well
+    finalContent = stripInternalMarkersFromResponse(finalContent);
 
     return { content: finalContent.trim() || llmContent, degraded: false };
   }
