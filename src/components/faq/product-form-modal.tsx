@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Plus, Trash2, Upload, ImageIcon, Ruler, Search, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ImageUploadInput } from '@/components/common/image-upload-input';
 import { SizeChartFormModal } from './size-chart-form-modal';
 
 interface ProductSpec {
@@ -18,6 +17,124 @@ interface SizeChartRow {
   chart_type: string;
   status: string;
   hit_count: number;
+}
+
+/**
+ * Product image upload component with integrated upload + add functionality.
+ * Automatically adds the uploaded URL to the images list.
+ */
+function ProductImageUploader({
+  value,
+  onUploadComplete,
+  disabled,
+}: {
+  value: string;
+  onUploadComplete: (url: string) => void;
+  disabled?: boolean;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (disabled || uploading) return;
+
+    // Validate MIME type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('仅支持 JPG/PNG/GIF/WebP 格式的图片');
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('图片大小不能超过 10MB');
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', 'knowledge');
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || `上传失败 (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        onUploadComplete(data.url);
+        toast.success('图片上传成功');
+      } else {
+        throw new Error(data.message || '上传返回异常');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '图片上传失败');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [disabled, uploading, onUploadComplete]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex-1">
+        <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          type="url"
+          value={value}
+          onChange={e => onUploadComplete(e.target.value)}
+          placeholder="输入图片URL后自动添加"
+          disabled={disabled || uploading}
+          className="w-full pl-9 pr-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
+        />
+        {value && !disabled && (
+          <button
+            type="button"
+            onClick={() => onUploadComplete('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file);
+        }}
+        className="hidden"
+        disabled={disabled || uploading}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={disabled || uploading}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            上传中
+          </>
+        ) : (
+          <>
+            <Upload className="w-3.5 h-3.5" />
+            上传
+          </>
+        )}
+      </button>
+    </div>
+  );
 }
 
 interface ProductFormData {
@@ -67,6 +184,44 @@ const STATUS_OPTIONS = [
   { value: 'on_sale', label: '在售' },
   { value: 'off_sale', label: '已下架' },
   { value: 'discontinued', label: '已停售' },
+];
+
+const CATEGORY_OPTIONS = [
+  { value: '服装', label: '服装' },
+  { value: '女装', label: '女装' },
+  { value: '男装', label: '男装' },
+  { value: '童装', label: '童装' },
+  { value: '鞋类', label: '鞋类' },
+  { value: '箱包皮具', label: '箱包皮具' },
+  { value: '配饰', label: '配饰' },
+  { value: '美妆护肤', label: '美妆护肤' },
+  { value: '家居用品', label: '家居用品' },
+  { value: '数码电器', label: '数码电器' },
+  { value: '食品生鲜', label: '食品生鲜' },
+  { value: '母婴用品', label: '母婴用品' },
+  { value: '运动户外', label: '运动户外' },
+  { value: '其他', label: '其他' },
+];
+
+const PARENT_CATEGORY_OPTIONS = [
+  { value: 'T恤', label: 'T恤' },
+  { value: '衬衫', label: '衬衫' },
+  { value: '裤装', label: '裤装' },
+  { value: '裙装', label: '裙装' },
+  { value: '外套', label: '外套' },
+  { value: '卫衣', label: '卫衣' },
+  { value: '牛仔', label: '牛仔' },
+  { value: '运动服', label: '运动服' },
+  { value: '正装', label: '正装' },
+  { value: '休闲装', label: '休闲装' },
+  { value: '男装', label: '男装' },
+  { value: '女装', label: '女装' },
+  { value: '皮鞋', label: '皮鞋' },
+  { value: '运动鞋', label: '运动鞋' },
+  { value: '拖鞋', label: '拖鞋' },
+  { value: '箱包', label: '箱包' },
+  { value: '背包', label: '背包' },
+  { value: '钱包', label: '钱包' },
 ];
 
 const CHART_TYPE_LABELS: Record<string, string> = {
@@ -413,7 +568,7 @@ function SizeChartSearchAdd({ productId, alreadyAssocIds, onAdded }: SizeChartSe
         </div>
       )}
       {open && (
-        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+        <div className="fixed inset-0 z-[45]" onClick={() => setOpen(false)} />
       )}
     </div>
   );
@@ -539,13 +694,17 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
   }, [open, product]);
 
   const addSpec = () => {
-    if (!newSpecKey.trim()) return;
+    if (!newSpecKey.trim()) {
+      toast.error('请输入规格名称');
+      return;
+    }
     setForm(f => ({
       ...f,
       specifications: [...f.specifications, { key: newSpecKey.trim(), value: newSpecValue.trim() }],
     }));
     setNewSpecKey('');
     setNewSpecValue('');
+    toast.success('已添加规格');
   };
 
   const removeSpec = (index: number) => {
@@ -553,9 +712,13 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
   };
 
   const addFeature = () => {
-    if (!newFeature.trim()) return;
+    if (!newFeature.trim()) {
+      toast.error('请输入卖点内容');
+      return;
+    }
     setForm(f => ({ ...f, features: [...f.features, newFeature.trim()] }));
     setNewFeature('');
+    toast.success('已添加卖点');
   };
 
   const removeFeature = (index: number) => {
@@ -563,19 +726,22 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
   };
 
   const addTag = () => {
-    if (!newTag.trim() || form.tags.includes(newTag.trim())) return;
-    setForm(f => ({ ...f, tags: [...f.tags, newTag.trim()] }));
+    const trimmed = newTag.trim();
+    if (!trimmed) {
+      toast.error('请输入标签内容');
+      return;
+    }
+    if (form.tags.includes(trimmed)) {
+      toast.error('标签已存在');
+      return;
+    }
+    setForm(f => ({ ...f, tags: [...f.tags, trimmed] }));
     setNewTag('');
+    toast.success('已添加标签');
   };
 
   const removeTag = (tag: string) => {
     setForm(f => ({ ...f, tags: f.tags.filter(t => t !== tag) }));
-  };
-
-  const addImageUrl = () => {
-    if (!newImageUrl.trim()) return;
-    setForm(f => ({ ...f, image_urls: [...f.image_urls, newImageUrl.trim()] }));
-    setNewImageUrl('');
   };
 
   const removeImageUrl = (index: number) => {
@@ -686,21 +852,28 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">分类</label>
-                <input
+                <select
                   value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  placeholder="如：服装"
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+                >
+                  {CATEGORY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">父分类</label>
-                <input
-                  value={form.parent_category}
-                  onChange={e => setForm(f => ({ ...f, parent_category: e.target.value }))}
-                  placeholder="如：男装"
+                <select
+                  value={form.parent_category || ''}
+                  onChange={e => setForm(f => ({ ...f, parent_category: e.target.value || null }))}
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+                >
+                  <option value="">无父分类</option>
+                  {PARENT_CATEGORY_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">售价（元）</label>
@@ -906,10 +1079,24 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               <div className="grid grid-cols-4 gap-2 mb-3">
                 {form.image_urls.map((url, i) => (
                   <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-border group">
-                    <img src={url} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/80x80/png?text=无图'; }} />
+                    <img
+                      src={url}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).src = 'https://placehold.co/200x200/png?text=无图'; }}
+                    />
+                    {/* 遮罩层 - 点击预览大图 */}
+                    <button
+                      onClick={() => window.open(url, '_blank')}
+                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-full h-full"
+                      title="点击查看大图"
+                    >
+                      <span className="text-white text-xs">点击查看</span>
+                    </button>
+                    {/* 删除按钮 */}
                     <button
                       onClick={() => removeImageUrl(i)}
-                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -918,28 +1105,19 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               </div>
             )}
             <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <ImageUploadInput
-                  value={newImageUrl}
-                  onChange={(url) => {
+              <ProductImageUploader
+                value={newImageUrl}
+                onUploadComplete={(url) => {
+                  // When URL changes (from upload or manual input), add to list if valid
+                  if (url.trim() && (url.startsWith('http://') || url.startsWith('https://'))) {
+                    setForm(f => ({ ...f, image_urls: [...f.image_urls, url.trim()] }));
+                    setNewImageUrl('');
+                  } else {
                     setNewImageUrl(url);
-                    // Only auto-add when URL appears to be from a completed upload
-                    // (contains a recognized storage domain), not from manual typing
-                    if (url.trim() && /https?:\/\/[^/]+\.(aliyuncs\.com|amazonaws\.com|bcebos\.com|七牛|qiniu|oss)/i.test(url)) {
-                      setForm(f => ({ ...f, image_urls: [...f.image_urls, url.trim()] }));
-                      setNewImageUrl('');
-                    }
-                  }}
-                  placeholder="上传图片或输入图片URL后添加"
-                />
-              </div>
-              <button
-                onClick={addImageUrl}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg border border-dashed border-border hover:border-primary hover:bg-primary/5 text-xs text-muted-foreground hover:text-primary transition-colors shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                添加
-              </button>
+                  }
+                }}
+                disabled={saving}
+              />
             </div>
           </div>
 

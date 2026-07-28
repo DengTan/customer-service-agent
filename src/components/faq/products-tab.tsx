@@ -11,6 +11,7 @@ import {
   Tag,
   Layers,
   Hash,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -54,6 +55,7 @@ export function ProductsTab() {
   const [productFilterCat, setProductFilterCat] = useState('');
   const [productFilterStatus, setProductFilterStatus] = useState('');
   const [showProductForm, setShowProductForm] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState<Record<string, number>>({});
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [confirmToggleProduct, setConfirmToggleProduct] = useState<ProductItem | null>(null);
 
@@ -65,7 +67,18 @@ export function ProductsTab() {
     hitCount: productList.reduce((sum, p) => sum + (p.hit_count || 0), 0),
   }), [productList]);
 
-  const productCategoryOptions = useMemo(() => Object.keys(productCategories), [productCategories]);
+  // 预定义分类选项
+  const CATEGORY_OPTIONS = [
+    '服装', '女装', '男装', '童装', '鞋类', '箱包皮具', '配饰',
+    '美妆护肤', '家居用品', '数码电器', '食品生鲜', '母婴用品', '运动户外', '其他'
+  ];
+
+  // 合并预定义分类和数据库中的分类
+  const productCategoryOptions = useMemo(() => {
+    const dbCategories = Object.keys(productCategories);
+    const merged = [...new Set([...CATEGORY_OPTIONS, ...dbCategories])];
+    return merged;
+  }, [productCategories]);
 
   const filteredProducts = useMemo(() => {
     let items = productList;
@@ -290,13 +303,70 @@ export function ProductsTab() {
                   )}
                 >
                   {/* Thumbnail */}
-                  <div className="relative aspect-[16/10] bg-gradient-to-br from-muted/40 to-muted overflow-hidden">
+                  <div className="relative aspect-[16/10] bg-gradient-to-br from-muted/40 to-muted overflow-hidden group">
                     {product.image_urls && product.image_urls.length > 0 ? (
-                      <img
-                        src={product.image_urls[0]}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      <>
+                        <img
+                          src={product.image_urls[currentImageIndex[product.id] || 0]}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        {/* Image carousel indicators */}
+                        {product.image_urls.length > 1 && (
+                          <>
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                              {product.image_urls.map((_, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentImageIndex(prev => ({ ...prev, [product.id]: idx }));
+                                  }}
+                                  className={cn(
+                                    'w-1.5 h-1.5 rounded-full transition-all',
+                                    (currentImageIndex[product.id] || 0) === idx
+                                      ? 'bg-white w-4'
+                                      : 'bg-white/50 hover:bg-white/80'
+                                  )}
+                                />
+                              ))}
+                            </div>
+                            {/* Navigation arrows */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentImageIndex(prev => ({
+                                  ...prev,
+                                  [product.id]: ((prev[product.id] || 0) - 1 + product.image_urls.length) % product.image_urls.length
+                                }));
+                              }}
+                              className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentImageIndex(prev => ({
+                                  ...prev,
+                                  [product.id]: ((prev[product.id] || 0) + 1) % product.image_urls.length
+                                }));
+                              }}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        {/* Image count badge */}
+                        {product.image_urls.length > 1 && (
+                          <div className="absolute top-2.5 right-2.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md font-medium bg-black/50 backdrop-blur-sm text-white">
+                              {product.image_urls.length} 张图片
+                            </span>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Package className="w-10 h-10 text-muted-foreground/30" />
