@@ -162,7 +162,7 @@ interface ProductFormModalProps {
     name: string;
     sku: string;
     category: string;
-    parent_category?: string | null;
+    parent_category?: string | undefined;
     brand?: string | null;
     price?: number | null;
     original_price?: number | null;
@@ -334,7 +334,11 @@ function SizeChartSelectorModal({ open, productId, alreadyAssocIds, onClose, onA
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <h3 className="text-sm font-semibold text-foreground">选择尺码表</h3>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+            aria-label="关闭"
+          >
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -353,7 +357,7 @@ function SizeChartSelectorModal({ open, productId, alreadyAssocIds, onClose, onA
           <select
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="px-2.5 py-1.5 pr-7 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
           >
             {CHART_TYPE_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -751,6 +755,9 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('请填写商品名称'); return; }
     if (!form.sku.trim()) { toast.error('请填写商品SKU'); return; }
+    if (!form.category.trim()) { toast.error('请选择分类'); return; }
+    if (!form.price.trim()) { toast.error('请填写售价'); return; }
+    if (!form.description.trim()) { toast.error('请填写商品详情'); return; }
 
     setSaving(true);
     try {
@@ -811,7 +818,11 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
           <h2 className="text-base font-semibold text-foreground">
             {isEditing ? '编辑商品' : '新建商品'}
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-muted transition-colors">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+            aria-label="关闭"
+          >
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -851,11 +862,11 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">分类</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">分类 <span className="text-red-500">*</span></label>
                 <select
                   value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
                 >
                   {CATEGORY_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -863,20 +874,20 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">父分类</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">父分类 <span className="text-red-500">*</span></label>
                 <select
                   value={form.parent_category || ''}
-                  onChange={e => setForm(f => ({ ...f, parent_category: e.target.value || null }))}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  onChange={e => setForm(f => ({ ...f, parent_category: e.target.value }))}
+                  className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
                 >
-                  <option value="">无父分类</option>
+                  <option value="">请选择父分类</option>
                   {PARENT_CATEGORY_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">售价（元）</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">售价（元） <span className="text-red-500">*</span></label>
                 <input
                   type="number"
                   step="0.01"
@@ -901,11 +912,11 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               </div>
               {isEditing && (
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">状态</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">状态 <span className="text-red-500">*</span></label>
                   <select
                     value={form.status}
                     onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
                   >
                     {STATUS_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
@@ -1050,7 +1061,9 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
 
           {/* 商品详情 */}
           <div>
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">商品详情</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              商品详情 <span className="text-red-500">*</span>
+            </h3>
             <textarea
               value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}

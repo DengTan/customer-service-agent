@@ -7,6 +7,7 @@ interface TestSearchRequest {
   min_score: number;
   limit: number;
   show_filtered?: boolean;
+  rerank_enabled?: boolean;
 }
 
 interface SearchResult {
@@ -27,7 +28,10 @@ interface TestSearchResponse {
   execution_time_ms: number;
   vector_results?: number;
   bm25_results?: number;
+  rerank_requested?: boolean;
   rerank_applied?: boolean;
+  rerank_backend?: 'bge' | 'cohere' | 'generic' | 'mock' | 'none';
+  rerank_degraded?: boolean;
   avg_score?: number;
   filtered?: {
     total: number;
@@ -54,10 +58,16 @@ const VALID_MIN_SCORE_RANGE = { min: 0, max: 1 };
 const REQUEST_TIMEOUT_MS = 30000;
 
 // POST /api/knowledge/test-search - Test search API
+// Note: This is a test/debug endpoint that operates within the authenticated session.
+// Actual knowledge retrieval in production goes through /api/conversations/[id]/messages
+// which requires authentication. This endpoint is for QA/debugging purposes only.
 export async function POST(request: NextRequest) {
   try {
     const body: TestSearchRequest = await request.json();
-    const { query, mode, min_score, limit, show_filtered } = body;
+    const { query, mode, min_score, limit, show_filtered, rerank_enabled } = body;
+
+    // Track detailed error for hybrid API failure
+    let hybridError = '';
 
     // Validate required fields
     if (!query || query.trim().length === 0) {
@@ -108,6 +118,12 @@ export async function POST(request: NextRequest) {
       Math.min(VALID_LIMIT_RANGE.max, Math.round(rawLimit))
     );
 
+    // Default: rerank enabled for hybrid, disabled for vector
+    const effectiveRerankEnabled = mode === 'vector'
+      ? false
+      : (rerank_enabled ?? true);
+    const effectiveSkipRerank = !effectiveRerankEnabled;
+
     // Build URL for hybrid search API
     const params = new URLSearchParams({
       query: trimmedQuery,
@@ -119,6 +135,10 @@ export async function POST(request: NextRequest) {
       params.set('show_filtered', 'true');
     }
 
+    if (effectiveSkipRerank) {
+      params.set('skip_rerank', 'true');
+    }
+
     // Call hybrid search API
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:5000';
     const hybridResponse = await fetch(
@@ -126,11 +146,7 @@ export async function POST(request: NextRequest) {
       {
         headers: {
           'Content-Type': 'application/json',
-          ...Object.fromEntries(
-            Object.entries(request.headers).filter(([key]) =>
-              ['cookie', 'authorization'].includes(key.toLowerCase())
-            )
-          ),
+          // No cookie forwarding — both APIs are same-process Next.js route handlers
         },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       }
@@ -138,12 +154,13 @@ export async function POST(request: NextRequest) {
 
     if (!hybridResponse.ok) {
       const errorText = await hybridResponse.text();
+      hybridError = `[${hybridResponse.status}] ${errorText.slice(0, 200)}`;
       logger.agent.error('[TestSearch] Hybrid API failed', {
         status: hybridResponse.status,
         error: errorText,
       });
       return NextResponse.json(
-        { success: false, error: 'Search service error' },
+        { success: false, error: 'Search service error', detail: hybridError },
         { status: 502 }
       );
     }
@@ -156,13 +173,17 @@ export async function POST(request: NextRequest) {
     let vectorResults = 0;
     let bm25Results = 0;
     let rerankApplied = false;
+    let rerankBackend: 'bge' | 'cohere' | 'generic' | 'mock' | 'none' = 'none';
+    let rerankDegraded = false;
     let avgScore = 0;
 
     if (mode === 'hybrid') {
       results = (hybridData.hybrid?.results || []).map((r: Record<string, unknown>) => ({
         id: r.id as string,
         content: r.content as string,
-        score: Math.round((r.score as number) * 1000) / 1000,
+        score: Number.isFinite(r.score as number)
+          ? Math.round((r.score as number) * 1000) / 1000
+          : 0,
         name: r.name as string | undefined,
         category: r.category as string | undefined,
         source: r.source as string | undefined,
@@ -170,50 +191,27 @@ export async function POST(request: NextRequest) {
       executionTimeMs = hybridData.hybrid?.execution_time_ms || 0;
       vectorResults = hybridData.hybrid?.vector_results || 0;
       bm25Results = hybridData.hybrid?.bm25_results || 0;
-      rerankApplied = hybridData.hybrid?.rerank_applied || false;
-      avgScore = hybridData.hybrid?.avg_score || 0;
+      rerankApplied = hybridData.hybrid?.rerank_applied ?? false;
+      rerankBackend = hybridData.hybrid?.rerank_backend ?? 'none';
+      rerankDegraded = hybridData.hybrid?.rerank_degraded ?? false;
+      avgScore = hybridData.hybrid?.avg_score ?? 0;
     } else {
-      // Vector mode - get raw vector results without filtering
-      const rawParams = new URLSearchParams({
-        query: query.trim(),
-        min_score: '0', // Get all results
-        limit: String(effectiveLimit * 4), // Get more to see what's filtered
-        skip_rerank: 'true',
-      });
-
-      if (show_filtered) {
-        rawParams.set('show_filtered', 'true');
-      }
-
-      const vectorResponse = await fetch(
-        `${baseUrl}/api/knowledge/search/hybrid?${rawParams.toString()}`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            ...Object.fromEntries(
-              Object.entries(request.headers).filter(([key]) =>
-                ['cookie', 'authorization'].includes(key.toLowerCase())
-              )
-            ),
-          },
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        }
-      );
-
-      if (vectorResponse.ok) {
-        const vectorData = await vectorResponse.json();
-        results = (vectorData.vector?.sources || []).map((r: Record<string, unknown>) => ({
-          id: r.knowledge_item_id as string || String(Math.random()),
-          content: r.content as string,
-          score: Math.round((r.score as number) * 1000) / 1000,
-          name: r.name as string | undefined,
-          category: r.category as string | undefined,
-          source: 'vector',
-        }));
-        executionTimeMs = hybridData.vector?.execution_time_ms || 0;
-        vectorResults = vectorData.vector?.total || 0;
-        avgScore = vectorData.vector?.avg_score || 0;
-      }
+      // Vector mode — extract raw vector results from the already-fetched hybrid response.
+      // The hybrid API returns both hybrid.* and vector.* data in one call.
+      results = (hybridData.vector?.sources || []).map((r: Record<string, unknown>, index: number) => ({
+        id: (r.knowledge_item_id as string) || `vector-${index}`,
+        content: r.content as string,
+        score: Number.isFinite(r.score as number)
+          ? Math.round((r.score as number) * 1000) / 1000
+          : 0,
+        name: r.name as string | undefined,
+        category: r.category as string | undefined,
+        source: 'vector',
+      }));
+      executionTimeMs = hybridData.vector?.execution_time_ms || 0;
+      vectorResults = hybridData.vector?.sources?.length ?? 0;
+      avgScore = hybridData.vector?.avg_score ?? 0;
+      // BM25 is not used in vector-only mode
     }
 
     const response: TestSearchResponse = {
@@ -225,7 +223,10 @@ export async function POST(request: NextRequest) {
       execution_time_ms: executionTimeMs,
       vector_results: vectorResults,
       bm25_results: bm25Results,
+      rerank_requested: effectiveRerankEnabled,
       rerank_applied: rerankApplied,
+      rerank_backend: rerankBackend,
+      rerank_degraded: rerankDegraded,
       avg_score: avgScore,
     };
 
@@ -248,9 +249,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
-    logger.agent.error('[TestSearch] Search failed', { error });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.agent.error('[TestSearch] Search failed', { error: errorMessage });
     return NextResponse.json(
-      { success: false, error: 'Internal server error' },
+      { success: false, error: 'Internal server error', detail: errorMessage },
       { status: 500 }
     );
   }

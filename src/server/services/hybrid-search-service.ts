@@ -37,6 +37,8 @@ export interface HybridSearchResult {
 
 export interface HybridSearchResponse {
   results: HybridSearchResult[];
+  /** All candidates before minScore filtering (used for "show filtered" feature) */
+  candidates: HybridSearchResult[];
   total: number;
   query: string;
   config: HybridSearchConfig;
@@ -202,6 +204,7 @@ export class HybridSearchService {
 
       return {
         results: filteredResults,
+        candidates: finalResults,
         total: filteredResults.length,
         query: cleanQuery,
         config: this.config,
@@ -216,6 +219,7 @@ export class HybridSearchService {
       logger.agent.error('[HybridSearch] Search failed', { error: err, query: cleanQuery });
       return {
         results: [],
+        candidates: [],
         total: 0,
         query: cleanQuery,
         config: this.config,
@@ -375,21 +379,23 @@ export class HybridSearchService {
     // Compute hybrid scores: combine RRF rank-score with original vector/BM25 relevance
     // This preserves semantic relevance from original scores while benefiting from RRF fusion
     const scored = [...scoreMap.values()].map(item => {
-      // Hybrid score: weighted combination of normalized RRF score and original relevance
-      // RRF contribution: captures position bonus from being top-ranked in multiple retrieval methods
-      // Original score contribution: preserves actual semantic/keyword relevance
-      const rrfNormalized = item.rrfScore; // Already scaled by weights
+      const rrfScore = item.rrfScore; // Already weighted by vectorWeight/bm25Weight
       const originalScore = item.result.metadata?.originalScore as number | undefined;
-      
-      // Use geometric mean of RRF and original score for balanced fusion
-      // This prevents RRF-only ranking and rewards high semantic relevance
+
+      // Normalize RRF to [0,1] range: max RRF = (vectorWeight + bm25Weight) / (k + 1)
+      // This ensures consistent scale regardless of k value
+      const maxRrfScore = (this.config.vectorWeight + this.config.bm25Weight) / (k + 1);
+      const normalizedRrf = maxRrfScore > 0 ? rrfScore / maxRrfScore : 0;
+
+      // Linear combination: RRF normalized score + original score
+      // This keeps scores in [0,1] range while combining both signals
       const hybridScore = originalScore !== undefined && originalScore > 0
-        ? Math.sqrt(rrfNormalized * originalScore) // Geometric mean
-        : rrfNormalized;
-      
+        ? (normalizedRrf + originalScore) / 2
+        : normalizedRrf;
+
       return {
         ...item.result,
-        score: hybridScore,
+        score: Math.round(hybridScore * 1000) / 1000,
         source: 'hybrid' as const,
       };
     });

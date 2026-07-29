@@ -177,7 +177,9 @@ export class CustomerRepository {
 
     // 当 tags 更新时，同步标签计数（Fire-and-forget）
     if (input.tags !== undefined) {
-      this.syncTagCounts(input.tags).catch(() => {});
+      this.syncTagCounts(input.tags).catch((err) => {
+        logger.agent.warn('[CustomerRepository] syncTagCounts failed', { error: err });
+      });
     }
 
     return data;

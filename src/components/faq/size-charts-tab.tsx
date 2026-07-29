@@ -220,7 +220,7 @@ export function SizeChartsTab() {
           <select
             value={sizeChartFilterType}
             onChange={e => setSizeChartFilterType(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
           >
             <option value="">全部类型</option>
             <option value="clothing">服装</option>
@@ -231,7 +231,7 @@ export function SizeChartsTab() {
           <select
             value={sizeChartFilterStatus}
             onChange={e => setSizeChartFilterStatus(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
           >
             <option value="">全部状态</option>
             <option value="active">启用中</option>
@@ -240,7 +240,7 @@ export function SizeChartsTab() {
           <select
             value={productFilter}
             onChange={e => setProductFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
           >
             <option value="">全部商品</option>
             {productOptions.map(p => (
@@ -300,12 +300,6 @@ export function SizeChartsTab() {
                     : 'border-border/60 hover:border-primary/40 hover:shadow-md hover:shadow-primary/5',
                 )}
               >
-                {/* Status indicator stripe */}
-                <div className={cn(
-                  'absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl',
-                  chart.status === 'active' ? 'bg-primary' : 'bg-muted-foreground/30',
-                )} />
-
                 <div className="p-4 pl-5 flex items-start gap-4">
                   {/* Icon */}
                   <div className={cn(

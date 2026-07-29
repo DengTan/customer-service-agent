@@ -155,8 +155,8 @@ export function ImportProgress({ jobId, onComplete, onClose }: ImportProgressPro
             <h3 className="font-semibold">导入进度</h3>
           </div>
           {job.status === 'completed' || job.status === 'failed' ? (
-            <button onClick={onClose} className="p-1 hover:bg-secondary rounded">
-              <X className="h-5 w-5" />
+            <button onClick={onClose} aria-label="关闭" className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors">
+              <X className="w-4 h-4 text-muted-foreground" />
             </button>
           ) : null}
         </div>

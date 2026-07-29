@@ -146,6 +146,12 @@ export class RerankService {
   /**
    * Score candidates using the configured rerank model.
    * This is a pluggable implementation that can be extended to support different backends.
+   *
+   * Priority order:
+   * 1. RERANK_API_URL — generic Ollama rerank service (highest precedence when set)
+   * 2. BGE_RERANK_API_URL — local BGE cross-encoder API
+   * 3. COHERE_API_KEY — Cohere hosted rerank API
+   * 4. mock — keyword-overlap heuristic (always available fallback)
    */
   private async scoreCandidates(
     query: string,
@@ -153,18 +159,36 @@ export class RerankService {
   ): Promise<Array<RerankCandidate & { rerankScore: number }>> {
     const model = this.config.model || DEFAULT_RERANK_MODEL;
 
-    // Try different rerank backends based on model type
-    if (model.startsWith('cohere')) {
-      return this.scoreWithCohere(query, candidates);
-    } else if (model.startsWith('bge-reranker')) {
-      return this.scoreWithBGE(query, candidates);
-    } else if (model === 'mock' || !process.env.RERANK_API_URL) {
-      // Mock mode: use a simple relevance heuristic as fallback
-      return this.scoreWithMock(query, candidates);
-    } else {
-      // Generic API mode
-      return this.scoreWithGenericAPI(query, candidates);
+    // Priority 1: Generic Ollama rerank service
+    if (process.env.RERANK_API_URL) {
+      return this.scoreWithOllamaEmbedding(query, candidates);
     }
+
+    // Priority 2: Cohere (only if model starts with 'cohere' AND key is set)
+    if (model.startsWith('cohere')) {
+      if (process.env.COHERE_API_KEY) {
+        return this.scoreWithCohere(query, candidates);
+      }
+      logger.agent.warn('[Rerank] Cohere model configured but COHERE_API_KEY not set, using mock');
+      return this.scoreWithMock(query, candidates);
+    }
+
+    // Priority 3: BGE cross-encoder (local or remote API)
+    if (model.startsWith('bge-reranker')) {
+      if (process.env.BGE_RERANK_API_URL) {
+        return this.scoreWithBGE(query, candidates);
+      }
+      logger.agent.warn('[Rerank] BGE model configured but BGE_RERANK_API_URL not set, using mock');
+      return this.scoreWithMock(query, candidates);
+    }
+
+    // Priority 4: explicit mock
+    if (model === 'mock' || !process.env.RERANK_API_URL) {
+      return this.scoreWithMock(query, candidates);
+    }
+
+    // Priority 5: generic API (no special prefix, use RERANK_API_URL)
+    return this.scoreWithGenericAPI(query, candidates);
   }
 
   /**
@@ -264,6 +288,57 @@ export class RerankService {
       }));
     } catch (err) {
       logger.agent.warn('[Rerank] Cohere scoring failed, using mock', { error: err });
+      return this.scoreWithMock(query, candidates);
+    }
+  }
+
+  /**
+   * Score using a local Ollama Embedding Rerank Service.
+   * Uses cosine similarity between query and document embeddings.
+   */
+  private async scoreWithOllamaEmbedding(
+    query: string,
+    candidates: RerankCandidate[]
+  ): Promise<Array<RerankCandidate & { rerankScore: number }>> {
+    const apiUrl = process.env.RERANK_API_URL;
+
+    if (!apiUrl) {
+      return this.scoreWithMock(query, candidates);
+    }
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          documents: candidates.map(c => c.content),
+          top_n: candidates.length,
+        }),
+      });
+
+      if (!response.ok) {
+        logger.agent.warn('[Rerank] Ollama rerank API error, falling back to mock', {
+          status: response.status,
+        });
+        return this.scoreWithMock(query, candidates);
+      }
+
+      const data = await response.json() as {
+        results: Array<{ index: number; text: string; score: number }>;
+      };
+
+      this.lastBackend = 'generic';
+      // Create a map from original index to score
+      const scoreMap = new Map(data.results.map(r => [r.index, r.score]));
+      return candidates.map((c, idx) => ({
+        ...c,
+        rerankScore: scoreMap.get(idx) ?? c.originalScore,
+      }));
+    } catch (err) {
+      logger.agent.warn('[Rerank] Ollama embedding scoring failed, using mock', { error: err });
       return this.scoreWithMock(query, candidates);
     }
   }

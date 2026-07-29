@@ -312,12 +312,13 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
                 差异高亮
               </button>
             )}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-muted transition-colors"
-            >
-              <X className="w-5 h-5 text-muted-foreground" />
-            </button>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+            aria-label="关闭"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
           </div>
         </div>
 

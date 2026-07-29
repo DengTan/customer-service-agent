@@ -1,0 +1,30 @@
+fix: security & correctness improvements across AI conversation pipeline
+
+P0 Security:
+- Routing: propagate tools/knowledge_ids to routed bot pipeline
+- Claim verifier: move before stripInternalMarkers to catch injection
+- Tool auth: verify conversation ownership for all tools (not just SENSITIVE_TOOLS)
+- Tool rollback: hide "executed" UI state after rollback
+
+P0 Correctness:
+- SSE abort: guard post-stream side effects (incrementMessageCount, qualityCheck,
+  knowledgeGap) with abortSignal check
+- Simulation path: add ai_max_concurrent limit check to prevent bypass
+
+Core Improvements:
+- claim-support-verifier: structured evidence types, threshold normalization, test coverage
+- llm-client-adapter: structured outputs mode with JSON schema validation
+- llm-streaming-service: streaming confidence breakdown, source citations, abort guard
+- retrieval-orchestrator: unified routing with product context, relevance thresholds
+- auto-reply-repository: full CRUD support
+
+UI & UX:
+- Auto-reply settings: searchable table with inline CRUD
+- FAQ pages: product/size-chart forms with image upload, association handling
+- Chat: source citation panel, richer message cards, rollback state
+- Backlog doc: complete fix tracking with notes
+
+Schema & Migrations:
+- size_chart_versions table
+- product_details_sku_unique constraint
+- size_charts.drop product_id (junction table migration)

@@ -127,7 +127,7 @@ function FaqPageInner() {
   return (
     <div className="h-full flex flex-col page-transition">
       {/* Header */}
-      <div className="relative h-16 border-b border-border/60 px-6 flex items-center gap-5 bg-card shrink-0 overflow-hidden">
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center gap-5 bg-card shrink-0 overflow-hidden">
         {/* Decorative gradient */}
         <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
 

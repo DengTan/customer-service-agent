@@ -1,0 +1,6 @@
+{
+  "model": "bge-reranker-v2-m3",
+  "query": "退货",
+  "documents": ["七天无理由退货政策", "全场包邮"],
+  "top_n": 2
+}

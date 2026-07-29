@@ -491,8 +491,8 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
             <h2 className="text-base font-semibold text-foreground">域名白名单管理</h2>
             <p className="text-xs text-muted-foreground mt-0.5">配置允许发送的链接域名白名单</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors">
-            <X className="w-5 h-5 text-muted-foreground" />
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors" aria-label="关闭">
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
 

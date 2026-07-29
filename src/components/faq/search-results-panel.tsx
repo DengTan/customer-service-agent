@@ -4,51 +4,10 @@ import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { FileText, ChevronDown, ChevronRight, Clock, CheckCircle2 } from 'lucide-react';
-
-export interface SearchResult {
-  id: string;
-  content: string;
-  score: number;
-  name?: string;
-  category?: string;
-  source?: string;
-  filterReason?: string;
-  isFiltered?: boolean;
-}
-
-export interface FilteredResult {
-  id: string;
-  content: string;
-  score: number;
-  name?: string;
-  category?: string;
-  source?: string;
-  filterReason: string;
-  isFiltered: true;
-}
-
-export interface SearchResultsData {
-  results: SearchResult[];
-  total: number;
-  execution_time_ms: number;
-  vector_results?: number;
-  bm25_results?: number;
-  rerank_applied?: boolean;
-  avg_score?: number;
-  error?: string;
-  filtered?: {
-    total: number;
-    items: SearchResult[];
-  };
-  termAnalysis?: {
-    queryTerms: string[];
-    matchedTerms: string[];
-    unmatchedTerms: string[];
-  };
-}
+import { cn } from '@/lib/utils';
+import { FileText, CheckCircle2, Clock, FileSearch } from 'lucide-react';
+import type { SearchResult, FilteredResult, SearchResultsData } from './search-types';
 
 interface SearchResultsPanelProps {
   data: SearchResultsData | null;
@@ -96,6 +55,13 @@ function getScoreBgColor(score: number, minScore: number): string {
   return 'bg-red-600';
 }
 
+function getScoreColorHex(score: number, minScore: number): string {
+  if (score >= 0.85) return '#16a34a'; // green-600
+  if (score >= minScore) return '#059669'; // emerald-600
+  if (score >= 0.6) return '#d97706'; // amber-600
+  return '#dc2626'; // red-600
+}
+
 function getSourceLabel(source?: string): string {
   switch (source) {
     case 'vector':
@@ -122,6 +88,19 @@ function getSourceVariant(source?: string): 'default' | 'secondary' | 'outline' 
   }
 }
 
+function TypeBadge({ type }: { type: string }) {
+  const configs: Record<string, { label: string; className: string }> = {
+    text: { label: 'Text', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
+    url: { label: 'URL', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' },
+    image: { label: 'Image', className: 'bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300' },
+    file: { label: 'File', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' },
+    product: { label: 'Product', className: 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' },
+    size_chart: { label: 'Size', className: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300' },
+  };
+  const config = configs[type] || { label: type, className: 'bg-gray-100 text-gray-700' };
+  return <Badge className={cn('text-xs', config.className)}>{config.label}</Badge>;
+}
+
 function ResultItem({
   result,
   index,
@@ -137,7 +116,7 @@ function ResultItem({
   const isPassed = result.score >= minScore;
 
   return (
-    <Card className={`mb-3 ${result.isFiltered ? 'opacity-70 border-dashed' : ''}`}>
+    <Card className={`mb-3 border-0 ${result.isFiltered ? 'opacity-70 border-dashed' : ''}`}>
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
@@ -173,7 +152,8 @@ function ResultItem({
         <div className="flex items-center gap-2 mt-2">
           <Progress
             value={scorePercent}
-            className={`h-2 flex-1 [&>div]:${getScoreBgColor(result.score, minScore)}`}
+            className="h-2 flex-1"
+            style={{ ['--progress-foreground' as string]: getScoreColorHex(result.score, minScore) }}
           />
           <span className={`text-sm font-mono font-semibold w-16 text-right ${getScoreColor(result.score, minScore)}`}>
             {result.score.toFixed(3)}
@@ -198,6 +178,20 @@ function ResultItem({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function NoResultsState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <FileSearch className="w-12 h-12 text-muted-foreground/50 mb-4" />
+      <h3 className="text-lg font-medium text-muted-foreground mb-2">
+        未找到相关结果
+      </h3>
+      <p className="text-sm text-muted-foreground">
+        尝试降低最低分数或调整您的查询词
+      </p>
+    </div>
   );
 }
 
@@ -249,7 +243,7 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
     return query
       .replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, '')
       .split(/\s+/)
-      .filter(t => t.length >= 2)
+      .filter(t => t.length >= 1)
       .slice(0, 20);
   }, [query]);
 
@@ -269,8 +263,12 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
     );
   }
 
-  if (!data || data.results.length === 0) {
+  if (!data) {
     return <EmptyState />;
+  }
+
+  if (data.results.length === 0) {
+    return <NoResultsState />;
   }
 
   const allResults = [
@@ -308,7 +306,7 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
         </div>
       )}
 
-      <ScrollArea className="h-[calc(100vh-400px)]">
+      <div className="max-h-[calc(100vh-400px)] overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent">
         {/* Passed Results */}
         {data.results.length > 0 && (
           <div className="mb-4">
@@ -331,7 +329,7 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
         )}
 
         {/* Filtered Results */}
-        {filteredResults.length > 0 && (
+        {filteredResults.length > 0 ? (
           <div>
             <div className="flex items-center gap-2 mb-3">
               <FileText className="w-4 h-4 text-amber-600" />
@@ -352,8 +350,15 @@ export function SearchResultsPanel({ data, query, loading, minScore }: SearchRes
               />
             ))}
           </div>
+        ) : (
+          <div className="flex items-center gap-2 mb-3 opacity-50">
+            <FileText className="w-4 h-4" />
+            <span className="text-sm text-muted-foreground">
+              无被过滤候选
+            </span>
+          </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

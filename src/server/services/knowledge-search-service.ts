@@ -190,7 +190,9 @@ export class KnowledgeSearchService {
       // Fire-and-forget: enrich metadata and search images asynchronously
       // These are non-critical operations that should not block the search response
       const matchedIds = results.map(r => r.knowledge_item_id).filter(Boolean);
-      this.incrementHitCounts(matchedIds).catch(() => {});
+      this.incrementHitCounts(matchedIds).catch((err) => {
+        logger.agent.warn('[KnowledgeSearch] incrementHitCounts failed', { error: err });
+      });
       this.searchRelatedImages(query).catch((err) => {
         logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
       });
@@ -259,7 +261,9 @@ export class KnowledgeSearchService {
         });
         // P2: also fire-and-forget hit count increment (uses knowledge_item_id which is set above)
         const matchedIds = hybridResult.results.map(r => r.id).filter(Boolean);
-        this.incrementHitCounts(matchedIds).catch(() => {});
+        this.incrementHitCounts(matchedIds).catch((err) => {
+        logger.agent.warn('[KnowledgeSearch] incrementHitCounts failed', { error: err });
+      });
         this.searchRelatedImages(query).catch((err) => {
           logger.agent.debug('[KnowledgeSearch] Image search failed', { error: err });
         });
@@ -413,8 +417,8 @@ export class KnowledgeSearchService {
 
       // Update hit_count + last_hit_at for matched items (fire-and-forget)
       if (matchedItemIds.size > 0) {
-        this.incrementHitCounts([...matchedItemIds]).catch(() => {
-          // Hit count update failure is non-critical
+        this.incrementHitCounts([...matchedItemIds]).catch((err) => {
+          logger.agent.debug('[KnowledgeSearch] incrementHitCounts failed', { error: err });
         });
       }
 

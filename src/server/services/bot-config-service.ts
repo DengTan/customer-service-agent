@@ -39,16 +39,24 @@ export class BotConfigService {
     changes?: Record<string, { old: unknown; new: unknown }> | null;
     metadata?: Record<string, unknown> | null;
   }): Promise<void> {
-    await this.auditRepo.write({
-      botId: opts.botId,
-      action: opts.action,
-      actorId: opts.actor?.id,
-      actorName: opts.actor?.name,
-      oldValue: opts.oldValue ?? null,
-      newValue: opts.newValue ?? null,
-      changes: opts.changes ?? null,
-      metadata: opts.metadata ?? null,
-    });
+    try {
+      await this.auditRepo.write({
+        botId: opts.botId,
+        action: opts.action,
+        actorId: opts.actor?.id,
+        actorName: opts.actor?.name,
+        oldValue: opts.oldValue ?? null,
+        newValue: opts.newValue ?? null,
+        changes: opts.changes ?? null,
+        metadata: opts.metadata ?? null,
+      });
+    } catch (err) {
+      logger.warn('[BotConfigService] Failed to write audit log', {
+        botId: opts.botId,
+        action: opts.action,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private computeFieldChanges(

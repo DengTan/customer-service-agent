@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Search, Plus, X, Tag, Users, Globe, ShoppingBag, Music,
   Edit3, Trash2, ChevronRight, MessageSquare, StickyNote, Palette,
   Phone, Mail, Clock, UserCheck, Calendar, Star,
-  ChevronDown, Download, Loader2
+  ChevronDown, Download, Loader2, UserCog,
 } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -650,8 +651,20 @@ export default function CustomersPage() {
   return (
     <div className="flex flex-col h-full min-h-0 page-transition">
       {/* Header */}
-      <div className="h-14 px-6 flex items-center border-b border-border bg-card/50 shrink-0">
-        <h1 className="text-lg font-semibold text-foreground">客户管理</h1>
+      <div className="relative h-14 px-6 flex items-center border-b border-border/60 bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <UserCog className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">客户管理</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Customer Management</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Content */}
@@ -1632,7 +1645,7 @@ export default function CustomersPage() {
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="text-base font-semibold text-foreground">{detailConv.title}</h3>
-              <button onClick={() => setDetailConv(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors" aria-label="关闭">
+              <button onClick={() => setDetailConv(null)} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors" aria-label="关闭">
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>

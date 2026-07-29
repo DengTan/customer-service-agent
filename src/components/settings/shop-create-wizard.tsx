@@ -655,9 +655,9 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
           </div>
           <button
             onClick={handleClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors text-gray-400 hover:text-gray-600"
           >
-            <X size={20} />
+            <X className="w-4 h-4" />
           </button>
         </div>
 

@@ -106,6 +106,7 @@ export const WRITABLE_SETTING_KEYS: ReadonlySet<string> = new Set<string>([
  *        - gorgias_webhook_secret_encrypted: set server-side after validation
  *        - external_knowledge_*: managed by /api/knowledge/external/settings
  *        - retrieval_hybrid_config: server-computed hybrid retrieval config
+ *        - retrieval_search_mode: managed by /api/knowledge/internal/settings
  *        - knowledge_image_max_citations: computed/derived setting
  *   2. Operator-managed Bot config
  *   3. Integration secrets (LLM API keys, webhook secrets, etc.)
@@ -125,6 +126,7 @@ export const NON_RESETTABLE_KEYS: ReadonlySet<string> = new Set<string>([
   'external_knowledge_use_rerank',
   'external_knowledge_api_key',
   'retrieval_hybrid_config',
+  'retrieval_search_mode',
   'knowledge_image_max_citations',
   // Operator-managed Bot config (also excluded from resettable)
   'custom_tools',

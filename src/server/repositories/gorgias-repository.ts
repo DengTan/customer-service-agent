@@ -538,9 +538,17 @@ export class GorgiasRepository {
       logger.info('Created Gorgias webhook integration', { integrationId: response.id });
       return response.id;
     } catch (err) {
-      const errorDetail = err instanceof Error 
-        ? { message: err.message, status: (err as any).status, statusText: (err as any).statusText }
-        : { message: String(err) };
+      // Type the error with HTTP status info for logging
+      interface HttpError extends Error {
+        status?: number;
+        statusText?: string;
+      }
+      const httpErr = err as HttpError;
+      const errorDetail = {
+        message: err instanceof Error ? err.message : String(err),
+        status: httpErr.status,
+        statusText: httpErr.statusText,
+      };
       logger.error('Failed to create webhook integration', errorDetail);
       throw err;
     }

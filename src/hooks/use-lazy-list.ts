@@ -59,6 +59,7 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
 
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const isLoadInitialDoneRef = useRef(false);
 
   // Sync itemsLengthRef
   useEffect(() => {
@@ -66,15 +67,18 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
   }, [items.length]);
 
   const loadInitial = useCallback(async () => {
+    // Abort any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    isLoadInitialDoneRef.current = false;
 
     setIsInitialLoading(true);
     setError(null);
     try {
       const result = await fetchFnRef.current(1, pageSizeRef.current);
       if (controller.signal.aborted) return;
+      isLoadInitialDoneRef.current = true;
       // Deduplicate by ID to avoid React key collision
       const existingIds = new Set<string>();
       const uniqueItems: T[] = [];
@@ -91,6 +95,7 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
       itemsLengthRef.current = uniqueItems.length;
     } catch (err) {
       if (controller.signal.aborted) return;
+      isLoadInitialDoneRef.current = true;
       const msg = err instanceof Error ? err.message : '加载失败';
       setError(msg);
     } finally {
@@ -121,17 +126,13 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
     }
   }, []);
 
-  const reset = useCallback(async () => {
-    setItems([]);
-    setTotal(0);
-    currentPageRef.current = 0;
-    itemsLengthRef.current = 0;
-    setError(null);
-    await loadInitial();
-  }, [loadInitial]);
-
   const refresh = useCallback(async () => {
-    // Abort any in-flight request before starting
+    // Skip if loadInitial hasn't finished yet - it will load data anyway
+    if (!isLoadInitialDoneRef.current) {
+      return;
+    }
+    
+    // Abort any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -172,6 +173,16 @@ export function useLazyList<T>(options: UseLazyListOptions<T>): LazyListResult<T
       setError(msg);
     }
   }, []);
+
+  const reset = useCallback(async () => {
+    isLoadInitialDoneRef.current = false;
+    setItems([]);
+    setTotal(0);
+    currentPageRef.current = 0;
+    itemsLengthRef.current = 0;
+    setError(null);
+    await loadInitial();
+  }, [loadInitial]);
 
   const updateItems = useCallback((updateFn: (prev: T[]) => T[]) => {
     setItems(updateFn);

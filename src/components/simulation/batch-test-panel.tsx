@@ -701,7 +701,8 @@ export function BatchTestPanel({ scripts, botId, onProgress, onComplete, onClose
                 }
                 onClose();
               }}
-              className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors text-muted-foreground"
+              aria-label="关闭"
             >
               <X className="w-4 h-4" />
             </button>

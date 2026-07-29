@@ -5,7 +5,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { withErrorHandler, apiSuccess } from '@/lib/api-utils';
+import { withErrorHandler, apiError } from '@/lib/api-utils';
 import { SizeChartService } from '@/server/services/size-chart-service';
 
 const sizeChartService = new SizeChartService();
@@ -14,7 +14,7 @@ export const GET = withErrorHandler(async (_request: NextRequest, { params }: { 
   const { productId } = await params;
 
   if (!productId?.trim()) {
-    return apiSuccess({ error: '请提供商品ID' }, 400);
+    return apiError('请提供商品ID', { status: 400 });
   }
 
   const items = await sizeChartService.getSizeChartsByProductId(productId);

@@ -31,6 +31,7 @@ import type { NormalizedProductDetail } from '@/server/repositories/product-deta
 import type { NormalizedSizeChart } from '@/server/repositories/size-chart-repository';
 import { HTTP } from '@/lib/constants';
 import { logger } from '@/lib/logger';
+import { getQueryRewriteService, type AuxiliaryLlmConfig } from './query-rewrite-service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,6 +132,8 @@ export interface EvidenceTrace {
 export interface RetrievalResult {
   decision: RetrievalGateDecision;
   evidence: EvidenceBundle;
+  /** Effective query used (may differ from original if query rewrite was applied) */
+  effectiveQuery: string;
   /** Raw knowledge search result (for LLM context injection) */
   knowledgeContext?: {
     context: string;
@@ -180,6 +183,8 @@ export class RetrievalOrchestrator {
       /** [P0-B] Bot-scoped knowledge item IDs — when provided, only these IDs are returned.
        *  Falls back to global search when empty/undefined. */
       routedKnowledgeIds?: string[];
+      /** Auxiliary LLM config for query rewrite (when first search finds no accepted candidates) */
+      auxLlmConfig?: AuxiliaryLlmConfig;
     }
   ): Promise<RetrievalResult> {
     const startTime = Date.now();
@@ -198,6 +203,7 @@ export class RetrievalOrchestrator {
       const elapsed = Date.now() - startTime;
       return {
         decision,
+        effectiveQuery: decision.effectiveQuery,
         evidence: this.emptyEvidence({ retrievalRan: false, executionTimeMs: elapsed, minScore: HTTP.KNOWLEDGE_MIN_SCORE }),
         knowledgeContext: undefined,
         productContext: undefined,
@@ -318,6 +324,104 @@ export class RetrievalOrchestrator {
       degradationReasons.push('retrieval_error');
     }
 
+    // Step 3.5: Query rewrite — if first retrieval found no accepted candidates,
+    // rewrite the query and try again (at most once per turn, bounded by design contract).
+    // [P0-3] This was the missing integration: QueryRewriteService now wired into the orchestrator.
+    let effectiveQuery = decision.effectiveQuery;
+    if (
+      !retrievalRan ||
+      (knowledgeBundle && knowledgeBundle.accepted.length === 0 && options?.auxLlmConfig)
+    ) {
+      const rewriteService = getQueryRewriteService();
+      const firstBundle = knowledgeBundle ?? {
+        candidates: [], accepted: [], citations: [],
+        trace: { provenanceVersion: 2, retrievalRan: false, rerankDegraded: true, rerankBackend: 'none' as const, hybridSearch: false, candidateCount: 0, acceptedCount: 0, citationCount: 0, minScore: effectiveMinScore, executionTimeMs: 0, degradationReasons: [] }
+      };
+
+      const rewriteDecision = rewriteService.rewriteDecision(firstBundle, options?.auxLlmConfig, effectiveQuery);
+
+      if (rewriteDecision.action === 'rewrite') {
+        const rewriteResult = await rewriteService.rewriteQuery(
+          options!.auxLlmConfig!,
+          effectiveQuery,
+          recentMessages,
+        );
+
+        if (rewriteResult.ok && rewriteResult.data) {
+          const rewritten = rewriteResult.data.rewritten_query;
+
+          if (rewriteService.shouldReRetrieve(effectiveQuery, rewritten)) {
+            logger.agent.debug('[RetrievalOrchestrator] Query rewritten, performing second retrieval', {
+              original: effectiveQuery.slice(0, 50),
+              rewritten: rewritten.slice(0, 50),
+            });
+
+            try {
+              const secondSearchResult = useHybrid
+                ? await this.knowledgeSearch.searchHybrid(rewritten, effectiveMinScore)
+                : await this.knowledgeSearch.search(rewritten, effectiveMinScore);
+
+              if (secondSearchResult) {
+                let filteredSources = 'sources' in secondSearchResult
+                  ? (secondSearchResult as { sources: KnowledgeSourceItem[] }).sources
+                  : [];
+                if (effectiveKnowledgeIds.length > 0) {
+                  filteredSources = filteredSources.filter(s =>
+                    effectiveKnowledgeIds.includes(s.knowledge_item_id ?? s.id ?? '')
+                  );
+                }
+
+                const hybridMeta = 'hybridMetadata' in secondSearchResult
+                  ? (secondSearchResult as { hybridMetadata?: { rerankApplied: boolean; rerankBackend?: string; rerankDegraded?: boolean; vectorResults: number; bm25Results: number } }).hybridMetadata
+                  : undefined;
+                const rerankBackendFromMeta = hybridMeta?.rerankBackend ?? 'mock';
+                const rerankDegraded =
+                  !hybridMeta ||
+                  hybridMeta.rerankApplied !== true ||
+                  rerankBackendFromMeta === 'mock' ||
+                  rerankBackendFromMeta === 'none' ||
+                  hybridMeta.rerankDegraded !== false;
+
+                knowledgeBundle = this.buildKnowledgeBundle(
+                  { sources: filteredSources, confidence: 'confidence' in secondSearchResult ? (secondSearchResult as { confidence: number }).confidence : 0, hybridMetadata: hybridMeta },
+                  rerankDegraded,
+                  effectiveMinScore,
+                );
+
+                const secondSources = filteredSources;
+                const secondContext = 'context' in secondSearchResult ? (secondSearchResult as { context: string }).context : '';
+                const secondImages = 'images' in secondSearchResult
+                  ? (secondSearchResult as { images: Array<{ url: string; name: string; category: string }> }).images
+                  : [];
+                const secondConfidence = 'confidence' in secondSearchResult
+                  ? (secondSearchResult as { confidence: number }).confidence
+                  : 0;
+
+                if (secondSources.length > 0) {
+                  knowledgeContext = {
+                    context: secondContext,
+                    knowledgeSources: secondSources,
+                    confidence: secondConfidence,
+                    images: secondImages,
+                  };
+                }
+
+                effectiveQuery = rewritten;
+                if (rerankDegraded) {
+                  degradationReasons.push('reranker_fallback');
+                }
+              }
+            } catch (rewriteErr) {
+              logger.agent.warn('[RetrievalOrchestrator] Second retrieval after rewrite failed', {
+                error: rewriteErr,
+                rewrittenQuery: rewritten.slice(0, 50),
+              });
+            }
+          }
+        }
+      }
+    }
+
     // Step 4: Build merged EvidenceBundle
     const evidence = this.mergeEvidenceBundles(
       {
@@ -335,6 +439,7 @@ export class RetrievalOrchestrator {
     return {
       decision,
       evidence,
+      effectiveQuery,
       knowledgeContext,
       productContext,
       sizeChartContext,
@@ -521,6 +626,7 @@ export class RetrievalOrchestrator {
           type: 'size_chart',
           name: evidence.name,
           category: evidence.category ?? undefined,
+          chart_type: evidence.chart_type ?? undefined,
           content: this.truncateForCitation(evidence.name, 200),
           score: 0.85, // Product/size chart default high score
           provenanceVersion: 2,

@@ -23,6 +23,34 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: '*.taobaocdn.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'img.alicdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'gw.alicdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'example.com',
+      },
+      {
+        protocol: 'http',
+        hostname: 'example.com',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.doublejy.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.jsdelivr.net',
+      },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+      },
     ],
   },
 };

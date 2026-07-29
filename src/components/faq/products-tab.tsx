@@ -231,7 +231,7 @@ export function ProductsTab() {
             <select
               value={productFilterCat}
               onChange={(e) => setProductFilterCat(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+              className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
             >
               <option value="">全部分类</option>
               {productCategoryOptions.map((cat) => (
@@ -241,7 +241,7 @@ export function ProductsTab() {
             <select
               value={productFilterStatus}
               onChange={(e) => setProductFilterStatus(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+              className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
             >
               <option value="">全部状态</option>
               <option value="on_sale">在售</option>

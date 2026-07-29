@@ -78,9 +78,10 @@ export function ProductDetailDialog({ open, productId, onClose }: ProductDetailD
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-muted transition-all duration-200 hover:scale-105"
+            className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+            aria-label="关闭"
           >
-            <X className="w-5 h-5 text-muted-foreground" />
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
 

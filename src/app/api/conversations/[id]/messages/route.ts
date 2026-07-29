@@ -311,6 +311,14 @@ export const POST = withErrorHandler(async (
           : undefined)
       : undefined;
 
+  // [P0-B] Build the bot-scoped tools list from routing match.
+  const routedBotTools: string[] | undefined =
+    routingMatch?.bot?.tools
+      ? (Array.isArray(routingMatch.bot.tools) && routingMatch.bot.tools.length > 0
+          ? routingMatch.bot.tools as string[]
+          : undefined)
+      : undefined;
+
   // [P0-B] Thread routed knowledge_ids into the orchestrator so the knowledge search
   // is scoped to the matched bot's knowledge base (not global).
   const retrievalResult = await orchestrator.retrieve(processedMessage, recentMessages, {
@@ -415,7 +423,7 @@ export const POST = withErrorHandler(async (
           role: 'assistant',
           content: `**${result.childBot.name}** 处理结果：\n\n${result.responseContent}`,
           confidence: result.confidence,
-          sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name, triggerIntent: intentResult.intent, delegationId: result.delegation.id }],
+          sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name, triggerIntent: intentResult.intent, delegationId: result.delegation.id, knowledge_item_id: result.delegation.id }],
           confidence_breakdown: subAgentBreakdown,
         });
 
@@ -504,17 +512,9 @@ export const POST = withErrorHandler(async (
       llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
       llmProviderApiKey: llmProviderConfig.providerApiKey,
       llmProviderDefaultModel: llmProviderConfig.defaultModel,
-      // [P0-B] Route bot scoping — pass routed bot's knowledge_ids and tools so:
-      //   1. knowledge search is scoped to the bot's knowledge base (via orchestrator)
-      //   2. LLM system prompt only exposes allowed tools (via routedBotTools)
-      routedBotKnowledgeIds,
-      routedBotTools: routingMatch?.bot?.tools
-        ? (Array.isArray(routingMatch.bot.tools) && routingMatch.bot.tools.length > 0
-            ? routingMatch.bot.tools as string[]
-            : undefined)
-        : undefined,
-      // [P0-C] Abort signal: passed to createStream so handlePostStreamOperations
-      // skips all DB side-effects when the SSE stream is cancelled.
+      // [P0-B] Tool scoping: routed bot's tools restrict which tools the LLM may call.
+      // [P0-C] Pass abortSignal so post-stream DB ops are skipped when the client disconnects.
+      routedBotTools,
       abortSignal: abortController.signal,
     });
   } catch (streamInitError) {

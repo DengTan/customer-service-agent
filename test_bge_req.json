@@ -1,0 +1,6 @@
+{
+  "model": "bge-reranker-v2-m3",
+  "query": "退货",
+  "documents": ["七天无理由退货政策", "商品质量问题退换货流程"],
+  "top_n": 2
+}

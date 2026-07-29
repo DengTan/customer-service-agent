@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'rea
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { RotateCcw, Check, Save } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { RotateCcw, Check, Save, Settings2 } from 'lucide-react';
 import { SettingsSidebar, type SectionType } from './settings-sidebar';
 import type { AutoReplyRule } from './types';
 import type { PushTemplate } from '@/lib/types';
@@ -500,15 +501,29 @@ export function SettingsPage() {
   return (
     <div className="h-full flex flex-col page-transition">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">设置</h1>
-        <div className="ml-auto flex items-center gap-3">
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center justify-between bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <Settings2 className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">设置</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">System Settings</p>
+          </div>
+        </div>
+
+        {/* Right Actions */}
+        <div className="relative flex items-center gap-3">
           <button
             onClick={handleResetToDefaults}
             disabled={resetting}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
           >
-            <RotateCcw className={`w-3.5 h-3.5 ${resetting ? 'animate-spin' : ''}`} />
+            <RotateCcw className={cn("w-3 h-3", resetting ? 'animate-spin' : '')} />
             {resetting ? '恢复中...' : '恢复出厂'}
           </button>
           <button
@@ -519,16 +534,16 @@ export function SettingsPage() {
                 ? `当前存在非法数值字段${invalidFieldKey ? `: ${invalidFieldKey}` : ''}`
                 : undefined
             }
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
           >
             {saved ? (
               <>
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-3 h-3" />
                 已保存
               </>
             ) : (
               <>
-                <Save className="w-3.5 h-3.5" />
+                <Save className="w-3 h-3" />
                 {saving ? '保存中...' : '保存设置'}
               </>
             )}

@@ -3,16 +3,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   MessageSquare, Users, Star, TrendingUp, Zap, Clock,
   BarChart3, ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle, Bell,
-  Send, Truck, Package, CreditCard, XCircle, CheckCircle2, XCircle as XCircleIcon, Loader2, Webhook, RefreshCw, Ticket,
+  Send, Truck, Package, CreditCard, XCircle, CheckCircle2, XCircle as XCircleIcon, Loader2, Webhook, RefreshCw, Ticket, Sparkles,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, Legend,
 } from 'recharts';
 import { ErrorBoundary } from '@/components/common/error-boundary';
+import { DashboardSkeleton } from './dashboard-skeleton';
 
 import type { PushRecord, PushEventLog } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -199,29 +201,53 @@ function DashboardPageInner() {
     [sourceDist]
   );
 
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-sm text-muted-foreground">加载中...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">数据分析</h1>
+    <div className="h-full flex flex-col page-transition">
+      {/* Header - 始终直接显示 */}
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center gap-5 bg-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <BarChart3 className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">数据分析</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Dashboard</p>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="h-8 w-px bg-border/60 shrink-0" />
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Active tab description */}
+        <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/40 shrink-0">
+          <Sparkles className="w-3 h-3 text-primary" />
+          <span className="text-[11px] text-muted-foreground">实时监控与分析</span>
+        </div>
+
+        {/* Refresh button */}
         <button
           onClick={loadData}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted active:scale-[0.97] transition-all duration-200"
+          disabled={loading}
+          className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/40 hover:bg-muted/60 hover:border-border/60 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-all duration-200"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          刷新数据
+          <RefreshCw className={cn('w-3.5 h-3.5 text-primary', loading && 'animate-spin')} />
+          <span className="text-[11px] text-foreground">刷新数据</span>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      {/* Content */}
+      {loading ? (
+        <DashboardSkeleton />
+      ) : (
+        <>
+        <div className="flex-1 overflow-y-auto px-6 py-6">
         {/* Metric Cards */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           <MetricCard
@@ -793,7 +819,9 @@ function DashboardPageInner() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+        </>
+      )}
     </div>
   );
 }

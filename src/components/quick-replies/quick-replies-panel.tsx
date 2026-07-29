@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useLazyList } from '@/hooks/use-lazy-list';
 import type { QuickReply } from '@/lib/types';
 import {
@@ -120,6 +120,26 @@ interface ReplyListProps {
   search: string;
   categoryFilter: string;
   scopeFilter: string;
+}
+
+// Helper to highlight variables in content - returns a single React node
+function highlightVariables(content: string): React.ReactNode {
+  const variablePattern = /\{([^}]+)\}/g;
+  const parts = content.split(variablePattern);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 1) {
+          return (
+            <span key={i} className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded bg-primary/10 text-primary font-medium text-xs">
+              {part}
+            </span>
+          );
+        }
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+      })}
+    </>
+  );
 }
 
 function ReplyList({
@@ -340,22 +360,6 @@ function ReplyList({
   );
 }
 
-// Helper to highlight variables in content
-function highlightVariables(content: string): React.ReactNode {
-  const variablePattern = /\{([^}]+)\}/g;
-  const parts = content.split(variablePattern);
-  return parts.map((part, i) => {
-    if (i % 2 === 1) {
-      return (
-        <span key={i} className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded bg-primary/10 text-primary font-medium text-xs">
-          {part}
-        </span>
-      );
-    }
-    return part;
-  });
-}
-
 export function QuickRepliesPanel({
   open = true,
   onOpenChange,
@@ -383,28 +387,14 @@ export function QuickRepliesPanel({
     scope: 'global',
   });
 
-  // Fetch function — ref ensures hook always sees the latest version
-  const fetchFnRef = useRef<(page: number, pageSize: number) => Promise<{ items: QuickReply[]; total: number }>>(
-    async (page, pageSize) => {
-      const params = new URLSearchParams();
-      params.set('page', String(page));
-      params.set('limit', String(pageSize));
-      if (categoryFilter && categoryFilter !== 'all' && categoryFilter !== '全部') {
-        params.set('category', categoryFilter);
-      }
-      if (scopeFilter && scopeFilter !== 'all' && scopeFilter !== '全部') {
-        params.set('scope', scopeFilter);
-      }
-      if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-      const res = await fetch(`${API_BASE}?${params}`);
-      if (!res.ok) throw new Error('加载失败');
-      const data = await res.json();
-      return { items: (data.items || []) as QuickReply[], total: (data.total || 0) as number };
-    }
-  );
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  // Keep ref current with latest filter values (no stale closure)
-  fetchFnRef.current = (page, pageSize) => {
+  // Fetch function with useCallback to capture latest filter values
+  const fetchFn = useCallback(async (page: number, pageSize: number) => {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('limit', String(pageSize));
@@ -415,15 +405,12 @@ export function QuickRepliesPanel({
       params.set('scope', scopeFilter);
     }
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
-    const res = fetch(`${API_BASE}?${params}`);
-    return res.then(r => {
-      if (!r.ok) throw new Error('加载失败');
-      return r.json();
-    }).then(data => ({
-      items: (data.items || []) as QuickReply[],
-      total: (data.total || 0) as number,
-    }));
-  };
+    const res = await fetch(`${API_BASE}?${params}`);
+    if (!res.ok) throw new Error('加载失败');
+    const data = await res.json();
+    // API returns { replies: [...] }, convert to { items, total }
+    return { items: (data.replies || []) as QuickReply[], total: (data.replies?.length || 0) as number };
+  }, [categoryFilter, scopeFilter, debouncedSearch]);
 
   const PAGE_SIZE = 20;
   const {
@@ -436,13 +423,7 @@ export function QuickRepliesPanel({
     loadInitial,
     refresh,
     updateItems,
-  } = useLazyList<QuickReply>({ fetchFn: fetchFnRef.current, pageSize: PAGE_SIZE });
-
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
+  } = useLazyList<QuickReply>({ fetchFn, pageSize: PAGE_SIZE });
 
   // Trigger initial load on mount
   useEffect(() => {
@@ -626,9 +607,9 @@ export function QuickRepliesPanel({
   };
 
   return (
-    <div className={cn("flex flex-col h-full bg-background", className)}>
+    <div className={cn("flex flex-col min-h-0 bg-background", className)}>
       {/* 搜索和筛选栏 */}
-      <div className="px-4 pb-3 space-y-2">
+      <div className="shrink-0 px-4 pb-3 space-y-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input

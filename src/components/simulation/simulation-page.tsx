@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Play,
   Plus,
@@ -22,7 +23,8 @@ import {
   ChevronDown,
   BookOpen,
   X,
-  Check
+  Check,
+  FlaskConical,
 } from 'lucide-react';
 import {
   Select,
@@ -50,6 +52,7 @@ import { ABComparisonView, ABResult } from './ab-comparison-view';
 import { BatchTestPanel, BatchResult } from './batch-test-panel';
 import { BatchScriptSelector } from './batch-script-selector';
 import { TEST_SCENARIOS, PRELOADED_SCRIPTS, type TestScenario } from '@/lib/simulation-scenarios';
+import { ChatInputBar } from '@/components/chat/chat-input-bar';
 
 const simulationLogger = logger.default;
 
@@ -930,9 +933,26 @@ export function SimulationPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">模拟测试</h1>
-        <div className="flex items-center gap-2">
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center gap-4 bg-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <FlaskConical className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">模拟测试</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Simulation Testing</p>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="h-8 w-px bg-border/60 shrink-0" />
+
+        {/* Controls */}
+        <div className="relative flex items-center gap-2">
           {/* Bot selector - Left of scenario selector */}
           <Popover open={botPopoverOpen} onOpenChange={setBotPopoverOpen}>
             <PopoverTrigger asChild>
@@ -940,7 +960,7 @@ export function SimulationPage() {
                 variant="outline"
                 role="combobox"
                 aria-expanded={botPopoverOpen}
-                className="w-[180px] h-9 text-xs gap-2 justify-start bg-muted/50 border border-transparent hover:border-border hover:bg-muted transition-all"
+                className="w-[160px] h-8 text-[11px] gap-1.5 justify-start bg-muted/50 border border-border/40 hover:border-border hover:bg-muted transition-all"
               >
                 {selectedBot ? (
                   <>
@@ -1020,7 +1040,7 @@ export function SimulationPage() {
               if (scenario) handleSelectScenario(scenario);
             }}
           >
-            <SelectTrigger className="w-[180px] h-9 text-xs gap-2 bg-muted/50 border border-transparent hover:border-border hover:bg-muted transition-all">
+            <SelectTrigger className="w-[160px] h-8 text-[11px] gap-1.5 bg-muted/50 border border-border/40 hover:border-border hover:bg-muted transition-all">
               <SelectValue placeholder="选择场景">
                 {selectedScenario && (
                   <div className="flex items-center gap-2">
@@ -1077,7 +1097,7 @@ export function SimulationPage() {
                 simulationLogger.error('创建模拟会话失败', { error: err });
               }
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-all duration-200"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.97] transition-all duration-200 shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             新建会话
@@ -1086,9 +1106,9 @@ export function SimulationPage() {
           {/* Phase 5: Multi-bot comparison button */}
           <button
             onClick={() => setShowBotSelector(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all duration-200"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-muted/40 border border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/60 hover:border-border/60 transition-all duration-200 shrink-0"
           >
-            <GitCompare className="w-3.5 h-3.5" />
+            <GitCompare className="w-3 h-3" />
             多Bot对比
           </button>
           
@@ -1098,9 +1118,9 @@ export function SimulationPage() {
               setBatchTestMode(true);
               setShowBotSelector(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all duration-200"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-muted/40 border border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/60 hover:border-border/60 transition-all duration-200 shrink-0"
           >
-            <Layers className="w-3.5 h-3.5" />
+            <Layers className="w-3 h-3" />
             批量测试
           </button>
         </div>
@@ -1614,9 +1634,12 @@ export function SimulationPage() {
 
               {/* Input */}
               <div className="p-4 border-t border-border bg-card/50 shrink-0">
-                <MessageInput
-                  onSend={(content) => handleSendMessage(content, activeConvId)}
-                  disabled={activeTabState?.isSending || false}
+                <ChatInputBar
+                  noteMode={false}
+                  onNoteModeChange={() => {}}
+                  agents={[]}
+                  onSend={(text) => handleSendMessage(text, activeConvId)}
+                  simulationMode={true}
                 />
               </div>
             </>
@@ -1790,7 +1813,6 @@ export function SimulationPage() {
   );
 }
 
-// Custom Script Editor Component
 const MAX_CUSTOM_SCRIPTS = 15;
 
 function CustomScriptEditor({

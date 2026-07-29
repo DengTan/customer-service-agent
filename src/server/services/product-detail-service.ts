@@ -295,6 +295,7 @@ export class ProductDetailService {
     }
 
     // Determine if content changed (requires re-vectorization)
+    // Only check fields that affect semantic search content, exclude display-only fields
     const contentChanged =
       input.name !== undefined ||
       input.sku !== undefined ||
@@ -304,6 +305,7 @@ export class ProductDetailService {
       input.features !== undefined ||
       input.description !== undefined ||
       input.usage_instructions !== undefined;
+    // NOTE: image_urls, tags, status are display-only and do not affect search content
 
     const newContentHash = contentChanged
       ? buildProductContentHash(merged)

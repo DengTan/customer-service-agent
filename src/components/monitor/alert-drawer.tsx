@@ -84,7 +84,7 @@ export function AlertDrawer({ open, onOpenChange, onAlertResolved, onConversatio
                 <ArrowUpDown className={`w-3.5 h-3.5 transition-transform ${!sortNewest ? 'rotate-180' : ''}`} />
                 {sortNewest ? '最新' : '最早'}
               </button>
-              <SheetClose className="flex items-center justify-center w-7 h-7 rounded-md opacity-70 hover:opacity-100 hover:bg-muted transition-colors">
+              <SheetClose aria-label="关闭" className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors text-muted-foreground">
                 <X className="w-4 h-4" />
               </SheetClose>
             </div>

@@ -3,7 +3,8 @@
 import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { SearchTestPanel } from './search-test-panel';
-import { SearchResultsPanel, SearchResultsData } from './search-results-panel';
+import { SearchResultsPanel } from './search-results-panel';
+import type { SearchResultsData } from './search-types';
 import { SearchAnalysisPanel } from './search-analysis-panel';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -18,13 +19,15 @@ export function SearchTestTab() {
   const [results, setResults] = useState<SearchResultsData | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  const handleSearch = useCallback(async (
-    searchQuery: string,
-    searchMode: 'vector' | 'hybrid',
-    searchMinScore: number,
-    limit: number,
-    showFiltered: boolean
-  ) => {
+  const handleSearch = useCallback(async (req: {
+    query: string;
+    mode: 'vector' | 'hybrid';
+    minScore: number;
+    limit: number;
+    showFiltered: boolean;
+    rerankEnabled: boolean;
+  }) => {
+    const { query: searchQuery, mode: searchMode, minScore: searchMinScore, limit, showFiltered, rerankEnabled } = req;
     setLoading(true);
     setQuery(searchQuery);
     setMode(searchMode);
@@ -42,12 +45,22 @@ export function SearchTestTab() {
           min_score: searchMinScore,
           limit,
           show_filtered: showFiltered,
+          rerank_enabled: rerankEnabled,
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '搜索请求失败');
+        const contentType = response.headers.get('content-type');
+        let errorMsg = `HTTP ${response.status}`;
+        if (contentType?.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMsg = errorData.error || errorMsg;
+          } catch {
+            // ignore JSON parse error, fall through to default
+          }
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -93,7 +106,7 @@ export function SearchTestTab() {
       <div className="grid grid-cols-12 gap-6">
         {/* Left: Search Panel */}
         <div className="col-span-12 lg:col-span-4">
-          <Card className="p-4 sticky top-6">
+          <Card className="p-4 sticky top-6 border-0">
             <SearchTestPanel
               onSearch={handleSearch}
               onClear={handleClear}
@@ -122,7 +135,7 @@ export function SearchTestTab() {
 
             <TabsContent value="results" className="mt-0">
               {searchError ? (
-                <Card className="p-6">
+                <Card className="p-6 border-0">
                   <div className="flex items-center gap-3 text-destructive">
                     <AlertCircle className="w-5 h-5" />
                     <div>

@@ -1,11 +1,10 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -24,16 +23,8 @@ import {
   UserCheck,
   CheckCircle,
   PhoneOff,
-  Send,
   ArrowRightLeft,
   AlertCircle,
-  Loader2,
-  StickyNote,
-  AtSign,
-  Paperclip,
-  X,
-  Image as ImageIcon,
-  BookOpen,
   Copy,
   Check,
 } from 'lucide-react';
@@ -42,12 +33,9 @@ import type { AgentQueueItem } from '@/lib/types';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
+import { ChatInputBar, type Attachment } from '@/components/chat/chat-input-bar';
 import {
   type ChatMessage,
-  type Attachment,
-  VALID_FILE_TYPES,
-  MAX_FILE_SIZE,
-  MAX_UPLOAD_SIZE_LABEL,
   shouldShowTimeDivider,
 } from './workspace-shared';
 
@@ -73,19 +61,13 @@ export function ChatPanel({
   onTransferDialogOpenChange,
 }: ChatPanelProps) {
   const { user } = useAuth();
-  const [inputText, setInputText] = useState('');
   const [noteMode, setNoteMode] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [mentionInput, setMentionInput] = useState('');
-  const [showMentionList, setShowMentionList] = useState(false);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [quickReplyOpen, setQuickReplyOpen] = useState(false);
   const [quickReplies, setQuickReplies] = useState<Array<{ title: string; content: string; category: string }>>([]);
   const [selectedTransferAgent, setSelectedTransferAgent] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Use external transfer dialog state if provided, otherwise manage internally
   const [internalTransferOpen, setInternalTransferOpen] = useState(false);
@@ -124,83 +106,25 @@ export function ChatPanel({
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    for (const file of Array.from(files)) {
-      const validTypes = VALID_FILE_TYPES;
-      if (!validTypes.includes(file.type)) {
-        toast.error(`不支持的文件格式: ${file.name}`);
-        continue;
-      }
-
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error(`文件过大: ${file.name}，最大支持 ${MAX_UPLOAD_SIZE_LABEL}`);
-        continue;
-      }
-
-      setUploading(true);
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) {
-          throw new Error('Upload failed');
-        }
-
-        const data = await res.json();
-        const newAttachment: Attachment = {
-          id: crypto.randomUUID(),
-          name: file.name,
-          url: data.url || data.file_url,
-          type: file.type,
-          size: file.size,
-        };
-
-        setAttachments(prev => [...prev, newAttachment]);
-        toast.success(`已添加附件: ${file.name}`);
-      } catch {
-        toast.error(`上传失败: ${file.name}`);
-      } finally {
-        setUploading(false);
-      }
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleRemoveAttachment = (id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id));
-  };
-
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (text: string, isNote: boolean, attachments?: Attachment[]) => {
     if (!selectedConversation) return;
-    if (!inputText.trim() && attachments.length === 0) return;
+    if (!text.trim() && (!attachments || attachments.length === 0)) return;
 
-    if (noteMode) {
+    if (isNote) {
       const mentions = agents
-        .filter(a => inputText.includes(`@${a.name}`))
+        .filter(a => text.includes(`@${a.name}`))
         .map(a => a.id);
 
       const tempId = crypto.randomUUID();
       const msg: ChatMessage = {
         id: tempId,
         role: 'internal_note',
-        content: inputText.trim(),
+        content: text.trim(),
         timestamp: new Date().toISOString(),
         author_name: user?.name || '坐席',
         mentions,
       };
       setMessages(prev => [...prev, msg]);
-      setInputText('');
 
       try {
         const res = await fetch(`/api/conversations/${selectedConversation.conversation_id}/internal-note`, {
@@ -220,18 +144,16 @@ export function ChatPanel({
       return;
     }
 
-    const currentAttachments = [...attachments];
+    const currentAttachments = attachments ? [...attachments] : [];
     const tempId = crypto.randomUUID();
     const msg: ChatMessage = {
       id: tempId,
       role: 'agent',
-      content: inputText.trim(),
+      content: text.trim(),
       timestamp: new Date().toISOString(),
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
     };
     setMessages(prev => [...prev, msg]);
-    setInputText('');
-    setAttachments([]);
 
     try {
       const res = await fetch(`/api/conversations/${selectedConversation.conversation_id}/messages`, {
@@ -516,163 +438,13 @@ export function ChatPanel({
       </div>
 
       {/* Input */}
-      <div className={`border-t border-border ${noteMode ? 'bg-amber-50/50 dark:bg-amber-950/10' : 'bg-card/50'} shrink-0`}>
-        {/* Mode indicator */}
-        {noteMode && (
-          <div className="px-4 pt-3 pb-2 flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center">
-              <StickyNote className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-            </div>
-            <span className="text-xs font-medium text-amber-700 dark:text-amber-400">内部备注模式</span>
-            <span className="text-[10px] text-amber-600/70 dark:text-amber-500/70">— 仅团队可见</span>
-            <button
-              className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
-              onClick={() => setNoteMode(false)}
-            >
-              退出
-            </button>
-          </div>
-        )}
-        {/* Input row */}
-        <div className={`px-4 ${noteMode ? 'pb-3' : 'h-14 flex items-center'} flex items-center gap-2`}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`shrink-0 transition-colors ${noteMode ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/20' : 'text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setNoteMode(!noteMode)}
-            title={noteMode ? '退出备注模式' : '添加内部备注'}
-          >
-            <StickyNote className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setQuickReplyOpen(true)}
-            title="话术库"
-          >
-            <BookOpen className="w-4 h-4" />
-          </Button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            multiple
-            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
-            className="hidden"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || noteMode}
-            title={noteMode ? '备注模式不支持附件' : '添加附件'}
-          >
-            {uploading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Paperclip className="w-4 h-4" />
-            )}
-          </Button>
-          <div className="flex-1 relative">
-            <Input
-              ref={inputRef}
-              value={inputText}
-              onChange={(e) => {
-                setInputText(e.target.value);
-                // Detect @mention
-                const match = e.target.value.match(/@([^\s@]*)$/);
-                if (match) {
-                  setMentionInput(match[1]);
-                  setShowMentionList(true);
-                } else {
-                  setShowMentionList(false);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              placeholder={noteMode ? '输入内部备注，@提及同事' : '输入消息...'}
-              className={`pr-20 ${noteMode ? 'border-amber-300 dark:border-amber-700 focus:ring-amber-200 dark:focus:ring-amber-800 bg-white dark:bg-amber-950/20' : ''}`}
-            />
-            {/* Mention dropdown */}
-            {showMentionList && agents.length > 0 && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 w-full bg-popover rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
-                <div className="px-2 py-1.5 border-b border-border">
-                  <span className="text-[10px] text-muted-foreground">提及同事</span>
-                </div>
-                {agents
-                  .filter(a => !mentionInput || a.name.includes(mentionInput))
-                  .map(agent => (
-                    <button
-                      key={agent.id}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2 transition-colors"
-                      onClick={() => {
-                        const inputEl = inputRef.current;
-                        const cursorPos = inputEl?.selectionStart ?? inputText.length;
-                        const textBeforeCursor = inputText.slice(0, cursorPos);
-                        const mentionMatch = textBeforeCursor.match(/@([^\s@]*)$/);
-                        if (mentionMatch) {
-                          const mentionStart = cursorPos - mentionMatch[0].length;
-                          const newText = inputText.slice(0, mentionStart) + `@${agent.name} ` + inputText.slice(cursorPos);
-                          setInputText(newText);
-                        } else {
-                          setInputText(inputText + `@${agent.name} `);
-                        }
-                        setShowMentionList(false);
-                      }}
-                    >
-                      <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] text-primary font-medium">
-                        {agent.name[0]}
-                      </div>
-                      <span>{agent.name}</span>
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-          <Button
-            size="icon"
-            onClick={handleSendMessage}
-            disabled={!inputText.trim() && attachments.length === 0}
-            className={`shrink-0 transition-all ${noteMode ? 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700' : 'bg-primary hover:bg-primary/90'}`}
-          >
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-        {/* Attachment preview */}
-        {attachments.length > 0 && (
-          <div className="px-4 pb-3 flex flex-wrap gap-2">
-            {attachments.map(att => (
-              <div
-                key={att.id}
-                className="relative group flex items-center gap-2 px-2 py-1 rounded-lg bg-muted border border-border"
-              >
-                {att.type.startsWith('image/') ? (
-                  <>
-                    <ImageIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs text-muted-foreground truncate max-w-[80px]">{att.name}</span>
-                  </>
-                ) : (
-                  <>
-                    <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs text-muted-foreground truncate max-w-[80px]">{att.name}</span>
-                  </>
-                )}
-                <button
-                  onClick={() => handleRemoveAttachment(att.id)}
-                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group:hover:opacity-100 transition-opacity"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="border-t border-border bg-card/50 shrink-0">
+        <ChatInputBar
+          noteMode={noteMode}
+          onNoteModeChange={setNoteMode}
+          agents={agents}
+          onSend={(text, isNote, attachments) => handleSendMessage(text, isNote, attachments)}
+        />
       </div>
 
       {/* Transfer Dialog */}
@@ -705,30 +477,6 @@ export function ChatPanel({
                 确认转接
               </Button>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Quick Reply Dialog */}
-      <Dialog open={quickReplyOpen} onOpenChange={setQuickReplyOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>话术库</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            {quickReplies.map((reply) => (
-              <button
-                key={reply.title}
-                className="w-full text-left p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                onClick={() => {
-                  setInputText(reply.content);
-                  setQuickReplyOpen(false);
-                }}
-              >
-                <p className="text-sm font-medium">{reply.title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{reply.content}</p>
-              </button>
-            ))}
           </div>
         </DialogContent>
       </Dialog>

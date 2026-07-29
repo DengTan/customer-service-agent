@@ -84,8 +84,8 @@ export class PushService {
   /**
    * Returns the recent push event log entries. The webhook signing secret
    * is intentionally NOT included here — admins must call the dedicated
-   * reveal endpoint (not yet implemented) to copy the secret into an
-   * external system. See `getWebhookSecretPreview` in the route handler.
+   * reveal endpoint to copy the secret into an external system.
+   * See `getWebhookSecretPreview` in `/api/push/events` route handler.
    */
   async getEventLog(): Promise<{ events: PushEventLog[] }> {
     try {

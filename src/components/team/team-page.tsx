@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Search, Shield, Users, Edit3, Trash2, UserPlus,
-  ToggleLeft, ToggleRight, Check, X, RotateCcw,
+  ToggleLeft, ToggleRight, Check, X, RotateCcw, UsersRound,
 } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -385,42 +386,59 @@ export default function TeamPage() {
   return (
     <div className="h-full flex flex-col page-transition">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-foreground">团队管理</h1>
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center justify-between bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title + Tabs */}
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <UsersRound className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">团队管理</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Team Management</p>
+          </div>
+
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-muted rounded-xl p-0.5 ml-4">
+          <div className="flex items-center gap-1 bg-muted rounded-xl p-0.5 ml-2">
             <button
               onClick={() => setActiveTab('members')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
                 activeTab === 'members'
                   ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+              )}
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3 h-3" />
               团队成员
             </button>
             {currentUser?.role === 'admin' && (
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
                   activeTab === 'permissions'
                     ? 'bg-card text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
-                }`}
+                )}
               >
-                <Shield className="w-3.5 h-3.5" />
+                <Shield className="w-3 h-3" />
                 权限配置
               </button>
             )}
           </div>
         </div>
+
+        {/* Right Actions */}
         {activeTab === 'members' && (
-          <Button onClick={() => setAddModalOpen(true)} size="sm" className="gap-1.5">
-            <UserPlus className="w-3.5 h-3.5" />
-            添加成员
-          </Button>
+          <div className="relative">
+            <Button onClick={() => setAddModalOpen(true)} size="sm" className="gap-1.5 shadow-lg shadow-primary/20">
+              <UserPlus className="w-3 h-3" />
+              添加成员
+            </Button>
+          </div>
         )}
       </div>
 

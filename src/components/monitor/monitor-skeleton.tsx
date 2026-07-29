@@ -3,9 +3,12 @@
 import { cn } from '@/lib/utils';
 
 /** Polished skeleton for a single conversation row in the monitor list */
-function MonitorConversationSkeleton() {
+function MonitorConversationSkeleton({ index = 0 }: { index?: number }) {
   return (
-    <div className="flex gap-3 p-3 rounded-lg bg-card animate-skeleton-pulse">
+    <div
+      className="w-full text-left px-3 py-2.5 flex items-start gap-2.5 animate-skeleton-pulse"
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
       {/* Avatar */}
       <div className="w-9 h-9 rounded-full bg-muted shrink-0" />
 
@@ -31,11 +34,11 @@ function MonitorConversationSkeleton() {
 /** Skeleton panel for the full conversation list */
 export function MonitorListSkeleton({ count = 8 }: { count?: number }) {
   return (
-    <div className="w-80 border-r overflow-y-auto bg-card">
+    <div className="w-[300px] border-r border-border bg-card flex flex-col shrink-0 overflow-hidden">
       {/* Search bar */}
-      <div className="p-3 space-y-2">
+      <div className="p-3 space-y-2 border-b border-border">
         <div className="h-8 bg-muted rounded-md" />
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className={cn('h-6 bg-muted rounded-sm', i === 1 ? 'w-10' : 'w-12')} />
           ))}
@@ -43,9 +46,9 @@ export function MonitorListSkeleton({ count = 8 }: { count?: number }) {
       </div>
 
       {/* List */}
-      <div className="p-3 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-1 scrollbar-none" style={{ scrollbarWidth: 'none' }}>
         {Array.from({ length: count }).map((_, i) => (
-          <MonitorConversationSkeleton key={i} />
+          <MonitorConversationSkeleton key={i} index={i} />
         ))}
       </div>
     </div>
@@ -82,36 +85,35 @@ export function MonitorDetailSkeleton() {
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto py-4 min-h-0">
-        <div className="space-y-6 max-w-3xl mx-auto px-6">
+        <div className="space-y-3 max-w-3xl mx-auto px-6">
           {/* User message */}
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-muted shrink-0" />
-            <div className="space-y-2 flex-1">
+          <div className="flex gap-2 justify-end">
+            <div className="space-y-1.5 flex-1 max-w-[70%]">
               <div className="h-3 w-20 bg-muted rounded" />
-              <div className="h-10 w-2/3 bg-muted rounded-lg" />
+              <div className="h-10 w-2/3 ml-auto bg-muted rounded-lg" />
             </div>
+            <div className="w-7 h-7 rounded-full bg-muted shrink-0 mt-0.5" />
           </div>
 
           {/* Assistant message */}
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-muted shrink-0" />
-            <div className="space-y-2 flex-1">
+          <div className="flex gap-2 justify-start">
+            <div className="w-7 h-7 rounded-full bg-muted shrink-0 mt-0.5" />
+            <div className="space-y-1.5 flex-1 max-w-[70%]">
               <div className="h-3 w-24 bg-muted rounded" />
-              <div className="space-y-1.5">
-                <div className="h-4 w-full bg-muted rounded-lg" />
-                <div className="h-4 w-5/6 bg-muted rounded-lg" />
-                <div className="h-4 w-4/6 bg-muted rounded-lg" />
+              <div className="space-y-1">
+                <div className="h-9 w-3/4 bg-muted rounded-lg" />
+                <div className="h-9 w-5/6 bg-muted rounded-lg" />
               </div>
             </div>
           </div>
 
           {/* Another user message */}
-          <div className="flex gap-3">
-            <div className="w-8 h-8 rounded-full bg-muted shrink-0" />
-            <div className="space-y-2 flex-1">
+          <div className="flex gap-2 justify-end">
+            <div className="space-y-1.5 flex-1 max-w-[70%]">
               <div className="h-3 w-20 bg-muted rounded" />
-              <div className="h-12 w-3/4 bg-muted rounded-lg" />
+              <div className="h-12 w-3/4 ml-auto bg-muted rounded-lg" />
             </div>
+            <div className="w-7 h-7 rounded-full bg-muted shrink-0 mt-0.5" />
           </div>
         </div>
       </div>

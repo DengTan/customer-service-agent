@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import { RefreshCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  RefreshCw,
+  MessageSquare,
+  BarChart3,
+  Sparkles,
+} from 'lucide-react';
 import useSWR from 'swr';
 import { swrConfig } from '@/lib/swr-config';
 import { useVisibilityAwarePoll } from '@/hooks/use-visibility-aware-poll';
@@ -375,21 +381,42 @@ export function MonitorPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">对话监控</h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>刷新</span>
-          </button>
-          <span className="text-xs text-muted-foreground border-l border-border pl-3">
-            自动刷新: 5s
-          </span>
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center gap-5 bg-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <MessageSquare className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">对话监控</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Conversation Monitor</p>
+          </div>
         </div>
+
+        {/* Divider */}
+        <div className="h-8 w-px bg-border/60 shrink-0" />
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Active status indicator */}
+        <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/40 shrink-0">
+          <Sparkles className="w-3 h-3 text-primary" />
+          <span className="text-[11px] text-muted-foreground">实时监控</span>
+        </div>
+
+        {/* Refresh button */}
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/40 hover:bg-muted/60 hover:border-border/60 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 transition-all duration-200"
+        >
+          <RefreshCw className={cn('w-3.5 h-3.5 text-primary', isRefreshing && 'animate-spin')} />
+          <span className="text-[11px] text-foreground">刷新数据</span>
+        </button>
       </div>
       {/* Stats filter bar */}
       <StatsBar

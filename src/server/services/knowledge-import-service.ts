@@ -12,8 +12,6 @@ import {
 } from './text-extractor';
 import { smartChunkText } from './smart-chunking-service';
 import { logger } from '@/lib/logger';
-import * as nodeFs from 'node:fs';
-import nodePath from 'node:path';
 
 const MimeTypeMap: Record<string, string> = {
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -314,43 +312,13 @@ export class KnowledgeImportService {
       try {
         embeddings = await embeddingService.embedBatch(chunkTexts);
       } catch (embedError) {
-        // #region DEBUG: Log embedding error
-        fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
-          body: JSON.stringify({
-            sessionId: '04a2b6',
-            location: 'knowledge-import-service.ts:processJob:embedBatch:error',
-            message: 'embedBatch threw error',
-            data: { jobId, error: embedError instanceof Error ? embedError.message : String(embedError) },
-            timestamp: Date.now(),
-            hypothesisId: 'embed-debug'
-          })
-        }).catch(() => {});
-        // #endregion
+        logger.agent.error('[KnowledgeImport] embedBatch failed', {
+          jobId,
+          error: embedError instanceof Error ? embedError.message : String(embedError),
+        });
         throw embedError;
       }
       
-      // #region DEBUG: Log embedding results
-      console.log('[DEBUG] Embeddings result:', {
-        type: typeof embeddings,
-        isArray: Array.isArray(embeddings),
-        length: embeddings?.length,
-        firstEmbedType: typeof embeddings[0],
-        isFirstEmbedArray: Array.isArray(embeddings[0]),
-        firstEmbedLength: embeddings[0]?.length,
-        allLengths: embeddings?.map((e: unknown) => Array.isArray(e) ? e.length : 'not-array'),
-      });
-
-      // DEBUG: Write to file
-      try {
-        const debugPath = nodePath.join(process.cwd(), 'logs', 'embed-debug.log');
-        nodeFs.appendFileSync(debugPath, `[${new Date().toISOString()}] jobId=${jobId} embeddings.length=${embeddings?.length} firstLength=${embeddings[0]?.length || 0} allLengths=${JSON.stringify(embeddings?.map((e: unknown) => Array.isArray(e) ? (e as number[]).length : 'not-array'))}\n`);
-      } catch (e) {
-        console.log('[DEBUG] Failed to write debug log:', (e as Error)?.message);
-      }
-      // #endregion
-
       // Stage 5: 保存知识条目 (85-100%)
       const job = await this.jobRepository.findById(jobId);
       if (!job) {
@@ -374,9 +342,6 @@ export class KnowledgeImportService {
         .select('id')
         .single();
 
-      // #region DEBUG: Log embedding insert value
-      // #endregion
-
       if (dbError) {
         throw new Error(`保存知识条目失败: ${dbError.message}`);
       }
@@ -391,37 +356,7 @@ export class KnowledgeImportService {
         embedding: embeddings[i] && embeddings[i].length > 0 ? JSON.stringify(embeddings[i]) : null,
       }));
       
-      // #region DEBUG: Log chunk insertion
-      fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
-        body: JSON.stringify({
-          sessionId: '04a2b6',
-          location: 'knowledge-import-service.ts:processJob',
-          message: 'Inserting chunks',
-          data: { jobId, chunkCount: chunks.length, firstChunkId: chunkInserts[0]?.id },
-          timestamp: Date.now(),
-          hypothesisId: 'chunk-insert'
-        })
-      }).catch(() => {});
-      // #endregion
-      
       const { error: chunkError } = await this.supabase.from('knowledge_chunks').insert(chunkInserts);
-      
-      // #region DEBUG: Log chunk insertion result
-      fetch('http://127.0.0.1:7629/ingest/5e38ffe2-e53d-40da-b607-4844afcb34e1', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-Debug-Session-Id': '04a2b6'},
-        body: JSON.stringify({
-          sessionId: '04a2b6',
-          location: 'knowledge-import-service.ts:processJob:chunkInsertResult',
-          message: 'Chunk insertion result',
-          data: { jobId, chunkError: chunkError?.message || 'success', chunkErrorDetails: chunkError?.details || null },
-          timestamp: Date.now(),
-          hypothesisId: 'chunk-insert'
-        })
-      }).catch(() => {});
-      // #endregion
       
       if (chunkError) {
         logger.agent.error('Failed to insert knowledge_chunks', { jobId, error: chunkError });

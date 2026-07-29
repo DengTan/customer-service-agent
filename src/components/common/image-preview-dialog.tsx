@@ -103,11 +103,10 @@ export function ImagePreviewDialog({ src, alt, title, onClose }: ImagePreviewDia
         <button
           type="button"
           onClick={onClose}
-          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          title="关闭 (ESC)"
           aria-label="关闭"
+          className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
         >
-          <X className="w-4 h-4" />
+          <X className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
 

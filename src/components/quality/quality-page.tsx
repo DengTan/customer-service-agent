@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import AppLayout from '@/components/app-layout';
-import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw, Loader2, BarChart3, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Tag, Shield, ClipboardCheck, Edit2, Trash2, RotateCcw, Loader2, BarChart3, TrendingUp, AlertTriangle, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -477,46 +478,62 @@ export function QualityPage() {
     <AppLayout>
       <div className="h-full flex flex-col page-transition">
         {/* Header */}
-        <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-          <div className="flex items-center gap-3">
-            <h1 className="text-base font-semibold text-foreground">质检管理</h1>
+        <div className="relative h-14 border-b border-border/60 px-6 flex items-center justify-between bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+          {/* Decorative gradient */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+          {/* Title + Tabs */}
+          <div className="relative flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+              <ClipboardList className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold text-foreground leading-tight">质检管理</h1>
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Quality Management</p>
+            </div>
+
             {/* Tabs */}
-            <div className="flex items-center gap-1 bg-muted rounded-xl p-0.5 ml-4">
+            <div className="flex items-center gap-1 bg-muted rounded-xl p-0.5 ml-2">
               {tabs.map(tab => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all",
                     activeTab === tab.key
                       ? 'bg-card text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  )}
                 >
-                  <tab.icon className="w-3.5 h-3.5" />
+                  <tab.icon className="w-3 h-3" />
                   {tab.label}
                 </button>
               ))}
             </div>
           </div>
-          <Button 
-            onClick={() => {
-              if (activeTab === 'tags') {
-                setEditingTag(null);
-                setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
-                setTagDialogOpen(true);
-              } else if (activeTab === 'rules') {
-                setEditingRule(null);
-                setRuleForm({ name: '', type: 'first_response_timeout', config: buildConfigFromRuleType('first_response_timeout', ruleForm), is_enabled: true });
-                setKeywordInput('');
-                setRuleDialogOpen(true);
-              }
-            }}
-            size="sm"
-            className="gap-1.5"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {activeTab === 'tags' ? '创建标签' : '创建规则'}
-          </Button>
+
+          {/* Right Actions */}
+          <div className="relative">
+            <Button
+              onClick={() => {
+                if (activeTab === 'tags') {
+                  setEditingTag(null);
+                  setTagForm({ name: '', color: '#2F6BFF', category: 'question_type' });
+                  setTagDialogOpen(true);
+                } else if (activeTab === 'rules') {
+                  setEditingRule(null);
+                  setRuleForm({ name: '', type: 'first_response_timeout', config: buildConfigFromRuleType('first_response_timeout', ruleForm), is_enabled: true });
+                  setKeywordInput('');
+                  setRuleDialogOpen(true);
+                }
+              }}
+              size="sm"
+              className="gap-1.5 shadow-lg shadow-primary/20"
+            >
+              <Plus className="w-3 h-3" />
+              {activeTab === 'tags' ? '创建标签' : '创建规则'}
+            </Button>
+          </div>
         </div>
 
       {/* Tab: Tags */}

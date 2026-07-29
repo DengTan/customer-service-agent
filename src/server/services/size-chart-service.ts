@@ -12,6 +12,7 @@ import {
   type CreateSizeChartInput,
   type UpdateSizeChartInput,
   type SizeChartRecommendDimension,
+  type SizeChartType,
 } from '@/server/repositories/size-chart-repository';
 import {
   SizeChartVersionRepository,
@@ -307,7 +308,12 @@ export class SizeChartService {
         chart_type: input.chart_type as UpdateSizeChartInput['chart_type'],
         size_columns: input.size_columns,
         size_rows: input.size_rows,
-        product_ids: input.product_id ? [input.product_id] : undefined,
+        // Fix: null → clear association ([]), string → associate, undefined → skip
+        product_ids: input.product_id === undefined
+          ? undefined
+          : input.product_id === null
+            ? []
+            : [input.product_id],
         sku: input.sku,
         recommend_params: input.recommend_params,
         recommend_rules: input.recommend_rules,
@@ -486,8 +492,8 @@ export class SizeChartService {
 
       // Increment hit_count for all matched charts (fire-and-forget)
       items.forEach(chart => {
-        this.repository.incrementHitCount(chart.id).catch(() => {
-          // Non-critical
+        this.repository.incrementHitCount(chart.id).catch((err) => {
+          logger.agent.debug('[SizeChartService] incrementHitCount failed', { error: err });
         });
       });
 
@@ -541,12 +547,12 @@ export class SizeChartService {
     await this.repository.update({
       id: version.size_chart_id,
       name: version.name,
-      chart_type: version.chart_type as any,
+      chart_type: version.chart_type as SizeChartType,
       category: version.category || undefined,
       sku: version.sku || undefined,
       size_columns: version.size_columns,
       size_rows: version.size_rows,
-      recommend_params: (version.recommend_params as { dimensions: any[] } | null) ?? undefined,
+      recommend_params: version.recommend_params as { dimensions: SizeChartRecommendDimension[] } | null ?? undefined,
       recommend_rules: version.recommend_rules || undefined,
       description: version.description || undefined,
     });

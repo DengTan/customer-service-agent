@@ -350,9 +350,10 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
               </h3>
               <button
                 onClick={() => setShowAddRule(false)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+                aria-label="关闭"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4 text-muted-foreground" />
               </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -435,9 +436,10 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
                     </h3>
                     <button
                       onClick={() => setEditingRule(null)}
-                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+                      aria-label="关闭"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-4 h-4 text-muted-foreground" />
                     </button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

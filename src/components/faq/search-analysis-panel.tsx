@@ -3,52 +3,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { 
-  Database, 
-  Binary, 
-  GitMerge, 
+import { StatCard } from './stat-card';
+import {
+  Database,
+  Binary,
+  GitMerge,
   Sparkles,
   TrendingUp,
   BarChart3,
   RefreshCw,
   CheckCircle2,
-  XCircle
+  XCircle,
+  FileSearch,
+  Filter
 } from 'lucide-react';
-
-interface SearchResultsData {
-  results: Array<{
-    id: string;
-    content: string;
-    score: number;
-    name?: string;
-    category?: string;
-    source?: string;
-    filterReason?: string;
-  }>;
-  total: number;
-  execution_time_ms: number;
-  vector_results?: number;
-  bm25_results?: number;
-  rerank_applied?: boolean;
-  avg_score?: number;
-  error?: string;
-  filtered?: {
-    total: number;
-    items: Array<{
-      id: string;
-      content: string;
-      score: number;
-      filterReason?: string;
-      name?: string;
-      category?: string;
-    }>;
-  };
-  termAnalysis?: {
-    queryTerms: string[];
-    matchedTerms: string[];
-    unmatchedTerms: string[];
-  };
-}
+import type { SearchResultsData } from './search-types';
 
 interface SearchAnalysisPanelProps {
   data: SearchResultsData | null;
@@ -92,7 +61,7 @@ export function SearchAnalysisPanel({ data, mode, query }: SearchAnalysisPanelPr
 
       {/* Pipeline Flow */}
       {mode === 'hybrid' && (
-        <Card>
+        <Card className="border-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <RefreshCw className="w-4 h-4" />
@@ -159,23 +128,23 @@ export function SearchAnalysisPanel({ data, mode, query }: SearchAnalysisPanelPr
 
       {/* Statistics */}
       <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-primary">{finalCount}</div>
-            <div className="text-xs text-muted-foreground">最终结果</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-2xl font-bold text-amber-600">{filteredCount}</div>
-            <div className="text-xs text-muted-foreground">被过滤</div>
-          </CardContent>
-        </Card>
+        <StatCard
+          label="最终结果"
+          value={finalCount}
+          icon={<FileSearch className="w-5 h-5" />}
+          className="[&>div:last-child]:pt-1"
+        />
+        <StatCard
+          label="被过滤"
+          value={filteredCount}
+          icon={<Filter className="w-5 h-5" />}
+          className="[&>div:last-child]:pt-1"
+        />
       </div>
 
       {/* Term Analysis */}
       {data.termAnalysis && data.termAnalysis.queryTerms.length > 0 && (
-        <Card>
+        <Card className="border-0">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
@@ -254,7 +223,7 @@ export function SearchAnalysisPanel({ data, mode, query }: SearchAnalysisPanelPr
       )}
 
       {/* Performance */}
-      <Card>
+      <Card className="border-0">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <TrendingUp className="w-4 h-4" />

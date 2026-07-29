@@ -14,8 +14,10 @@ import { gorgiasSyncService } from '@/server/services/gorgias-sync-service';
 import { requireRole } from '@/lib/api-utils';
 import { isDemoMode } from '@/storage/database/supabase-client';
 import { getLogger } from '@/lib/logger';
+import { getSettingsRepository } from '@/server/repositories/settings-repository';
 
 const logger = getLogger('GorgiasSyncAPI');
+const LAST_SYNC_KEY = 'gorgias_last_sync';
 
 /**
  * 获取同步状态
@@ -74,11 +76,13 @@ export async function GET(request: NextRequest) {
 
     // 默认返回同步状态概览
     const webhookStatus = await gorgiasService.getWebhookStatus();
-    
+    const settingsRepo = getSettingsRepository();
+    const lastSync = await settingsRepo.get(LAST_SYNC_KEY);
+
     return NextResponse.json({
       success: true,
       sync_enabled: webhookStatus.enabled,
-      last_sync: null // Last sync time tracking not implemented yet
+      last_sync: lastSync
     });
 
   } catch (error) {
@@ -173,11 +177,16 @@ export async function POST(request: NextRequest) {
 
     logger.info('Gorgias sync completed', syncResults);
 
+    // Save last sync timestamp
+    const settingsRepo = getSettingsRepository();
+    const syncTimestamp = new Date().toISOString();
+    await settingsRepo.set(LAST_SYNC_KEY, syncTimestamp);
+
     return NextResponse.json({
       success: true,
       type,
       results: syncResults,
-      synced_at: new Date().toISOString()
+      synced_at: syncTimestamp
     });
 
   } catch (error) {

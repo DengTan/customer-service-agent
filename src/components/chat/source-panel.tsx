@@ -1,6 +1,6 @@
 'use client';
 
-import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler, ArrowLeft, Sparkles } from 'lucide-react';
+import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler, ArrowLeft, Sparkles, ShoppingBag } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
@@ -22,14 +22,17 @@ interface SourceItem {
   chunk_id?: string | null;
   chunk_index?: number;
   content_hash?: string | null;
-  /**
-   * Provenance contract version.
-   * - 2 = claim-verified by the orchestrator (default for new messages)
-   * - 1 = legacy: candidates merged into sources without verification (pre-RAG-fix)
-   */
-  provenanceVersion?: 1 | 2;
-  /** Optional rerank backend tag (e.g. "mock", "bge", "cohere"). */
-  rerankBackend?: string;
+  /** Product-specific fields */
+  product_id?: string;
+  sku?: string;
+  brand?: string;
+  price?: number | string;
+  /** Sub-agent delegation fields */
+  delegationId?: string;
+  childBotName?: string;
+  triggerIntent?: string;
+  /** Size chart-specific fields */
+  chart_type?: string;
 }
 
 interface SourceMessageItem {
@@ -80,6 +83,8 @@ function getSourceIcon(type: string | undefined) {
       return <Wrench className="w-3.5 h-3.5 text-emerald-500" />;
     case 'size_chart':
       return <Ruler className="w-3.5 h-3.5 text-purple-500" />;
+    case 'product':
+      return <ShoppingBag className="w-3.5 h-3.5 text-rose-500" />;
     default:
       return <FileText className="w-3.5 h-3.5 text-muted-foreground" />;
   }
@@ -97,6 +102,8 @@ function getSourceLabel(type: string | undefined) {
       return '工具调用';
     case 'size_chart':
       return '尺码表';
+    case 'product':
+      return '商品详情';
     default:
       return '引用';
   }
@@ -179,7 +186,8 @@ export function SourcePanel({
     feedbackType: 'adopted' | 'rejected',
   ) => {
     // P2: use stable chunk identity as the primary key; fall back to item id
-    const stableId = source.chunk_id ?? source.knowledge_item_id ?? source.item_id;
+    // Include delegationId for sub-agent delegation sources
+    const stableId = source.chunk_id ?? source.knowledge_item_id ?? source.item_id ?? source.delegationId;
     if (!stableId) {
       toast.error('无法定位知识条目');
       return;
@@ -242,14 +250,16 @@ export function SourcePanel({
             <>
               <BookOpen className="w-4 h-4 text-primary shrink-0" />
               <span className="text-sm font-medium text-foreground leading-tight">AI 引用溯源</span>
+              <span className="text-[10px] text-muted-foreground">原文</span>
             </>
           )}
         </div>
         <button
           onClick={onClose}
-          className="flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+          aria-label="关闭"
         >
-          <X className="w-4 h-4" />
+          <X className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
 
@@ -383,24 +393,6 @@ export function SourcePanel({
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                           {getSourceLabel(source.type)}
                         </span>
-                        {/* Legacy provenance marker — only show for v1 citations to help
-                            UI consumers distinguish pre-fix messages from claim-verified ones. */}
-                        {source.provenanceVersion === 1 && (
-                          <span
-                            className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                            title="Legacy retrieval source — claim support was not verified"
-                          >
-                            未核验引用
-                          </span>
-                        )}
-                        {source.rerankBackend === 'mock' && source.provenanceVersion !== 1 && (
-                          <span
-                            className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                            title="Heuristic rerank (mock fallback) — not a cross-encoder"
-                          >
-                            启发式打分
-                          </span>
-                        )}
                         {source.score !== undefined && source.score > 0 && (
                           <span className={`inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
                             <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
@@ -424,6 +416,26 @@ export function SourcePanel({
                           {source.content}
                         </div>
                       )}
+                      {/* Product metadata preview */}
+                      {source.type === 'product' && (source.sku || source.brand || source.price) && (
+                        <div className="text-[10px] text-muted-foreground/70 mt-0.5 flex items-center gap-2 flex-wrap">
+                          {source.sku && (
+                            <span className="bg-rose-50 dark:bg-rose-950/30 px-1.5 py-0.5 rounded text-rose-600 dark:text-rose-400">
+                              SKU: {source.sku}
+                            </span>
+                          )}
+                          {source.brand && (
+                            <span className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                              {source.brand}
+                            </span>
+                          )}
+                          {source.price !== undefined && source.price !== null && (
+                            <span className="font-medium text-rose-600 dark:text-rose-400">
+                              ¥{typeof source.price === 'number' ? source.price.toFixed(2) : source.price}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {source.keyword && (
                         <div className="text-[10px] text-amber-600 mt-0.5 flex items-center gap-1">
                           <span className="bg-amber-100 dark:bg-amber-900/30 px-1 py-0.5 rounded">
@@ -443,20 +455,149 @@ export function SourcePanel({
                   </div>
                 </button>
                 {/* Expanded detail */}
-                {expandedIndex === index && source.content && (
+                {expandedIndex === index && (source.content || source.type === 'product' || source.type === 'size_chart' || source.type === 'sub_agent_delegation') && (
                   <div className="mt-1 px-2 py-2 bg-surface-container rounded-lg border border-border/50">
-                    <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                      <FileText className="w-3 h-3" />
-                      原文内容
-                    </div>
-                    <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                      {source.content}
-                    </div>
-                    {/* Score bar */}
+                    {/* Sub-agent delegation header */}
+                    {source.type === 'sub_agent_delegation' ? (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                          <Network className="w-3 h-3 text-blue-500" />
+                          子Agent委派
+                        </div>
+                        {source.childBotName && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">处理Agent</div>
+                            <div className="text-xs text-foreground font-medium">{source.childBotName}</div>
+                          </div>
+                        )}
+                        {source.triggerIntent && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">触发意图</div>
+                            <div className="text-xs text-foreground">{source.triggerIntent}</div>
+                          </div>
+                        )}
+                        {source.content && (
+                          <div className="pt-2 border-t border-border/30">
+                            <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
+                              <FileText className="w-3 h-3" />
+                              Agent回复
+                            </div>
+                            <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                              {source.content}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : source.type === 'product' ? (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                          <ShoppingBag className="w-3 h-3 text-rose-500" />
+                          商品信息
+                        </div>
+                        {source.name && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">商品名称</div>
+                            <div className="text-xs text-foreground font-medium">{source.name}</div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                          {source.sku && (
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">SKU</div>
+                              <div className="text-xs text-foreground font-mono">{source.sku}</div>
+                            </div>
+                          )}
+                          {source.brand && (
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">品牌</div>
+                              <div className="text-xs text-foreground">{source.brand}</div>
+                            </div>
+                          )}
+                          {source.category && (
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">分类</div>
+                              <div className="text-xs text-foreground">{source.category}</div>
+                            </div>
+                          )}
+                          {source.price !== undefined && source.price !== null && (
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">价格</div>
+                              <div className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
+                                ¥{typeof source.price === 'number' ? source.price.toFixed(2) : source.price}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {source.content && (
+                          <div className="pt-2 border-t border-border/30">
+                            <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
+                              <FileText className="w-3 h-3" />
+                              商品描述
+                            </div>
+                            <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                              {source.content}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : source.type === 'size_chart' ? (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                          <Ruler className="w-3 h-3 text-purple-500" />
+                          尺码配置
+                        </div>
+                        {source.name && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">尺码表名称</div>
+                            <div className="text-xs text-foreground font-medium">{source.name}</div>
+                          </div>
+                        )}
+                        {source.chart_type && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">尺码类型</div>
+                            <div className="text-xs text-foreground">{source.chart_type}</div>
+                          </div>
+                        )}
+                        {source.category && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">适用分类</div>
+                            <div className="text-xs text-foreground">{source.category}</div>
+                          </div>
+                        )}
+                        {source.sku && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground">关联SKU</div>
+                            <div className="text-xs text-foreground font-mono">{source.sku}</div>
+                          </div>
+                        )}
+                        {source.content && (
+                          <div className="pt-2 border-t border-border/30">
+                            <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
+                              <FileText className="w-3 h-3" />
+                              尺码内容
+                            </div>
+                            <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                              {source.content}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                          <FileText className="w-3 h-3" />
+                          原文内容
+                        </div>
+                        <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                          {source.content}
+                        </div>
+                      </>
+                    )}
+                    {/* Vector score bar — raw retrieval score, no rerank adjustment */}
                     {source.score !== undefined && source.score > 0 && (
                       <div className="mt-2 pt-2 border-t border-border/30">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] text-muted-foreground">相关度</span>
+                          <span className="text-[10px] text-muted-foreground">向量匹配度</span>
                           <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
                             <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
                           </span>

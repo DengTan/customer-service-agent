@@ -660,7 +660,7 @@ export function LearningTab() {
           <div className="w-[480px] bg-card rounded-xl border border-border shadow-lg">
             <div className="h-12 border-b border-border px-5 flex items-center justify-between">
               <h3 className="text-sm font-semibold">批量编辑分类</h3>
-              <button onClick={() => setShowLearningBatchCategoryModal(false)}>
+              <button onClick={() => setShowLearningBatchCategoryModal(false)} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors text-muted-foreground">
                 <X className="w-4 h-4" />
               </button>
             </div>

@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Search, Plus, Ticket, X, Play, MessageCircle, CheckCircle,
-  Archive, Send, Clock, User, Link2, Loader2, UserCheck, AlertTriangle, Timer
+  Archive, Send, Clock, User, Link2, Loader2, UserCheck, AlertTriangle, Timer, TicketCheck,
 } from 'lucide-react';
 import {
   Ticket as TicketType, TicketComment, TicketStatusLog,
@@ -517,29 +518,49 @@ export default function TicketsPage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="h-14 px-6 flex items-center justify-between border-b border-border bg-card/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-foreground">工单管理</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="relative h-14 px-6 flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title + Stats */}
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <TicketCheck className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">工单管理</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Ticket Management</p>
+          </div>
+
+          {/* Stats Badges */}
+          <div className="flex items-center gap-2 ml-2">
             {statusCounts['open'] !== undefined && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-amber-500/15 text-amber-600">
+              <span className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-500/15 text-amber-600"
+              )}>
                 待处理 {statusCounts['open']}
               </span>
             )}
             {statusCounts['in_progress'] !== undefined && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium bg-primary/15 text-primary">
+              <span className={cn(
+                "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/15 text-primary"
+              )}>
                 处理中 {statusCounts['in_progress']}
               </span>
             )}
           </div>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-primary text-primary-foreground px-4 py-1.5 rounded-md text-sm font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          创建工单
-        </button>
+
+        {/* Right Actions */}
+        <div className="relative">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="bg-primary text-primary-foreground px-4 py-1.5 rounded-lg text-[11px] font-medium hover:opacity-90 active:scale-[0.98] transition-all inline-flex items-center gap-2 shadow-lg shadow-primary/20"
+          >
+            <Plus className="w-3 h-3" />
+            创建工单
+          </button>
+        </div>
       </div>
 
       {/* Main Content */}
@@ -891,7 +912,8 @@ export default function TicketsPage() {
                   </div>
                   <button
                     onClick={() => setSelectedTicket(null)}
-                    className="p-1 rounded hover:bg-muted transition-colors"
+                    className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+                    aria-label="关闭"
                   >
                     <X className="w-4 h-4 text-muted-foreground" />
                   </button>
@@ -1132,7 +1154,8 @@ export default function TicketsPage() {
               <h3 className="text-base font-bold text-foreground">创建工单</h3>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="p-1 rounded hover:bg-muted transition-colors"
+                className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+                aria-label="关闭"
               >
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>

@@ -140,7 +140,8 @@ export function SimulationEvaluationPanel({
         </div>
         <button
           onClick={onClose}
-          className="flex items-center justify-center w-8 h-8 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          aria-label="关闭"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
         >
           <X className="w-4 h-4" />
         </button>

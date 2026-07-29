@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Search, Calendar, Star, MessageSquare, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Trash2, Eye, X, Download, CheckSquare, Square, RotateCcw, Loader2, ChevronsLeft, ChevronsRight,
+  History,
 } from 'lucide-react';
 
 import { Conversation, Message } from '@/lib/types';
@@ -467,16 +469,33 @@ export function HistoryPage() {
   return (
     <div className="h-full flex flex-col page-transition">
       {/* Header */}
-      <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-        <h1 className="text-base font-semibold text-foreground">对话历史</h1>
-        <div className="flex items-center gap-2">
+      <div className="relative h-14 border-b border-border/60 px-6 flex items-center justify-between bg-card shrink-0 overflow-hidden">
+        {/* Decorative gradient */}
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+        {/* Title */}
+        <div className="relative flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+            <History className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-foreground leading-tight">对话历史</h1>
+            <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Conversation History</p>
+          </div>
+        </div>
+
+        {/* Right Actions */}
+        <div className="relative flex items-center gap-2">
           <button
             onClick={() => setBatchMode(!batchMode)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-              batchMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-200",
+              batchMode
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted/40 border border-border/40 text-muted-foreground hover:text-foreground hover:bg-muted/60 hover:border-border/60'
+            )}
           >
-            {batchMode ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+            {batchMode ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
             {batchMode ? '退出批量' : '批量操作'}
           </button>
         </div>
@@ -918,9 +937,9 @@ export function HistoryPage() {
                   <Download className="w-3.5 h-3.5" />
                   导出
                 </button>
-                <button onClick={() => setDetailConv(null)} className="p-1.5 rounded-lg hover:bg-muted transition-colors" aria-label="关闭">
-                  <X className="w-4 h-4 text-muted-foreground" />
-                </button>
+              <button onClick={() => setDetailConv(null)} className="w-8 h-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors" aria-label="关闭">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">

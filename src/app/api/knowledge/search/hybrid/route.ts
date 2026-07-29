@@ -92,6 +92,8 @@ export async function GET(request: NextRequest) {
         vector_results: hybridResult.vectorResults,
         bm25_results: hybridResult.bm25Results,
         rerank_applied: hybridResult.rerankApplied,
+        rerank_backend: hybridResult.rerankBackend,
+        rerank_degraded: hybridResult.rerankDegraded,
         avg_score: Math.round(avgHybridScore * 1000) / 1000,
       },
       vector: {
@@ -114,18 +116,20 @@ export async function GET(request: NextRequest) {
     // Add filtered results if requested
     if (showFiltered) {
       const effectiveMinScore = minScore ?? hybridResult.config.minScoreThreshold;
+      const filteredItems = hybridResult.candidates
+        .filter(r => r.score < effectiveMinScore)
+        .map(r => ({
+          id: r.id,
+          content: r.content.slice(0, 200),
+          score: Math.round(r.score * 1000) / 1000,
+          filterReason: `score < minScore (${Math.round(r.score * 1000) / 1000} < ${effectiveMinScore})`,
+          name: r.name,
+          category: r.category,
+        }));
+
       response.filtered = {
-        total: hybridResult.vectorResults + hybridResult.bm25Results - hybridResult.results.length,
-        items: hybridResult.results
-          .filter(r => r.score < effectiveMinScore)
-          .map(r => ({
-            id: r.id,
-            content: r.content.slice(0, 200),
-            score: Math.round(r.score * 1000) / 1000,
-            filterReason: `score < minScore (${Math.round(r.score * 1000) / 1000} < ${effectiveMinScore})`,
-            name: r.name,
-            category: r.category,
-          })),
+        total: filteredItems.length,
+        items: filteredItems,
       };
 
       // Term analysis

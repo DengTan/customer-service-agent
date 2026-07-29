@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import AppLayout from '@/components/app-layout';
 import { useAuth } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 import {
   History,
   GitCompare,
@@ -16,6 +17,8 @@ import {
   ArrowUpCircle,
   PauseCircle,
   AlertTriangle,
+  BarChart3,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -426,25 +429,52 @@ export default function EvalPage() {
     <AppLayout>
       <div className="h-full flex flex-col page-transition">
         {/* Header */}
-        <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-          <div className="flex items-center gap-3">
-            <h1 className="text-base font-semibold text-foreground">Eval 看板</h1>
-            <div className="flex items-center gap-1 bg-muted rounded-xl p-0.5 ml-4">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    activeTab === tab.key
-                      ? 'bg-card text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <tab.icon className="w-3.5 h-3.5" />
-                  {tab.label}
-                </button>
-              ))}
+        <div className="relative h-14 border-b border-border/60 px-6 flex items-center gap-5 bg-card shrink-0 overflow-hidden">
+          {/* Decorative gradient */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+          {/* Title */}
+          <div className="relative flex items-center gap-3 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+              <BarChart3 className="w-4 h-4 text-primary-foreground" />
             </div>
+            <div>
+              <h1 className="text-sm font-semibold text-foreground leading-tight">Eval 看板</h1>
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Evaluation Dashboard</p>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="h-8 w-px bg-border/60 shrink-0" />
+
+          {/* Tab switch */}
+          <div className="relative flex items-center gap-1 bg-muted/40 rounded-xl p-1 ring-1 ring-border/40">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
+                  activeTab === tab.key
+                    ? 'bg-card text-foreground shadow-sm ring-1 ring-border/60'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-card/40',
+                )}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Active tab description */}
+          <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/40 shrink-0">
+            <Sparkles className="w-3 h-3 text-primary" />
+            <span className="text-[11px] text-muted-foreground">
+              {activeTab === 'regression' ? '回归测试趋势' : activeTab === 'shadow' ? 'Bot 效果对比' : '阈值配置'}
+            </span>
           </div>
         </div>
 

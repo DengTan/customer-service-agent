@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ import {
     UserCheck,
     Crown,
     CalendarDays,
+    Sparkles,
 } from "lucide-react";
 import {
     LineChart,
@@ -474,11 +476,27 @@ export default function MarketingPage() {
     return (
         <div className="h-full flex flex-col page-transition">
             {/* Header */}
-            <div className="h-14 border-b border-border px-6 flex items-center justify-between bg-card shrink-0">
-                <h1 className="text-base font-semibold text-foreground">营销管理</h1>
-                <Button size="sm" onClick={openCreate}>
-                    <Plus className="h-4 w-4 mr-1" />创建活动
-                </Button>
+            <div className="relative h-14 border-b border-border/60 px-6 flex items-center justify-between bg-gradient-to-r from-card to-card shrink-0 overflow-hidden">
+                {/* Decorative gradient */}
+                <div className="absolute inset-0 bg-gradient-to-r from-primary/3 via-transparent to-transparent pointer-events-none" />
+
+                {/* Title */}
+                <div className="relative flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+                        <Sparkles className="w-4 h-4 text-primary-foreground" />
+                    </div>
+                    <div>
+                        <h1 className="text-sm font-semibold text-foreground leading-tight">营销管理</h1>
+                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Marketing Management</p>
+                    </div>
+                </div>
+
+                {/* Right Actions */}
+                <div className="relative">
+                    <Button size="sm" onClick={openCreate} className="shadow-lg shadow-primary/20">
+                        <Plus className="h-3.5 w-3.5 mr-1" />创建活动
+                    </Button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
