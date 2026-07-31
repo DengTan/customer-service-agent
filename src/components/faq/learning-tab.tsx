@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown,
   X, Check,
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LearningItem, LearningStats, LEARNING_CATEGORIES } from './types';
 import { logger } from '@/lib/logger';
 
@@ -375,28 +376,28 @@ export function LearningTab() {
         <div className="flex items-center justify-between mb-4">
           <div />
           <div className="flex items-center gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => { setFilterStatus(e.target.value); setLearningPage(1); }}
-              className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none pr-8"
-              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23637089' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-            >
-              <option value="">全部状态</option>
-              <option value="pending">待审核</option>
-              <option value="approved">已通过</option>
-              <option value="rejected">已拒绝</option>
-            </select>
-            <select
-              value={filterConfidence}
-              onChange={(e) => { setFilterConfidence(e.target.value); setLearningPage(1); }}
-              className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none pr-8"
-              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23637089' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-            >
-              <option value="">全部置信度</option>
-              <option value="high">高 (&gt;0.7)</option>
-              <option value="medium">中 (0.4-0.7)</option>
-              <option value="low">低 (&lt;0.4)</option>
-            </select>
+            <Select value={filterStatus || '__all__'} onValueChange={(v) => { setFilterStatus(v === '__all__' ? '' : v); setLearningPage(1); }}>
+              <SelectTrigger className="w-[108px]">
+                <SelectValue placeholder="全部状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">全部状态</SelectItem>
+                <SelectItem value="pending">待审核</SelectItem>
+                <SelectItem value="approved">已通过</SelectItem>
+                <SelectItem value="rejected">已拒绝</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterConfidence || '__all__'} onValueChange={(v) => { setFilterConfidence(v === '__all__' ? '' : v); setLearningPage(1); }}>
+              <SelectTrigger className="w-[125px]">
+                <SelectValue placeholder="全部置信度" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">全部置信度</SelectItem>
+                <SelectItem value="high">高 (&gt;0.7)</SelectItem>
+                <SelectItem value="medium">中 (0.4-0.7)</SelectItem>
+                <SelectItem value="low">低 (&lt;0.4)</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
               <input
@@ -561,7 +562,9 @@ export function LearningTab() {
                     <div className="px-4 pb-3 bg-muted/30 -mt-1">
                       <div className="text-xs text-muted-foreground mb-1 font-medium">原始对话上下文:</div>
                       <pre className="text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-wrap font-mono">
-                        {item.source_context}
+                        {typeof item.source_context === 'string'
+                          ? item.source_context
+                          : JSON.stringify(item.source_context, null, 2)}
                       </pre>
                     </div>
                   )}

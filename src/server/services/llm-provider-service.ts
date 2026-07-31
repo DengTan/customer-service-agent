@@ -89,6 +89,81 @@ export class LlmProviderService {
   }
 
   /**
+   * 统一加载 LLM Provider 配置（用于发送消息时的 LLM 调用）
+   * 同时处理 provider 查找和 API Key 解密，所有使用 LLM 的地方都应使用此方法
+   * 
+   * @param providerId - 可选，指定 Provider ID；为空则使用默认 Provider
+   * @returns Provider 配置对象，如果未配置或未启用则返回 null
+   */
+  async loadProviderConfig(providerId?: string): Promise<LLMProviderConfig | null> {
+    try {
+      let provider: LlmProviderRow | null = null;
+
+      if (providerId) {
+        // 优先按 ID 查找
+        provider = await this.repository.getById(providerId);
+      }
+
+      if (!provider) {
+        // 回退到默认 Provider
+        provider = await this.repository.getDefault();
+      }
+
+      if (!provider || !provider.is_enabled) {
+        logger.warn('[LlmProviderService] No enabled provider found', { providerId });
+        return null;
+      }
+
+      // 获取解密后的 API Key
+      const providerWithKey = await this.repository.getByIdWithDecryptedKey(provider.id);
+
+      if (!providerWithKey?.api_key) {
+        logger.warn('[LlmProviderService] Provider has no API key', { 
+          providerId: provider.id, 
+          name: provider.name 
+        });
+        return null;
+      }
+
+      // 验证 API Key 是否解密成功
+      // 如果返回的仍是加密格式（iv:authTag:ciphertext 三段 base64），说明解密失败
+      // 使用 crypto.ts 中的 isEncrypted 函数检测
+      const { isEncrypted } = await import('@/lib/crypto');
+      if (isEncrypted(providerWithKey.api_key)) {
+        logger.error('[LlmProviderService] API key appears still encrypted after decryption attempt', { 
+          providerId: provider.id, 
+          name: provider.name,
+          apiKeyPreview: providerWithKey.api_key.substring(0, 20) + '...',
+        });
+        return null;
+      }
+
+      const config: LLMProviderConfig = {
+        providerId: provider.id,
+        providerName: provider.name,
+        providerBaseUrl: provider.base_url,
+        providerApiKey: providerWithKey.api_key,
+        defaultModel: provider.default_model || undefined,
+      };
+
+      logger.info('[LlmProviderService] Loaded provider config', {
+        providerId: config.providerId,
+        name: config.providerName,
+        baseUrl: config.providerBaseUrl,
+        apiKeyLength: config.providerApiKey.length,
+      });
+
+      return config;
+    } catch (error) {
+      logger.error('[LlmProviderService] Failed to load provider config', { 
+        providerId, 
+        error 
+      });
+      return null;
+    }
+  }
+
+  /**
    * Get enabled providers sorted by priority
    */
   async listEnabledProviders(): Promise<LlmProviderRow[]> {
@@ -294,17 +369,14 @@ export class LlmProviderService {
         model_id: input.model_id,
         display_name: input.display_name,
         description: input.description ?? null,
-        type: input.type || 'chat',
-        max_tokens: input.max_tokens ?? null,
         supports_vision: input.supports_vision ?? false,
         supports_streaming: input.supports_streaming ?? true,
         supports_function_calling: input.supports_function_calling ?? false,
-        default_temperature: input.default_temperature ?? 0.7,
         default_max_tokens: input.default_max_tokens ?? null,
-        use_case: input.use_case || 'general',
         cost_per_1k_input: input.cost_per_1k_input ?? null,
         cost_per_1k_output: input.cost_per_1k_output ?? null,
         is_enabled: input.is_enabled ?? true,
+        priority: input.priority ?? 0,
       });
 
       logger.info('LLM model created', { modelId: model.id, providerId });
@@ -315,6 +387,34 @@ export class LlmProviderService {
       }
       logger.error('Failed to create LLM model', { providerId, error });
       throw this.toServiceError(error, 'Failed to create model');
+    }
+  }
+
+  /**
+   * Update a model
+   */
+  async updateModel(modelId: string, input: Partial<CreateModelInput>): Promise<LlmModelRow> {
+    try {
+      const updates: Partial<LlmModelRow> = {};
+      
+      if (input.model_id !== undefined) updates.model_id = input.model_id;
+      if (input.display_name !== undefined) updates.display_name = input.display_name;
+      if (input.description !== undefined) updates.description = input.description ?? null;
+      if (input.supports_vision !== undefined) updates.supports_vision = input.supports_vision;
+      if (input.supports_streaming !== undefined) updates.supports_streaming = input.supports_streaming;
+      if (input.supports_function_calling !== undefined) updates.supports_function_calling = input.supports_function_calling;
+      if (input.default_max_tokens !== undefined) updates.default_max_tokens = input.default_max_tokens ?? null;
+      if (input.priority !== undefined) updates.priority = input.priority;
+      if (input.cost_per_1k_input !== undefined) updates.cost_per_1k_input = input.cost_per_1k_input ?? null;
+      if (input.cost_per_1k_output !== undefined) updates.cost_per_1k_output = input.cost_per_1k_output ?? null;
+      if (input.is_enabled !== undefined) updates.is_enabled = input.is_enabled;
+
+      const model = await this.repository.updateModel(modelId, updates);
+      logger.info('LLM model updated', { modelId });
+      return model;
+    } catch (error) {
+      logger.error('Failed to update LLM model', { modelId, error });
+      throw this.toServiceError(error, 'Failed to update model');
     }
   }
 
@@ -407,6 +507,80 @@ export class LlmProviderService {
   }
 
   /**
+   * Select the best model based on requirements
+   * Selection criteria: highest priority model among enabled providers,
+   *                     default provider wins ties
+   */
+  async selectBestModel(params: {
+    type: 'chat' | 'vision';
+    providerId?: string;
+    supportsVision?: boolean;
+    supportsFunctionCalling?: boolean;
+  }): Promise<{ provider: LlmProviderRow; model: LlmModelRow } | null> {
+    try {
+      let providers: LlmProviderRow[];
+
+      if (params.providerId) {
+        // Use specific provider
+        const provider = await this.repository.getById(params.providerId);
+        if (!provider || !provider.is_enabled) {
+          return null;
+        }
+        providers = [provider];
+      } else {
+        // Use all enabled providers, sorted by priority (default first)
+        providers = await this.repository.listEnabled();
+        // Sort: default provider first, then by priority descending
+        providers.sort((a, b) => {
+          if (a.is_default && !b.is_default) return -1;
+          if (!a.is_default && b.is_default) return 1;
+          return (b.priority || 0) - (a.priority || 0);
+        });
+      }
+
+      for (const provider of providers) {
+        const models = await this.repository.listModels(provider.id);
+        if (models.length === 0) continue;
+
+        // Find the best matching model
+        const matchingModels = models.filter(m => {
+          if (!m.is_enabled) return false;
+
+          // For vision type or when vision is required, prefer models that support vision
+          if (params.type === 'vision' || params.supportsVision) {
+            return m.supports_vision;
+          }
+          // For chat type, prefer models that don't support vision (non-vision models)
+          // or allow vision models if no non-vision model is available
+          return true;
+        });
+
+        if (matchingModels.length === 0) continue;
+
+        // Sort by priority descending
+        matchingModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+        // If function calling is required, filter further
+        if (params.supportsFunctionCalling) {
+          const fcModel = matchingModels.find(m => m.supports_function_calling);
+          if (fcModel) {
+            return { provider, model: fcModel };
+          }
+        }
+
+        // Return the highest priority model
+        return { provider, model: matchingModels[0] };
+      }
+
+      logger.warn('No suitable model found', { type: params.type, providerId: params.providerId });
+      return null;
+    } catch (error) {
+      logger.error('Failed to select best model', { params, error });
+      throw this.toServiceError(error, 'Failed to select model');
+    }
+  }
+
+  /**
    * Convert error to service error
    */
   private toServiceError(error: unknown, context: string): Error {
@@ -418,6 +592,18 @@ export class LlmProviderService {
 }
 
 // ===== Type Definitions =====
+
+/**
+ * LLM Provider 配置项（用于 LLMStreamingService）
+ * 统一加载 LLM Provider 配置时返回的类型
+ */
+export interface LLMProviderConfig {
+  providerId: string;
+  providerName: string;
+  providerBaseUrl: string;
+  providerApiKey: string;
+  defaultModel: string | undefined;
+}
 
 export interface CreateProviderInput {
   name: string;
@@ -459,14 +645,12 @@ export interface CreateModelInput {
   model_id: string;
   display_name: string;
   description?: string;
-  type?: string;
   max_tokens?: number;
   supports_vision?: boolean;
   supports_streaming?: boolean;
   supports_function_calling?: boolean;
-  default_temperature?: number;
   default_max_tokens?: number;
-  use_case?: string;
+  priority?: number;
   cost_per_1k_input?: number;
   cost_per_1k_output?: number;
   is_enabled?: boolean;

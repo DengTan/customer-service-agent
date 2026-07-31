@@ -15,14 +15,16 @@ async function getActorFromRequest(request: NextRequest) {
   return { id: userId, name: user?.name ?? null };
 }
 
-const UuidSchema = z.string().uuid({ message: '必须是合法 UUID' });
+// Matches any 8-4-4-4-12 hex format (including all-zero UUIDs)
+const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: '必须是合法 UUID' });
+
+const NullableUuidSchema = z.union([UuidSchema, z.literal('')]).transform(v => v === '' ? null : v).nullish();
 
 const CollaborationConfigSchema = z
   .object({
-    auto_delegate_intents: z.array(z.string().max(100)).max(20).optional(),
-    allow_collaborate_with: z.array(z.string().max(100)).max(10).optional(),
-  })
-  .strict();
+    auto_delegate_intents: z.array(z.string().max(100)).max(20).nullish(),
+    allow_collaborate_with: z.array(z.string().max(100)).max(10).nullish(),
+  });
 
 const CreateBotBodySchema = z.object({
   name: z.string().min(1).max(100),
@@ -30,13 +32,13 @@ const CreateBotBodySchema = z.object({
   system_prompt: z.string().min(1).max(16000),
   tools: z.array(z.string().max(50)).max(20).optional(),
   knowledge_ids: z.array(UuidSchema).max(20).optional(),
-  skill_group_id: UuidSchema.nullish(),
+  skill_group_id: NullableUuidSchema,
   is_default: z.boolean().optional(),
-  parent_bot_id: UuidSchema.nullish(),
-  delegation_prompt: z.string().max(2000).nullish(),
-  collaboration_config: CollaborationConfigSchema.nullish(),
+  parent_bot_id: NullableUuidSchema,
+  delegation_prompt: z.union([z.string().max(2000), z.null()]).optional(),
+  collaboration_config: CollaborationConfigSchema.optional(),
   is_sub_agent: z.boolean().optional(),
-  platform_connection_id: UuidSchema.nullish(),
+  platform_connection_id: NullableUuidSchema,
 });
 
 const UpdateBotBodySchema = z.object({
@@ -46,14 +48,14 @@ const UpdateBotBodySchema = z.object({
   system_prompt: z.string().min(1).max(16000).optional(),
   tools: z.array(z.string().max(50)).max(20).optional(),
   knowledge_ids: z.array(UuidSchema).max(20).optional(),
-  skill_group_id: UuidSchema.nullish(),
+  skill_group_id: NullableUuidSchema,
   is_default: z.boolean().optional(),
-  parent_bot_id: UuidSchema.nullish(),
-  delegation_prompt: z.string().max(2000).nullish(),
+  parent_bot_id: NullableUuidSchema,
+  delegation_prompt: z.union([z.string().max(2000), z.null()]).optional(),
   collaboration_config: CollaborationConfigSchema.nullish(),
   is_sub_agent: z.boolean().optional(),
   status: z.enum(['active', 'disabled']).optional(),
-  platform_connection_id: UuidSchema.nullish(),
+  platform_connection_id: NullableUuidSchema,
 });
 
 // GET /api/bot-configs - List all bot configs

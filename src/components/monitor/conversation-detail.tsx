@@ -512,7 +512,6 @@ export function ConversationDetail({
                                   <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5 text-muted-foreground">
                                     <div className="flex justify-between"><span>知识库匹配</span><span>{bd.knowledge_score > 0 ? `${Math.round(bd.knowledge_score * 100)}%` : '-'}</span></div>
                                     <div className="flex justify-between"><span>工具调用</span><span>{bd.tool_score > 0 ? `${Math.round(bd.tool_score * 100)}%` : '-'}</span></div>
-                                    <div className="flex justify-between"><span>LLM自评</span><span>{bd.llm_self_score > 0 ? `${Math.round(bd.llm_self_score * 100)}%` : '-'}</span></div>
                                     <div className="flex justify-between"><span>子Agent</span><span>{bd.sub_agent_score > 0 ? `${Math.round(bd.sub_agent_score * 100)}%` : '-'}</span></div>
                                     {bd.handoff_intent && (
                                       <div className="text-red-500 flex items-center gap-1">

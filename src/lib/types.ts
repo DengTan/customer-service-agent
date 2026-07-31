@@ -64,7 +64,6 @@ export interface RichMessageCardWithActionsProps {
 export interface ConfidenceBreakdown {
   knowledge_score: number;    // Knowledge base vector similarity contribution
   tool_score: number;         // Tool execution confidence contribution
-  llm_self_score: number;     // LLM self-evaluated confidence contribution
   sub_agent_score: number;    // Sub-agent delegation confidence contribution
   handoff_intent: boolean;    // Whether handoff intent was detected
   no_support: boolean;        // Whether no grounding source exists (pure LLM)
@@ -211,7 +210,8 @@ export type PermissionResource =
   | 'routing'
   | 'quality'
   | 'push'
-  | 'auto_reply';
+  | 'auto_reply'
+  | 'quick_replies';
 export type PermissionAction = 'read' | 'write' | 'delete';
 
 export interface RolePermission {
@@ -237,6 +237,7 @@ export const PERMISSION_RESOURCES: Record<PermissionResource, string> = {
   quality: '质检规则',
   push: '推送模板',
   auto_reply: '自动回复',
+  quick_replies: '话术库',
 };
 
 export const PERMISSION_ACTIONS: Record<PermissionAction, string> = {

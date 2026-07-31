@@ -27,6 +27,9 @@ import {
   AlertCircle,
   Copy,
   Check,
+  StickyNote,
+  AtSign,
+  Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { AgentQueueItem } from '@/lib/types';
@@ -144,7 +147,13 @@ export function ChatPanel({
       return;
     }
 
-    const currentAttachments = attachments ? [...attachments] : [];
+    const currentAttachments: import('./workspace-shared').Attachment[] = attachments ? attachments.map(a => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      url: a.url,
+      size: a.size ?? 0,
+    })) : [];
     const tempId = crypto.randomUUID();
     const msg: ChatMessage = {
       id: tempId,

@@ -15,6 +15,7 @@ import { checkRateLimit } from '@/lib/api-utils';
 import { LoginSecurityService } from '@/lib/auth/login-security';
 import { HTTP } from '@/lib/constants';
 import { logger } from '@/lib/logger';
+import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { z } from 'zod';
 
 const userRepo = new UserRepository();
@@ -243,6 +244,22 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     avatar: user.avatar ?? null,
   });
 
+  // Get agent status from agent_sessions table
+  let agentStatus: string | null = null;
+  try {
+    const supabase = getSupabaseClient();
+    const { data: sessionData } = await supabase
+      .from('agent_sessions')
+      .select('status')
+      .eq('user_id', user.id)
+      .order('last_active_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    agentStatus = sessionData?.status || null;
+  } catch {
+    // Silently fail, agentStatus remains null
+  }
+
   // Create response with token cookie
   const response = apiSuccess({
     user: {
@@ -251,6 +268,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       name: user.name,
       role: user.role,
       avatar: user.avatar,
+      agentStatus,
     },
   });
 

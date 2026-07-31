@@ -39,6 +39,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 import { SimulationConversation, SimulationMessage } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -100,7 +101,6 @@ export function SimulationPage() {
   const [currentConfidenceBreakdown, setCurrentConfidenceBreakdown] = useState<{
     knowledge_score: number;
     tool_score: number;
-    llm_self_score: number;
     sub_agent_score: number;
     handoff_intent: boolean;
     no_support: boolean;
@@ -115,7 +115,6 @@ export function SimulationPage() {
     confidenceBreakdown?: {
       knowledge_score: number;
       tool_score: number;
-      llm_self_score: number;
       sub_agent_score: number;
       handoff_intent: boolean;
       no_support: boolean;
@@ -291,6 +290,26 @@ export function SimulationPage() {
     }
   }, [updateItem, updateTabState]);
 
+  // Fetch messages for a conversation and seed its tab state.
+  // Returns silently on error (resets to default tab state), matching the inline pattern
+  // that used to live in three places (handleSendMessage, handleDuplicateConversation,
+  // and the inline new-conversation onClick).
+  const fetchAndSeedMessages = useCallback(async (convId: string) => {
+    try {
+      const msgRes = await fetch(`/api/simulations/${convId}`);
+      if (msgRes.ok) {
+        const msgData = await msgRes.json();
+        if (Array.isArray(msgData.messages)) {
+          updateTabState(convId, { messages: msgData.messages as SimulationMessage[] });
+          return;
+        }
+      }
+      updateTabState(convId, { ...DEFAULT_TAB_STATE });
+    } catch {
+      updateTabState(convId, { ...DEFAULT_TAB_STATE });
+    }
+  }, [updateTabState]);
+
   // Select a scenario (only set state, don't create conversation yet)
   const handleSelectScenario = useCallback(async (scenario: TestScenario) => {
     // Only switch scenario, create conversation when first message is sent
@@ -393,7 +412,9 @@ export function SimulationPage() {
           setTotal(n => n + 1);
           updateItemsLength(1); // P2-1: sync itemsLengthRef after prepend
           setActiveConvId(actualConvId);
-          updateTabState(actualConvId, { ...DEFAULT_TAB_STATE });
+
+          // Fetch messages immediately to get welcome message if configured
+          await fetchAndSeedMessages(actualConvId);
         }
       } catch (err) {
         simulationLogger.error('创建模拟会话失败', { error: err });
@@ -478,7 +499,13 @@ export function SimulationPage() {
           // later chunk happens to look like content. The final assistant message will
           // be created from the request-local fullContent (which may be empty).
           streamErrored = true;
-          streamErrorMessage = chunk.error;
+          streamErrorMessage = typeof chunk.error === 'string' ? chunk.error : (chunk as { errorMessage?: string }).errorMessage ?? '后端处理失败';
+          return;
+        }
+        // Also handle errorMessage field (used by simulation route for NO_LLM_PROVIDER)
+        if ((chunk as { errorMessage?: string }).errorMessage) {
+          streamErrored = true;
+          streamErrorMessage = (chunk as { errorMessage: string }).errorMessage;
           return;
         }
         if (chunk.done) {
@@ -489,7 +516,6 @@ export function SimulationPage() {
             lastConfidenceBreakdown = {
               knowledge_score: (bd.knowledge_score as number) ?? 0,
               tool_score: (bd.tool_score as number) ?? 0,
-              llm_self_score: (bd.llm_self_score as number) ?? 0,
               sub_agent_score: (bd.sub_agent_score as number) ?? 0,
               handoff_intent: (bd.handoff_intent as boolean) ?? false,
               no_support: (bd.no_support as boolean) ?? false,
@@ -875,7 +901,10 @@ export function SimulationPage() {
         toast.success(`已复制为「${data.conversation.title}」`);
         // Auto-select the new duplicate
         setActiveConvId(data.conversation.id);
-        updateTabState(data.conversation.id, { ...DEFAULT_TAB_STATE });
+
+        // Fetch messages immediately to get copied messages including welcome
+        await fetchAndSeedMessages(data.conversation.id);
+
         // Reset source/evaluation panels when switching conversations
         setShowSourcePanel(false);
         setIsSourcePanelHighlighted(false);
@@ -1083,7 +1112,10 @@ export function SimulationPage() {
                   setTotal(n => n + 1);
                   updateItemsLength(1); // P2-1: sync itemsLengthRef after prepend
                   setActiveConvId(data.conversation.id);
-                  updateTabState(data.conversation.id, { ...DEFAULT_TAB_STATE });
+
+                  // Fetch messages immediately to get welcome message if configured
+                  await fetchAndSeedMessages(data.conversation.id);
+
                   // Reset source/evaluation panels when switching conversations
                   setShowSourcePanel(false);
                   setIsSourcePanelHighlighted(false);
@@ -1190,9 +1222,28 @@ export function SimulationPage() {
           </div>
           {/* History List */}
           <div className="flex-1 overflow-y-auto">
+            {/* Skeleton loading state for conversation list */}
             {isInitialLoading && conversations.length === 0 ? (
-              <div className="px-4 py-8 flex items-center justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              <div className="px-3 pb-3 space-y-1">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="w-full flex items-center gap-2 p-2 rounded-lg">
+                    {/* Icon placeholder */}
+                    <Skeleton className="w-6 h-6 rounded shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      {/* Title placeholder */}
+                      <Skeleton className="h-3.5 w-3/4 rounded" />
+                      {/* Meta row: bot icon + name + dot + message count */}
+                      <div className="flex items-center gap-1">
+                        <Skeleton className="w-3 h-3 rounded" />
+                        <Skeleton className="h-2.5 w-1/3 rounded" />
+                        <Skeleton className="h-2.5 w-12 rounded" />
+                      </div>
+                    </div>
+                    {/* Action buttons placeholder */}
+                    <Skeleton className="w-5 h-5 rounded" />
+                    <Skeleton className="w-5 h-5 rounded" />
+                  </div>
+                ))}
               </div>
             ) : conversations.length === 0 ? (
               <div className="px-4 py-8 text-center">
@@ -1471,7 +1522,35 @@ export function SimulationPage() {
               {/* Messages */}
               <div className="flex flex-1 min-h-0">
                 <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-                {activeTabState?.messages.length === 0 && !activeTabState?.isLoading && (
+                {activeTabState?.isLoading && (
+                  <div className="flex flex-col gap-4 animate-fade-in">
+                    {/* Simulated welcome message from bot */}
+                    <div className="flex gap-3">
+                      <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-20 w-[280px] rounded-2xl rounded-tl-md" />
+                        <Skeleton className="h-2.5 w-16 rounded" />
+                      </div>
+                    </div>
+                    {/* Simulated user message */}
+                    <div className="flex gap-3 flex-row-reverse">
+                      <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-12 w-[180px] rounded-2xl rounded-tr-md" />
+                        <Skeleton className="h-2.5 w-12 rounded ml-auto" />
+                      </div>
+                    </div>
+                    {/* Simulated bot response */}
+                    <div className="flex gap-3">
+                      <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-24 w-[320px] rounded-2xl rounded-tl-md" />
+                        <Skeleton className="h-2.5 w-16 rounded" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!activeTabState?.isLoading && activeTabState?.messages.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-full text-center animate-fade-in">
                     <Bot className="w-12 h-12 text-muted-foreground/30 mb-3" />
                     <p className="text-sm text-muted-foreground">开始测试对话</p>

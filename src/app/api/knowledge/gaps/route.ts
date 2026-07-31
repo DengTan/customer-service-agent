@@ -13,6 +13,7 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const status = url.searchParams.get('status');
   const minFrequency = url.searchParams.get('min_frequency');
   const limit = url.searchParams.get('limit');
+  const search = url.searchParams.get('search');
 
   const statusFilter = status
     ? (status.split(',').filter(Boolean) as ('open' | 'in_progress' | 'resolved' | 'dismissed')[])
@@ -22,7 +23,15 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     status: statusFilter,
     minFrequency: minFrequency ? parseInt(minFrequency, 10) : undefined,
     limit: limit ? parseInt(limit, 10) : 50,
+    search: search ?? undefined,
   });
 
-  return apiSuccess({ gaps });
+  // Get total count for pagination
+  const total = await service.countGaps({
+    status: statusFilter,
+    minFrequency: minFrequency ? parseInt(minFrequency, 10) : undefined,
+    search: search ?? undefined,
+  });
+
+  return apiSuccess({ gaps, total });
 });

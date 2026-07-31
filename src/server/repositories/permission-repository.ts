@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
+import type { RolePermission } from '@/lib/types';
 
 export interface PermissionEntry {
   role: string;
@@ -13,15 +14,30 @@ export interface PermissionFilters {
   [key: string]: unknown;
 }
 
+export function toPermissionRow(raw: Record<string, unknown>): RolePermission {
+  return {
+    id: String(raw.id ?? ''),
+    role: (raw.role as RolePermission['role']) ?? 'observer',
+    resource: (raw.resource as RolePermission['resource']) ?? 'conversations',
+    action: (raw.action as RolePermission['action']) ?? 'read',
+    allowed: Boolean(raw.allowed),
+  };
+}
+
 export class PermissionRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
-  async list(_filters: PermissionFilters = {}): Promise<unknown[]> {
+  async list(_filters: PermissionFilters = {}): Promise<RolePermission[]> {
     if (isDemoMode()) {
       const roles = ['admin', 'agent', 'observer'] as const;
-      const resources = ['conversations', 'knowledge', 'settings', 'team', 'customers', 'analytics', 'tickets', 'marketing'] as const;
+      const resources = [
+        'conversations', 'knowledge', 'settings', 'team',
+        'customers', 'analytics', 'tickets', 'marketing',
+        'bots', 'sub_agents', 'routing', 'quality',
+        'push', 'auto_reply', 'quick_replies'
+      ] as const;
       const actions = ['read', 'write', 'delete'] as const;
-      const result: { role: string; resource: string; action: string; allowed: boolean }[] = [];
+      const result: RolePermission[] = [];
       for (const role of roles) {
         for (const resource of resources) {
           for (const action of actions) {
@@ -31,7 +47,9 @@ export class PermissionRepository {
                 : role === 'agent'
                   ? action !== 'delete'
                   : action === 'read';
-            result.push({ role, resource, action, allowed });
+            // Generate a deterministic id for demo mode
+            const id = `${role}_${resource}_${action}`;
+            result.push({ id, role, resource, action, allowed });
           }
         }
       }
@@ -43,7 +61,7 @@ export class PermissionRepository {
       .order('role', { ascending: true });
 
     if (error) throw new RepositoryError('list permissions', error.message, error.code);
-    return data ?? [];
+    return (data ?? []).map(row => toPermissionRow(row as Record<string, unknown>));
   }
 
   async upsert(permission: PermissionEntry): Promise<unknown> {

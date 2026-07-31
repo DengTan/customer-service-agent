@@ -8,6 +8,7 @@ import {
   Trash2, Eye, X, Download, CheckSquare, Square, RotateCcw, Loader2, ChevronsLeft, ChevronsRight,
   History,
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { Conversation, Message } from '@/lib/types';
 import { logger } from '@/lib/logger';
@@ -529,16 +530,17 @@ export function HistoryPage() {
               </button>
             ))}
           </div>
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-          >
-            <option value="all">所有来源</option>
-            <option value="web">网页</option>
-            <option value="qianniu">千牛</option>
-            <option value="doudian">抖店</option>
-          </select>
+          <Select value={sourceFilter || 'all'} onValueChange={setSourceFilter}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="所有来源" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">所有来源</SelectItem>
+              <SelectItem value="web">网页</SelectItem>
+              <SelectItem value="qianniu">千牛</SelectItem>
+              <SelectItem value="doudian">抖店</SelectItem>
+            </SelectContent>
+          </Select>
           <button
             onClick={() => setShowDateFilter(!showDateFilter)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${

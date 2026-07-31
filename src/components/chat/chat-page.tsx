@@ -363,6 +363,7 @@ function ChatPageInner() {
         let lastConfidence: number | null = null;
         let lastConfidenceBreakdown: import('@/lib/types').ConfidenceBreakdown | null = null;
         let toolFailed = false;
+        let modelUnavailableError: string | null = null;
 
         // Timeout: if no data received for 60 seconds, abort the stream
         let timeoutId = setTimeout(() => {
@@ -419,8 +420,19 @@ function ChatPageInner() {
                   });
                 }
                 if (parsed.error) {
-                  fullContent += `\n\n[错误: ${parsed.error}]`;
-                  updateTabState(convId, { streamingContent: fullContent });
+                  // Check if this is a model unavailable error that should show a toast
+                  if (parsed.type === 'model_unavailable' && parsed.errorMessage) {
+                    // Store error for later handling, show toast notification
+                    modelUnavailableError = parsed.errorMessage;
+                    toast.error(parsed.errorMessage, {
+                      duration: 8000,
+                      id: 'model-unavailable-error',
+                    });
+                    logger.warn('Model unavailable error from stream', { errorMessage: parsed.errorMessage });
+                  } else {
+                    fullContent += `\n\n[错误: ${parsed.error}]`;
+                    updateTabState(convId, { streamingContent: fullContent });
+                  }
                 }
                 // Handle handoff signal from server (e.g. multimodal disabled + image sent)
                 if (parsed.handoff) {
@@ -459,6 +471,16 @@ function ChatPageInner() {
         }
 
         clearTimeout(timeoutId);
+
+        // If model was unavailable, skip creating assistant message
+        if (modelUnavailableError) {
+          updateTabState(convId, {
+            streamingContent: '',
+            isSending: false,
+          });
+          loadConversations();
+          return;
+        }
 
         const assistantMsg: Message = {
           id: `msg-${Date.now()}`,

@@ -10,7 +10,7 @@ export interface KnowledgeLearningItem {
   confidence: number;
   conversation_id: string | null;
   conversation_title: string | null;
-  source_context: string | null;
+  source_context: Record<string, unknown> | null;
   category: string | null;
   status: 'pending' | 'approved' | 'rejected';
   knowledge_item_id: string | null;
@@ -59,11 +59,11 @@ export class KnowledgeLearningRepository {
   // Demo data helpers
   private getDemoItems(): KnowledgeLearningItem[] {
     return [
-      { id: 'demo-kl-1', question: '如何申请退货退款？', answer: '您可以在订单详情页点击"申请退款"，选择退货退款方式，填写退款原因后提交即可。审核通常1-2个工作日完成。', confidence: 0.92, conversation_id: 'demo-conv-1', conversation_title: '退货咨询', source_context: '用户询问退货流程', category: '售后', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T08:30:00Z', updated_at: null },
-      { id: 'demo-kl-2', question: '快递多久能到？', answer: '标准快递一般3-5个工作日送达，偏远地区可能需要5-7个工作日。加急快递1-2个工作日可到。', confidence: 0.88, conversation_id: 'demo-conv-2', conversation_title: '物流咨询', source_context: '用户询问配送时间', category: '物流', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T09:15:00Z', updated_at: null },
-      { id: 'demo-kl-3', question: '支持花呗分期吗？', answer: '支持花呗3期、6期、12期免息分期，订单金额满300元即可使用。结算时选择花呗支付即可看到分期选项。', confidence: 0.85, conversation_id: 'demo-conv-3', conversation_title: '支付咨询', source_context: '用户询问分期付款', category: '支付', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T10:00:00Z', updated_at: null },
-      { id: 'demo-kl-4', question: '商品有质量问题怎么办？', answer: '如商品存在质量问题，请在签收后7天内联系客服，提供照片凭证，我们将为您安排换货或退款处理。', confidence: 0.95, conversation_id: 'demo-conv-1', conversation_title: '质量问题反馈', source_context: '用户反馈商品质量', category: '售后', status: 'approved', knowledge_item_id: 'demo-ki-1', reviewed_at: '2026-06-09T14:00:00Z', created_at: '2026-06-08T11:00:00Z', updated_at: '2026-06-09T14:00:00Z' },
-      { id: 'demo-kl-5', question: '可以修改收货地址吗？', answer: '订单未发货前可以修改收货地址，请在订单详情页点击"修改地址"或联系客服协助修改。', confidence: 0.78, conversation_id: 'demo-conv-2', conversation_title: '地址修改', source_context: '用户要求改地址', category: '订单', status: 'rejected', knowledge_item_id: null, reviewed_at: '2026-06-09T16:00:00Z', created_at: '2026-06-08T15:00:00Z', updated_at: '2026-06-09T16:00:00Z' },
+      { id: 'demo-kl-1', question: '如何申请退货退款？', answer: '您可以在订单详情页点击"申请退款"，选择退货退款方式，填写退款原因后提交即可。审核通常1-2个工作日完成。', confidence: 0.92, conversation_id: 'demo-conv-1', conversation_title: '退货咨询', source_context: { note: '用户询问退货流程' }, category: '售后', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T08:30:00Z', updated_at: null },
+      { id: 'demo-kl-2', question: '快递多久能到？', answer: '标准快递一般3-5个工作日送达，偏远地区可能需要5-7个工作日。加急快递1-2个工作日可到。', confidence: 0.88, conversation_id: 'demo-conv-2', conversation_title: '物流咨询', source_context: { note: '用户询问配送时间' }, category: '物流', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T09:15:00Z', updated_at: null },
+      { id: 'demo-kl-3', question: '支持花呗分期吗？', answer: '支持花呗3期、6期、12期免息分期，订单金额满300元即可使用。结算时选择花呗支付即可看到分期选项。', confidence: 0.85, conversation_id: 'demo-conv-3', conversation_title: '支付咨询', source_context: { note: '用户询问分期付款' }, category: '支付', status: 'pending', knowledge_item_id: null, reviewed_at: null, created_at: '2026-06-10T10:00:00Z', updated_at: null },
+      { id: 'demo-kl-4', question: '商品有质量问题怎么办？', answer: '如商品存在质量问题，请在签收后7天内联系客服，提供照片凭证，我们将为您安排换货或退款处理。', confidence: 0.95, conversation_id: 'demo-conv-1', conversation_title: '质量问题反馈', source_context: { note: '用户反馈商品质量' }, category: '售后', status: 'approved', knowledge_item_id: 'demo-ki-1', reviewed_at: '2026-06-09T14:00:00Z', created_at: '2026-06-08T11:00:00Z', updated_at: '2026-06-09T14:00:00Z' },
+      { id: 'demo-kl-5', question: '可以修改收货地址吗？', answer: '订单未发货前可以修改收货地址，请在订单详情页点击"修改地址"或联系客服协助修改。', confidence: 0.78, conversation_id: 'demo-conv-2', conversation_title: '地址修改', source_context: { note: '用户要求改地址' }, category: '订单', status: 'rejected', knowledge_item_id: null, reviewed_at: '2026-06-09T16:00:00Z', created_at: '2026-06-08T15:00:00Z', updated_at: '2026-06-09T16:00:00Z' },
     ];
   }
 
@@ -267,7 +267,7 @@ export class KnowledgeLearningRepository {
     confidence: number;
     conversation_id: string;
     conversation_title: string | null;
-    source_context: string;
+    source_context: string | Record<string, unknown>;
     category: string;
     status: string;
   }): Promise<boolean> {
@@ -304,7 +304,10 @@ export class KnowledgeLearningRepository {
   }
 
   async update(id: string, updates: Record<string, unknown>): Promise<void> {
-    if (isDemoMode()) return;
+    if (isDemoMode()) {
+      logger.warn('[KnowledgeLearningRepository] update() called in demo mode - operation skipped');
+      return;
+    }
     try {
       const { error } = await this.client
         .from('knowledge_learning_queue')
@@ -314,12 +317,15 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('update learning item', error.message, error.code);
     } catch (err) {
       logger.error('[KnowledgeLearningRepository] update error', { error: err });
-      // Silent fail
+      throw err;
     }
   }
 
   async updateBatch(ids: string[], updates: Record<string, unknown>): Promise<void> {
-    if (isDemoMode()) return;
+    if (isDemoMode()) {
+      logger.warn('[KnowledgeLearningRepository] updateBatch() called in demo mode - operation skipped');
+      return;
+    }
     try {
       const { error } = await this.client
         .from('knowledge_learning_queue')
@@ -329,7 +335,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('batch update learning items', error.message, error.code);
     } catch (err) {
       logger.error('[KnowledgeLearningRepository] updateBatch error', { error: err });
-      // Silent fail
+      throw err;
     }
   }
 
@@ -425,7 +431,10 @@ export class KnowledgeLearningRepository {
       updated_at?: string;
     },
   ): Promise<void> {
-    if (isDemoMode()) return;
+    if (isDemoMode()) {
+      logger.warn('[KnowledgeLearningRepository] updateItem() called in demo mode - operation skipped');
+      return;
+    }
     try {
       const { error } = await this.client
         .from('knowledge_learning_queue')
@@ -435,7 +444,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('update learning item', error.message, error.code);
     } catch (err) {
       logger.error('[KnowledgeLearningRepository] updateItem error', { error: err });
-      // Silent fail
+      throw err;
     }
   }
 
@@ -448,7 +457,10 @@ export class KnowledgeLearningRepository {
       updated_at?: string;
     },
   ): Promise<void> {
-    if (isDemoMode()) return;
+    if (isDemoMode()) {
+      logger.warn('[KnowledgeLearningRepository] updateItemBatch() called in demo mode - operation skipped');
+      return;
+    }
     try {
       const { error } = await this.client
         .from('knowledge_learning_queue')
@@ -458,7 +470,7 @@ export class KnowledgeLearningRepository {
       if (error) throw new RepositoryError('batch update learning items', error.message, error.code);
     } catch (err) {
       logger.error('[KnowledgeLearningRepository] updateItemBatch error', { error: err });
-      // Silent fail
+      throw err;
     }
   }
 }

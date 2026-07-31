@@ -155,7 +155,7 @@ export const POST = withErrorHandler(async (
     }
   }
 
-  // 1.5.1 Load extended LLM provider settings (if configured)
+  // 1.5.1 Load extended LLM provider settings using unified config loader
   let llmProviderConfig: {
     providerId?: string;
     providerBaseUrl?: string;
@@ -163,33 +163,23 @@ export const POST = withErrorHandler(async (
     defaultModel?: string;
   } = {};
 
-  // Try to load from LLM providers table
   const llmProviderId = appSettings.llm_provider_id;
   try {
     const { LlmProviderService } = await import('@/server/services/llm-provider-service');
     const llmService = new LlmProviderService();
 
-    let provider: Awaited<ReturnType<typeof llmService.getProvider>> = null;
-    if (llmProviderId) {
-      provider = await llmService.getProvider(llmProviderId);
-      if (!provider) provider = await llmService.getProviderByName(llmProviderId);
-      if (!provider) provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
-    }
-    if (!provider) {
-      provider = await llmService.getDefaultProvider();
-    }
-
-    if (provider && provider.is_enabled) {
-      const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
+    // Use unified config loader (handles lookup + decryption + error handling)
+    const providerConfig = await llmService.loadProviderConfig(llmProviderId);
+    if (providerConfig) {
       llmProviderConfig = {
-        providerId: provider.id,
-        providerBaseUrl: provider.base_url,
-        providerApiKey: providerWithKey?.api_key || provider.api_key || '',
-        defaultModel: provider.default_model || undefined,
+        providerId: providerConfig.providerId,
+        providerBaseUrl: providerConfig.providerBaseUrl,
+        providerApiKey: providerConfig.providerApiKey,
+        defaultModel: providerConfig.defaultModel,
       };
     }
   } catch (error) {
-    logger.api.warn('Failed to load LLM provider config, falling back to default', { error, providerId: llmProviderId });
+    logger.api.warn('Failed to load LLM provider config', { error, providerId: llmProviderId });
   }
 
   // 1.6 Check session timeout from settings (max_turns check moved below — uses
@@ -252,10 +242,13 @@ export const POST = withErrorHandler(async (
 
   // 5. If auto-reply matched, return immediately
   if (autoReply) {
+    // Filter AI response content for sensitive words and URLs (bidirectional filtering)
+    const filteredAutoReplyContent = await contentFilterService.filterAssistantContent(autoReply.content);
+
     await conversationService.insertMessage({
       conversation_id: conversationId,
       role: 'assistant',
-      content: autoReply.content,
+      content: filteredAutoReplyContent,
       confidence: 1.0,
       sources: [{ type: 'auto_reply', keyword: autoReply.rule.keyword }],
     });
@@ -266,7 +259,7 @@ export const POST = withErrorHandler(async (
     return NextResponse.json({
       message: {
         role: 'assistant',
-        content: autoReply.content,
+        content: filteredAutoReplyContent,
         sources: [{ type: 'auto_reply' }],
         confidence: 1.0,
       },
@@ -412,16 +405,19 @@ export const POST = withErrorHandler(async (
         const subAgentBreakdown: ConfidenceBreakdown = {
           knowledge_score: 0,
           tool_score: 0,
-          llm_self_score: 0,
           sub_agent_score: result.confidence,
           handoff_intent: false,
           no_support: false,
           final: result.confidence,
         };
+
+        // Filter AI response content for sensitive words and URLs (bidirectional filtering)
+        const filteredSubAgentContent = await contentFilterService.filterAssistantContent(result.responseContent);
+
         await conversationService.insertMessage({
           conversation_id: conversationId,
           role: 'assistant',
-          content: `**${result.childBot.name}** 处理结果：\n\n${result.responseContent}`,
+          content: `**${result.childBot.name}** 处理结果：\n\n${filteredSubAgentContent}`,
           confidence: result.confidence,
           sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name, triggerIntent: intentResult.intent, delegationId: result.delegation.id, knowledge_item_id: result.delegation.id }],
           confidence_breakdown: subAgentBreakdown,
@@ -442,7 +438,7 @@ export const POST = withErrorHandler(async (
                 confidence: result.confidence,
               },
             })}\n\n`));
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: result.responseContent })}\n\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: filteredSubAgentContent })}\n\n`));
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, confidence: result.confidence, confidence_breakdown: subAgentBreakdown, sources: [{ type: 'sub_agent_delegation', childBotName: result.childBot.name }] })}\n\n`));
             controller.close();
           },

@@ -819,57 +819,100 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
       {/* Bot Create/Edit Modal */}
       {showBotModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg shadow-float w-[520px] max-h-[80vh] overflow-y-auto popup-enter">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h3 className="text-sm font-medium text-foreground">{editingBot ? '编辑主Bot' : '新建主Bot'}</h3>
+          <div className="bg-card rounded-lg shadow-float w-[520px] max-h-[85vh] overflow-hidden flex flex-col popup-enter">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Bot className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <h3 className="text-sm font-medium text-foreground">{editingBot ? '编辑主Bot' : '新建主Bot'}</h3>
+              </div>
               <button onClick={closeBotModal} className="text-muted-foreground hover:text-foreground transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Bot名称</label>
-                <input type="text" value={botForm.name} onChange={(e) => setBotForm({ ...botForm, name: e.target.value })} placeholder="如：电商主客服" className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <div className="p-5 overflow-y-auto flex-1 space-y-5">
+              {/* Basic Info Section */}
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center text-primary text-[10px]">1</span>
+                  基础信息
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                    Bot名称 <span className="text-destructive">*</span>
+                  </label>
+                  <input type="text" value={botForm.name} onChange={(e) => setBotForm({ ...botForm, name: e.target.value })} placeholder="如：电商主客服" className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">描述</label>
+                  <input type="text" value={botForm.description} onChange={(e) => setBotForm({ ...botForm, description: e.target.value })} placeholder="如：处理所有电商客服场景" className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors" />
+                </div>
+                <p className="text-[10px] text-muted-foreground/60 -mt-1">
+                  💡 主Bot作为协调者，负责分发任务给子Agent
+                </p>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">描述</label>
-                <input type="text" value={botForm.description} onChange={(e) => setBotForm({ ...botForm, description: e.target.value })} placeholder="如：处理所有电商客服场景" className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+
+              {/* Config Section */}
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center text-primary text-[10px]">2</span>
+                  关联配置
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">绑定店铺</label>
+                  <select
+                    value={botForm.platform_connection_id}
+                    onChange={(e) => setBotForm({ ...botForm, platform_connection_id: e.target.value })}
+                    className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+                  >
+                    <option value="">不绑定（全局Bot）</option>
+                    {shops.filter(s => s.status === 'active').map((shop) => (
+                      <option key={shop.id} value={shop.id}>{shop.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">绑定后，该店铺的对话将优先使用此Bot</p>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">关联技能组</label>
+                  <select
+                    value={botForm.skill_group_id}
+                    onChange={(e) => setBotForm({ ...botForm, skill_group_id: e.target.value })}
+                    className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+                  >
+                    <option value="">不关联（无技能组）</option>
+                    {skillGroups.map((sg) => (
+                      <option key={sg.id} value={sg.id}>{sg.name}{sg.description ? ` - ${sg.description}` : ''}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">关联技能组后，对话可转接到此Bot指定的技能组坐席</p>
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">绑定店铺</label>
-                <select
-                  value={botForm.platform_connection_id}
-                  onChange={(e) => setBotForm({ ...botForm, platform_connection_id: e.target.value })}
-                  className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">不绑定（全局Bot）</option>
-                  {shops.filter(s => s.status === 'active').map((shop) => (
-                    <option key={shop.id} value={shop.id}>{shop.name}</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-muted-foreground/60 mt-1">绑定后，该店铺的对话将优先使用此Bot</p>
-                <p className="text-[10px] text-amber-600/70 mt-0.5">注意：每个店铺只能绑定一个Bot，绑定新Bot会自动解除旧绑定</p>
+
+              {/* System Prompt Section */}
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-foreground/70 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center text-primary text-[10px]">3</span>
+                  系统提示词
+                </div>
+                <div>
+                  <textarea value={botForm.system_prompt} onChange={(e) => setBotForm({ ...botForm, system_prompt: e.target.value })} placeholder="定义Bot的角色和行为..." rows={4} className="w-full bg-muted border border-transparent focus:border-primary/30 rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none transition-colors" />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">关联技能组</label>
-                <select
-                  value={botForm.skill_group_id}
-                  onChange={(e) => setBotForm({ ...botForm, skill_group_id: e.target.value })}
-                  className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">不关联（无技能组）</option>
-                  {skillGroups.map((sg) => (
-                    <option key={sg.id} value={sg.id}>{sg.name}{sg.description ? ` - ${sg.description}` : ''}</option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-muted-foreground/60 mt-1">关联技能组后，对话可转接到此Bot指定的技能组坐席</p>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">系统提示词</label>
-                <textarea value={botForm.system_prompt} onChange={(e) => setBotForm({ ...botForm, system_prompt: e.target.value })} placeholder="定义Bot的角色和行为..." rows={4} className="w-full bg-muted border-none rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+
+              {/* Notice */}
+              <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 space-y-1">
+                <div className="text-xs font-medium text-amber-600/90 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded bg-amber-500/20 flex items-center justify-center text-[10px]">!</span>
+                  注意事项
+                </div>
+                <ul className="text-[10px] text-amber-600/70 space-y-0.5 pl-6">
+                  <li>• 每个店铺只能绑定一个Bot，绑定新Bot会自动解除旧绑定</li>
+                  <li>• 主Bot下可添加多个专项子Agent协同处理</li>
+                </ul>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border shrink-0 bg-muted/30">
               <button onClick={closeBotModal} className="px-4 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">取消</button>
               <button onClick={handleCreateBot} disabled={!botForm.name.trim()} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 {editingBot ? '保存' : '创建'}

@@ -43,7 +43,6 @@ interface SourceMessageItem {
   confidenceBreakdown?: {
     knowledge_score: number;
     tool_score: number;
-    llm_self_score: number;
     sub_agent_score: number;
     handoff_intent: boolean;
     no_support: boolean;
@@ -57,7 +56,6 @@ interface SourcePanelProps {
   confidenceBreakdown?: {
     knowledge_score: number;
     tool_score: number;
-    llm_self_score: number;
     sub_agent_score: number;
     handoff_intent: boolean;
     no_support: boolean;
@@ -344,11 +342,6 @@ export function SourcePanel({
                   <span className="ml-auto">{currentBreakdown.tool_score > 0 ? `${Math.round(currentBreakdown.tool_score * 100)}%` : '-'}</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <Sparkles className="w-3 h-3 text-amber-500" />
-                  <span>LLM 自评</span>
-                  <span className="ml-auto">{currentBreakdown.llm_self_score > 0 ? `${Math.round(currentBreakdown.llm_self_score * 100)}%` : '-'}</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <Network className="w-3 h-3 text-blue-500" />
                   <span>子Agent</span>
                   <span className="ml-auto">{currentBreakdown.sub_agent_score > 0 ? `${Math.round(currentBreakdown.sub_agent_score * 100)}%` : '-'}</span>
@@ -394,8 +387,21 @@ export function SourcePanel({
                           {getSourceLabel(source.type)}
                         </span>
                         {source.score !== undefined && source.score > 0 && (
-                          <span className={`inline-flex items-center text-[10px] font-medium px-1 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
-                            <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
+                          <span
+                            className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${getScoreTextColor(source.score)} bg-current/5`}
+                            style={{
+                              color: source.score >= 0.85
+                                ? '#10b981'
+                                : source.score >= 0.75
+                                ? '#6366f1'
+                                : source.score >= 0.5
+                                ? '#f59e0b'
+                                : '#ef4444',
+                              borderColor: 'currentColor',
+                              opacity: 0.9,
+                            }}
+                          >
+                            {Math.round(source.score * 100)}%
                           </span>
                         )}
                         {source.category && (
@@ -598,9 +604,23 @@ export function SourcePanel({
                       <div className="mt-2 pt-2 border-t border-border/30">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[10px] text-muted-foreground">向量匹配度</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${getScoreTextColor(source.score).replace('text-', 'bg-').replace('-600', '-100')}`}>
-                            <span className={getScoreTextColor(source.score)}>{Math.round(source.score * 100)}%</span>
-                          </span>
+                        <div
+                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border`}
+                          style={{
+                            color: source.score >= 0.85
+                              ? '#10b981'
+                              : source.score >= 0.75
+                              ? '#6366f1'
+                              : source.score >= 0.5
+                              ? '#f59e0b'
+                              : '#ef4444',
+                            borderColor: 'currentColor',
+                            backgroundColor: 'rgba(0,0,0,0.03)',
+                            opacity: 0.9,
+                          }}
+                        >
+                          {Math.round(source.score * 100)}%
+                        </div>
                         </div>
                         <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
                           <div

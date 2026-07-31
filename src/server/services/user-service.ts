@@ -301,18 +301,29 @@ async seedDefaultSettings(options: SeedDefaultSettingsOptions): Promise<void> {
     // Get all admin users to check protection
     const { users: allAdmins } = await this.users.list({ role: 'admin' });
     const adminIds = new Set(allAdmins.map(u => u.id));
+    const currentAdminCount = adminIds.size;
 
     // Separate deletable and protected IDs
     const deletableIds: string[] = [];
     const protectedIds: string[] = [];
 
     for (const id of ids) {
-      if (adminIds.has(id) && adminIds.size <= 1) {
-        // This is the last admin, protect it
-        protectedIds.push(id);
-      } else if (adminIds.has(id)) {
-        // More than one admin, allow deletion
-        deletableIds.push(id);
+      if (adminIds.has(id)) {
+        // Check if this admin is the last one (only admin in the set)
+        if (currentAdminCount <= 1) {
+          // This is the last admin, protect it
+          protectedIds.push(id);
+        } else {
+          // More than one admin exists, allow deletion
+          // But we need to track that deleting this one reduces the count
+          const remainingAdmins = currentAdminCount - deletableIds.filter(did => adminIds.has(did)).length - 1;
+          if (remainingAdmins < 1) {
+            // Would leave no admins, protect this one
+            protectedIds.push(id);
+          } else {
+            deletableIds.push(id);
+          }
+        }
       } else {
         deletableIds.push(id);
       }

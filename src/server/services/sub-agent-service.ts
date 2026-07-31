@@ -200,7 +200,7 @@ export class SubAgentService {
     system_prompt: string;
     tools?: unknown[];
     knowledge_ids?: string[];
-    delegation_prompt?: string;
+    delegation_prompt?: string | null;
     collaboration_config?: Record<string, unknown>;
   }): Promise<{ subAgent: BotConfigRow }> {
     try {
@@ -238,7 +238,7 @@ export class SubAgentService {
     system_prompt?: string;
     tools?: unknown[];
     knowledge_ids?: string[];
-    delegation_prompt?: string;
+    delegation_prompt?: string | null;
     collaboration_config?: Record<string, unknown>;
     status?: string;
   }): Promise<{ subAgent: BotConfigRow }> {
@@ -763,20 +763,20 @@ export class SubAgentService {
     if (!childBot.collaboration_config) return collaborations;
 
     const config = childBot.collaboration_config as {
-      can_collaborate_with?: string[];
+      allow_collaborate_with?: string[];
       communication_mode?: string;
     };
 
-    if (!config.can_collaborate_with || config.can_collaborate_with.length === 0) {
+    if (!config.allow_collaborate_with || config.allow_collaborate_with.length === 0) {
       return collaborations;
     }
 
     // Batch-fetch all collaboration targets in one query (P2-2)
-    const targetBots = await this.botConfigRepo.findByIds(config.can_collaborate_with);
+    const targetBots = await this.botConfigRepo.findByIds(config.allow_collaborate_with);
     const activeMap = new Map(targetBots.filter(b => b.status === 'active').map(b => [b.id, b]));
 
     // Create collaboration requests only for active targets
-    for (const targetBotId of config.can_collaborate_with) {
+    for (const targetBotId of config.allow_collaborate_with) {
       if (!activeMap.has(targetBotId)) continue;
 
       // Create collaboration request

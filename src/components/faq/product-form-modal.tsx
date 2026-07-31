@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Plus, Trash2, Upload, ImageIcon, Ruler, Search, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SizeChartFormModal } from './size-chart-form-modal';
 
 interface ProductSpec {
@@ -162,7 +163,7 @@ interface ProductFormModalProps {
     name: string;
     sku: string;
     category: string;
-    parent_category?: string | undefined;
+    parent_category?: string | null;
     brand?: string | null;
     price?: number | null;
     original_price?: number | null;
@@ -863,28 +864,39 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">分类 <span className="text-red-500">*</span></label>
-                <select
+                <Select
                   value={form.category}
-                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                  onValueChange={(value) => setForm((f) => ({ ...f, category: value }))}
                 >
-                  {CATEGORY_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="请选择分类" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">父分类 <span className="text-red-500">*</span></label>
-                <select
-                  value={form.parent_category || ''}
-                  onChange={e => setForm(f => ({ ...f, parent_category: e.target.value }))}
-                  className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                <label className="block text-xs font-medium text-muted-foreground mb-1">父分类</label>
+                <Select
+                  value={form.parent_category || '__none__'}
+                  onValueChange={(value) => setForm((f) => ({ ...f, parent_category: value === '__none__' ? '' : value }))}
                 >
-                  <option value="">请选择父分类</option>
-                  {PARENT_CATEGORY_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="不设置" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PARENT_CATEGORY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">售价（元） <span className="text-red-500">*</span></label>
@@ -912,16 +924,22 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
               </div>
               {isEditing && (
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">状态 <span className="text-red-500">*</span></label>
-                  <select
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">状态</label>
+                  <Select
                     value={form.status}
-                    onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                    className="w-full px-3 py-2 pr-8 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                    onValueChange={(value) => setForm((f) => ({ ...f, status: value }))}
                   >
-                    {STATUS_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>

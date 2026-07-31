@@ -19,13 +19,14 @@ export interface ParsedSSEChunk {
   message_count?: number;
   /** True when the LLM stream timed out server-side */
   timed_out?: boolean;
+  /** Filtered content for frontend display consistency (sent when content was filtered) */
+  finalContent?: string;
   [key: string]: unknown;
 }
 
 export interface ConfidenceBreakdown {
   knowledge_score?: number;
   tool_score?: number;
-  llm_self_score?: number;
   sub_agent_score?: number;
   handoff_intent?: boolean;
   no_support?: boolean;
@@ -59,6 +60,8 @@ export interface SSEParseResult {
   hadError: boolean;
   /** Last error message from any error chunk, if present */
   error?: string;
+  /** Filtered content for display consistency (only present when content was filtered) */
+  finalContent?: string;
 }
 
 /**
@@ -141,6 +144,7 @@ export async function parseSSEStream(
   let lastTimedOut: boolean | undefined;
   let hadError = false;
   let lastError: string | undefined;
+  let lastFinalContent: string | undefined;
   // Carry-over text from the previous `value` chunk so data lines that span
   // multiple reads are reassembled correctly. Only complete lines (ending in
   // \n) are processed inside the loop; the residual stays for the next read.
@@ -200,6 +204,7 @@ export async function parseSSEStream(
       if (parsed.reason !== undefined) lastReason = parsed.reason;
       if (parsed.message_count !== undefined) lastMessageCount = parsed.message_count;
       if (parsed.timed_out !== undefined) lastTimedOut = parsed.timed_out;
+      if (parsed.finalContent !== undefined) lastFinalContent = parsed.finalContent;
     }
     if (parsed.error) {
       hadError = true;
@@ -274,6 +279,7 @@ export async function parseSSEStream(
     timed_out: lastTimedOut,
     hadError,
     error: lastError,
+    finalContent: lastFinalContent,
   };
 }
 

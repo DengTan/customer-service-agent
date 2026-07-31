@@ -15,7 +15,7 @@ interface LearningItem {
   confidence: number;
   conversation_id: string | null;
   conversation_title: string | null;
-  source_context: string | null;
+  source_context: Record<string, unknown> | null;
   category: string;
   status: 'pending' | 'approved' | 'rejected';
   reviewed_at: string | null;
@@ -604,7 +604,9 @@ export function KnowledgeLearningPage() {
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">来源对话摘要</label>
                   <div className="bg-muted/60 rounded-md px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">
-                    {editModal.item.source_context}
+                    {typeof editModal.item.source_context === 'string'
+                      ? editModal.item.source_context
+                      : JSON.stringify(editModal.item.source_context, null, 2)}
                   </div>
                 </div>
               )}

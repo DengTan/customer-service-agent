@@ -953,15 +953,10 @@ export function ChatWindow({
                             </div>
                             {expandedConfMsgId === msg.id && msg.confidence_breakdown && (() => {
                               const bd = msg.confidence_breakdown;
-                              const overallConf = msg.confidence;
-                              const llmSelfConf = bd.llm_self_score;
-                              const diff = llmSelfConf > 0 ? Math.abs(overallConf - llmSelfConf) : 0;
-                              const isCapped = bd.handoff_intent || diff > 0.3;
                               return (
                                 <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5 text-muted-foreground">
                                   <div className="flex justify-between gap-4"><span>知识库匹配</span><span>{bd.knowledge_score > 0 ? `${Math.round(bd.knowledge_score * 100)}%` : '-'}</span></div>
                                   <div className="flex justify-between gap-4"><span>工具调用</span><span>{bd.tool_score > 0 ? `${Math.round(bd.tool_score * 100)}%` : '-'}</span></div>
-                                  <div className="flex justify-between gap-4"><span>LLM自评</span><span>{bd.llm_self_score > 0 ? `${Math.round(bd.llm_self_score * 100)}%` : '-'}</span></div>
                                   <div className="flex justify-between gap-4"><span>子Agent</span><span>{bd.sub_agent_score > 0 ? `${Math.round(bd.sub_agent_score * 100)}%` : '-'}</span></div>
                                   {bd.handoff_intent && (
                                     <div className="text-red-500 flex items-center gap-1">
@@ -970,9 +965,6 @@ export function ChatWindow({
                                     </div>
                                   )}
                                   {bd.no_support && <div className="text-amber-500">⚠️ 无知识库/工具支撑，综合评分降低</div>}
-                                  {isCapped && !bd.handoff_intent && (
-                                    <div className="text-muted-foreground/70 italic">综合评分已根据权重调整</div>
-                                  )}
                                 </div>
                               );
                             })()}

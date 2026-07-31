@@ -1387,8 +1387,6 @@ export const llmModels = pgTable(
     model_id: varchar("model_id", { length: 100 }).notNull(), // API 中的模型 ID
     display_name: varchar("display_name", { length: 100 }).notNull(), // 显示名称
     description: text("description"), // 模型描述
-    // 模型能力
-    type: varchar("type", { length: 50 }).notNull().default("chat"), // chat / embedding / vision / audio
     max_tokens: integer("max_tokens"), // 最大输出 Token
     // 功能支持
     supports_vision: boolean("supports_vision").notNull().default(false),
@@ -1397,8 +1395,8 @@ export const llmModels = pgTable(
     // 性能参数
     default_temperature: doublePrecision("default_temperature").notNull().default(0.7),
     default_max_tokens: integer("default_max_tokens"), // 默认最大输出
-    // 用途标记
-    use_case: varchar("use_case", { length: 50 }).notNull().default("general"), // general / fast / quality / reasoning
+    // 优先级（用于自动选择模型，数字越大优先级越高）
+    priority: integer("priority").notNull().default(0),
     // 成本信息（可选）
     cost_per_1k_input: doublePrecision("cost_per_1k_input"), // 每 1000 输入 Token 成本
     cost_per_1k_output: doublePrecision("cost_per_1k_output"), // 每 1000 输出 Token 成本
@@ -1410,7 +1408,8 @@ export const llmModels = pgTable(
   },
   (table) => [
     index("llm_models_provider_idx").on(table.provider_id),
-    index("llm_models_type_idx").on(table.type),
     index("llm_models_enabled_idx").on(table.is_enabled),
+    index("llm_models_priority_idx").on(table.priority),
+    index("llm_models_select_idx").on(table.is_enabled, table.priority),
   ]
 );

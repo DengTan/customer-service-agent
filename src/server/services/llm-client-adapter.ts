@@ -314,11 +314,29 @@ export class LLMClientAdapter {
       chunk.content = delta.content;
     }
 
-    // NOTE: delta.reasoning is intentionally NOT forwarded to the client.
-    // Reasoning/thinking content from models like Sensenova contains internal thought
-    // processes that should never be shown to end users. This is handled separately
-    // in the streaming service for internal logging purposes only.
-    // if (delta && typeof delta.reasoning === 'string') { ... }
+    // Handle delta.reasoning_content (Sensenova/DeepSeek-style models)
+    // Models like deepseek-v4 return reasoning content that should be used as the visible response
+    if (delta && typeof delta.reasoning_content === 'string') {
+      // Prefer reasoning_content over empty content (DeepSeek-style models)
+      if (!chunk.content) {
+        chunk.content = delta.reasoning_content;
+      } else {
+        // Some models return both; concatenate for completeness
+        chunk.content = delta.reasoning_content + chunk.content;
+      }
+    }
+
+    // Handle delta.reasoning (alternative field name used by some providers)
+    if (delta && typeof delta.reasoning === 'string') {
+      if (!chunk.content) {
+        chunk.content = delta.reasoning;
+      }
+    }
+
+    // NOTE: Internal reasoning/thinking content from models is intentionally not shown
+    // to end users when there's actual content. The reasoning field may contain
+    // internal thought processes. Only use it as fallback when content is empty.
+    // Full reasoning content is available for internal logging purposes.
 
     // Handle message.content (non-streaming response shape — fallback for some providers)
     if (message && typeof message.content === 'string') {

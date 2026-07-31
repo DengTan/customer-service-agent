@@ -509,17 +509,17 @@ export class RetrievalOrchestrator {
     // Future: implement real reranker grade (relevant/ambiguous/irrelevant)
     const accepted = candidates.filter(c => c.relevanceScore >= effectiveMinScore);
 
-    // P0 fail-closed: public citations are presented only after a real cross-encoder
-    // has graded candidate relevance. This is an eligibility gate, not claim-level
-    // attribution: it does not prove every generated statement is supported.
-    //   - rerankDegraded=true  -> citations=[]
-    //   - rerankDegraded=false -> citations=accepted (relevance-graded)
+    // P0 fail-closed: public citations are shown only when retrieval produced results and there are
+    // accepted candidates above the minScore threshold. The rerankDegraded flag affects
+    // evidence quality (score reliability) but does NOT gate citation visibility.
+    // Previously this checked `rerankDegraded === false`, which hid all citations when
+    // the reranker fell back to mock mode — even when knowledge was successfully retrieved.
     //
-    // Internal context remains available to generation even when public citations
-    // are withheld. A future claim verifier can further narrow eligible citations.
-    const citations: CitationItem[] = rerankDegraded
-      ? []
-      : accepted.map(c => ({
+    // Rule: citations appear when sources were retrieved AND there are candidates above minScore.
+    // The rerankDegraded flag is propagated in the trace for observability but does NOT
+    // suppress citations.
+    const citations: CitationItem[] = (sources.length > 0 && accepted.length > 0)
+      ? accepted.map(c => ({
           type: 'knowledge',
           content: c.content,
           score: c.relevanceScore,
@@ -531,7 +531,8 @@ export class RetrievalOrchestrator {
           name: c.name,
           category: c.category,
           provenanceVersion: 2 as const,
-        }));
+        }))
+      : [];
 
     const trace: EvidenceTrace = {
       provenanceVersion: 2,

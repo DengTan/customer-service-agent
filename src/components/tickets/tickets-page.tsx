@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Search, Plus, Ticket, X, Play, MessageCircle, CheckCircle,
   Archive, Send, Clock, User, Link2, Loader2, UserCheck, AlertTriangle, Timer, TicketCheck,
@@ -120,11 +121,16 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
       {showAddRelation && (
         <div className="flex items-center gap-2 mb-3 p-2 bg-muted rounded">
           <input type="text" placeholder="工单编号" value={targetTicketNumber} onChange={e => setTargetTicketNumber(e.target.value)} className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs" />
-          <select value={relationType} onChange={e => setRelationType(e.target.value)} className="bg-background border border-border rounded px-2 py-1 text-xs">
-            <option value="related">关联</option>
-            <option value="blocks">阻塞</option>
-            <option value="duplicates">重复</option>
-          </select>
+          <Select value={relationType} onValueChange={setRelationType}>
+            <SelectTrigger className="bg-background border border-border rounded px-2 py-1 text-xs h-auto w-auto">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="related">关联</SelectItem>
+              <SelectItem value="blocks">阻塞</SelectItem>
+              <SelectItem value="duplicates">重复</SelectItem>
+            </SelectContent>
+          </Select>
           <button onClick={handleAddRelation} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded">确认</button>
         </div>
       )}
@@ -580,53 +586,57 @@ export default function TicketsPage() {
                   className="w-full bg-muted border-none rounded-md pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
                 />
               </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-              >
-                <option value="all">全部状态</option>
-                {Object.entries(TICKET_STATUS_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-              <select
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
-                className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-              >
-                <option value="all">全部优先级</option>
-                {Object.entries(TICKET_PRIORITY_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-              <select
-                value={filterCategory}
-                onChange={(e) => { setFilterCategory(e.target.value); handlePageChange(1); }}
-                className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-              >
-                <option value="all">全部分类</option>
-                {dynamicCategories.length > 0
-                  ? dynamicCategories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)
-                  : ['refund', 'logistics', 'product', 'account', 'other'].map((c) => <option key={c} value={c}>{c}</option>)
-                }
-              </select>
-              <select
-                value={`${sortField}:${sortOrder}`}
-                onChange={(e) => {
-                  const [field, order] = e.target.value.split(':');
-                  setSortField(field);
-                  setSortOrder(order as 'asc' | 'desc');
-                  setCurrentPage(1);
-                }}
-                className="bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-              >
-                <option value="created_at:desc">创建时间 (新→旧)</option>
-                <option value="created_at:asc">创建时间 (旧→新)</option>
-                <option value="updated_at:desc">更新时间 (新→旧)</option>
-                <option value="priority:desc">优先级 (高→低)</option>
-                <option value="priority:asc">优先级 (低→高)</option>
-              </select>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="全部状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部状态</SelectItem>
+                  {Object.entries(TICKET_STATUS_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterPriority} onValueChange={setFilterPriority}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="全部优先级" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部优先级</SelectItem>
+                  {Object.entries(TICKET_PRIORITY_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterCategory} onValueChange={(v) => { setFilterCategory(v); handlePageChange(1); }}>
+                <SelectTrigger className="w-36">
+                  <SelectValue placeholder="全部分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部分类</SelectItem>
+                  {dynamicCategories.length > 0
+                    ? dynamicCategories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)
+                    : ['refund', 'logistics', 'product', 'account', 'other'].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)
+                  }
+                </SelectContent>
+              </Select>
+              <Select value={`${sortField}:${sortOrder}`} onValueChange={(v) => {
+                const [field, order] = v.split(':');
+                setSortField(field);
+                setSortOrder(order as 'asc' | 'desc');
+                setCurrentPage(1);
+              }}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="created_at:desc">创建时间 (新→旧)</SelectItem>
+                  <SelectItem value="created_at:asc">创建时间 (旧→新)</SelectItem>
+                  <SelectItem value="updated_at:desc">更新时间 (新→旧)</SelectItem>
+                  <SelectItem value="priority:desc">优先级 (高→低)</SelectItem>
+                  <SelectItem value="priority:asc">优先级 (低→高)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -782,21 +792,31 @@ export default function TicketsPage() {
                     {batchAction === 'category' && `修改 ${selectedIds.size} 个工单的分类`}
                   </p>
                   {batchAction === 'priority' && (
-                    <select value={batchPriority} onChange={e => setBatchPriority(e.target.value as TicketPriority)} className="w-full mb-3 px-3 py-2 text-sm border border-border rounded bg-background">
-                      <option value="urgent">紧急</option>
-                      <option value="high">高</option>
-                      <option value="medium">中</option>
-                      <option value="low">低</option>
-                    </select>
+                    <Select value={batchPriority} onValueChange={(v) => setBatchPriority(v as TicketPriority)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="urgent">紧急</SelectItem>
+                        <SelectItem value="high">高</SelectItem>
+                        <SelectItem value="medium">中</SelectItem>
+                        <SelectItem value="low">低</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )}
                   {batchAction === 'category' && (
-                    <select value={batchCategory} onChange={e => setBatchCategory(e.target.value as TicketCategory)} className="w-full mb-3 px-3 py-2 text-sm border border-border rounded bg-background">
-                      <option value="refund">退款</option>
-                      <option value="logistics">物流</option>
-                      <option value="product">商品</option>
-                      <option value="account">账户</option>
-                      <option value="other">其他</option>
-                    </select>
+                    <Select value={batchCategory} onValueChange={(v) => setBatchCategory(v as TicketCategory)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="refund">退款</SelectItem>
+                        <SelectItem value="logistics">物流</SelectItem>
+                        <SelectItem value="product">商品</SelectItem>
+                        <SelectItem value="account">账户</SelectItem>
+                        <SelectItem value="other">其他</SelectItem>
+                      </SelectContent>
+                    </Select>
                   )}
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setBatchAction(null)} className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">取消</button>
@@ -1179,34 +1199,36 @@ export default function TicketsPage() {
                   <label className="text-sm font-medium text-foreground mb-1.5 block">
                     分类 <span className="text-destructive">*</span>
                   </label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value as TicketCategory)}
-                    className="w-full bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-                  >
-                    {dynamicCategories.length > 0
-                      ? dynamicCategories.map(cat => (
-                        <option key={cat.id} value={cat.name}>{cat.name}</option>
-                      ))
-                      : Object.entries(TICKET_CATEGORY_LABELS).map(([k, v]) => (
-                        <option key={k} value={k}>{v}</option>
-                      ))
-                    }
-                  </select>
+                  <Select value={newCategory} onValueChange={(v) => setNewCategory(v as TicketCategory)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {dynamicCategories.length > 0
+                        ? dynamicCategories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                        ))
+                        : Object.entries(TICKET_CATEGORY_LABELS).map(([k, v]) => (
+                          <SelectItem key={k} value={k}>{v}</SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground mb-1.5 block">
                     优先级 <span className="text-destructive">*</span>
                   </label>
-                  <select
-                    value={newPriority}
-                    onChange={(e) => setNewPriority(e.target.value as TicketPriority)}
-                    className="w-full bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-                  >
-                    {Object.entries(TICKET_PRIORITY_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>{v}</option>
-                    ))}
-                  </select>
+                  <Select value={newPriority} onValueChange={(v) => setNewPriority(v as TicketPriority)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(TICKET_PRIORITY_LABELS).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div>
@@ -1221,21 +1243,22 @@ export default function TicketsPage() {
                   className="w-full bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
                 />
               </div>
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">
-                  指派人 <span className="text-muted-foreground text-xs font-normal">(可选)</span>
-                </label>
-                <select
-                  value={newAssigneeId}
-                  onChange={(e) => setNewAssigneeId(e.target.value)}
-                  className="w-full bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-                >
-                  <option value="">不指派</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>{u.name || u.email}</option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">
+                    指派人 <span className="text-muted-foreground text-xs font-normal">(可选)</span>
+                  </label>
+                  <Select value={newAssigneeId} onValueChange={setNewAssigneeId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="不指派" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">不指派</SelectItem>
+                      {users.map(u => (
+                        <SelectItem key={u.id} value={u.id}>{u.name || u.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">描述</label>
                 <textarea
@@ -1257,16 +1280,17 @@ export default function TicketsPage() {
                         {field.is_required && <span className="text-destructive ml-0.5">*</span>}
                       </label>
                       {field.field_type === 'select' && field.options ? (
-                        <select
-                          value={customFieldValues[field.id] || ''}
-                          onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.id]: e.target.value }))}
-                          className="w-full bg-muted border-none rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-                        >
-                          <option value="">请选择</option>
-                          {field.options.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
+                        <Select value={customFieldValues[field.id] || '__none__'} onValueChange={(v) => setCustomFieldValues(prev => ({ ...prev, [field.id]: v === '__none__' ? '' : v }))}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="请选择" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">请选择</SelectItem>
+                            {field.options.map(opt => (
+                              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : field.field_type === 'date' ? (
                         <input
                           type="date"

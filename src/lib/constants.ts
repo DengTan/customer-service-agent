@@ -77,6 +77,15 @@ export const CONTENT_FILTER = {
 } as const;
 
 // ============================================================
+// 用户与头像
+// ============================================================
+export const USER = {
+  AVATAR_MAX_SIZE_BYTES: 2 * 1024 * 1024, // 2MB
+  AVATAR_MAX_URL_LENGTH: 2048,
+  ALLOWED_AVATAR_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+} as const;
+
+// ============================================================
 // 前端轮询与搜索
 // ============================================================
 export const FRONTEND = {
@@ -98,4 +107,11 @@ export const TICKET = {
   BATCH_MAX_SIZE: 100,
   EXPORT_MAX_ROWS: 5000,
   CUSTOMER_TICKET_LIMIT: 20,
+} as const;
+
+// ============================================================
+// 权限服务
+// ============================================================
+export const PERMISSION = {
+  CACHE_TTL_MS: 60_000, // 60s - in-memory permission cache TTL
 } as const;

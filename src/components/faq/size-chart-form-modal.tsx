@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Upload, Ruler, Eye, Edit3, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface SizeColumn {
   key: string;
@@ -490,13 +491,18 @@ export function SizeChartFormModal({
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">尺码表类型</label>
-                <select
-                  value={form.chart_type}
-                  onChange={e => handleChartTypeChange(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {CHART_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                <Select value={form.chart_type} onValueChange={handleChartTypeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CHART_TYPE_OPTIONS.map(o => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1.5">分类</label>

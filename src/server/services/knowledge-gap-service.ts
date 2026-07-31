@@ -79,8 +79,21 @@ export class KnowledgeGapService {
     status?: KnowledgeGapStatus | KnowledgeGapStatus[];
     minFrequency?: number;
     limit?: number;
+    offset?: number;
+    search?: string;
   }) {
     return this.repo.list(params);
+  }
+
+  /**
+   * Count gap signals for pagination.
+   */
+  async countGaps(params: {
+    status?: KnowledgeGapStatus | KnowledgeGapStatus[];
+    minFrequency?: number;
+    search?: string;
+  }) {
+    return this.repo.count(params);
   }
 
   async getGap(id: string) {

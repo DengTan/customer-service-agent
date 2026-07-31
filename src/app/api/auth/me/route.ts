@@ -8,6 +8,7 @@ import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/
 import { verifyToken, extractTokenFromCookies } from '@/lib/auth/jwt';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { logger } from '@/lib/logger';
 
 const userRepo = new UserRepository();
 
@@ -53,16 +54,30 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   let agentStatus: string | null = null;
   try {
     const supabase = getSupabaseClient();
-    const { data: sessionData } = await supabase
+    const { data: sessionData, error: sessionError } = await supabase
       .from('agent_sessions')
       .select('status')
       .eq('user_id', payload.sub)
       .order('last_active_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    agentStatus = sessionData?.status || null;
-  } catch {
-    // Silently fail, agentStatus remains null
+    
+    if (sessionError) {
+      logger.error('[Auth] Failed to query agent session for current user', {
+        userId: payload.sub,
+        error: sessionError.message,
+      });
+    } else if (sessionData?.status) {
+      agentStatus = sessionData.status;
+    } else {
+      // Session exists but no status or no session found - this is normal for non-agent users
+      logger.debug('[Auth] No agent session found for user', { userId: payload.sub });
+    }
+  } catch (error) {
+    logger.error('[Auth] Error querying agent session for current user', {
+      userId: payload.sub,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return apiSuccess({

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { withErrorHandler, apiError } from '@/lib/api-utils';
+import { withErrorHandler, apiError, apiSuccess } from '@/lib/api-utils';
 import { SizeChartService } from '@/server/services/size-chart-service';
 
 const sizeChartService = new SizeChartService();

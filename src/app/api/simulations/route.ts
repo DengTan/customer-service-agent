@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, getAuthenticatedUserId, apiError, extractUserRole } from '@/lib/api-utils';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
+import { SettingsService } from '@/server/services/settings-service';
 import { logger } from '@/lib/logger';
 
 // UUID format validation regex - accept any valid UUID format (8-4-4-4-12 hex)
@@ -70,6 +71,20 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     bot_name: botName,
     created_by: userId,
   });
+
+  // Insert welcome message if configured
+  const settingsService = new SettingsService();
+  const settings = await settingsService.getSettingsMap();
+  const welcomeMessage = settings.welcome_message;
+  if (welcomeMessage && welcomeMessage.trim()) {
+    await simulationRepository.createMessage({
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      conversation_id: simulation.id,
+      role: 'assistant',
+      content: welcomeMessage.trim(),
+      confidence: 1.0,
+    });
+  }
 
   return apiSuccess({ conversation: simulation }, HttpStatus.CREATED);
 });

@@ -16,7 +16,7 @@ export interface ProductCardData {
   id: string;
   name: string;
   sku: string;
-  price: string;
+  price: number;
   image_url?: string;
   description?: string;
 }
@@ -97,7 +97,7 @@ export function ProductPicker({ open, onOpenChange, onSelect }: ProductPickerPro
       id: product.id,
       name: product.name,
       sku: product.sku,
-      price: product.price != null ? String(product.price) : '',
+      price: product.price != null ? Number(product.price) : 0,
       image_url: product.image_urls?.[0] || undefined,
       description: product.description || undefined,
     };

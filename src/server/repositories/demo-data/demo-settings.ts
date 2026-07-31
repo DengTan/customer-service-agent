@@ -4,6 +4,7 @@ import type { SettingRow } from '../types';
 export const DEMO_SETTINGS: SettingRow[] = [
   { key: 'theme', value: 'light' },
   { key: 'language', value: 'zh-CN' },
+  { key: 'welcome_message', value: '您好！我是您的智能客服助手，有什么可以帮您的吗？' },
   { key: 'ai_model_enabled', value: 'true' },
   { key: 'ai_model', value: 'gpt-4o-mini' },
   { key: 'multimodal_model', value: 'gpt-4o' },

@@ -450,7 +450,7 @@ export interface KnowledgeLearningRow {
   confidence: number;
   conversation_id?: string | null;
   conversation_title?: string | null;
-  source_context?: string | null;
+  source_context?: Record<string, unknown> | null;
   category?: string | null;
   status: string;
   reviewed_by?: string | null;
@@ -469,7 +469,7 @@ export interface LlmProviderRow {
   description?: string | null;
   base_url: string;
   api_key?: string | null;
-  models: unknown[];
+  models: string[];
   default_model?: string | null;
   supports_vision: boolean;
   supports_streaming: boolean;
@@ -489,14 +489,12 @@ export interface LlmModelRow {
   model_id: string;
   display_name: string;
   description?: string | null;
-  type: string;
   max_tokens?: number | null;
   supports_vision: boolean;
   supports_streaming: boolean;
   supports_function_calling: boolean;
-  default_temperature: number;
   default_max_tokens?: number | null;
-  use_case: string;
+  priority: number;
   cost_per_1k_input?: number | null;
   cost_per_1k_output?: number | null;
   is_enabled: boolean;

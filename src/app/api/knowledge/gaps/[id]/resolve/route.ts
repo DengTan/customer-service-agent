@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandler, requireRole } from '@/lib/api-utils';
+import { apiSuccess, parseJsonBody, withErrorHandler, requireRole, getAuthenticatedUserId } from '@/lib/api-utils';
 import { KnowledgeGapService } from '@/server/services/knowledge-gap-service';
 
 const ADMIN_ONLY = ['admin'];
@@ -7,6 +7,7 @@ const service = new KnowledgeGapService();
 
 interface ResolveBody {
   linkedKnowledgeItemId?: string;
+  linked_knowledge_item_id?: string;
   notes?: string;
 }
 
@@ -21,11 +22,12 @@ export const POST = withErrorHandler(async (
   if (!id) return apiSuccess({ success: false, error: 'id is required' });
 
   const { data: body } = await parseJsonBody<ResolveBody>(request);
-  const role = request.headers.get('x-user-role') || 'admin';
+  const userId = getAuthenticatedUserId(request) ?? 'admin';
 
   const gap = await service.resolveGap(id, {
-    resolvedBy: role,
-    linkedKnowledgeItemId: body?.linkedKnowledgeItemId,
+    resolvedBy: userId,
+    // 支持 camelCase 和 snake_case 两种格式
+    linkedKnowledgeItemId: body?.linkedKnowledgeItemId ?? body?.linked_knowledge_item_id,
     notes: body?.notes,
   });
   return apiSuccess({ gap });

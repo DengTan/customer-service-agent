@@ -204,7 +204,7 @@ export const POST = withErrorHandler(async (
             content: responseText,
             sources: [{ type: 'auto_reply', keyword: autoReply.rule.keyword }],
             confidence: 1.0,
-            confidence_breakdown: { knowledge_score: 0, tool_score: 0, llm_self_score: 1.0, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 1.0 },
+            confidence_breakdown: { knowledge_score: 0, tool_score: 0, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 1.0 },
           });
 
           // Get updated message count for frontend (graceful degradation: if count fails, omit the field)
@@ -254,7 +254,8 @@ export const POST = withErrorHandler(async (
         // Initialize LLM streaming service
         const llmStreamingService = new LLMStreamingService();
 
-        // Load LLM provider configuration if set
+        // Load LLM provider configuration using unified method
+        const llmProviderId = appSettings.llm_provider_id;
         let llmProviderConfig: {
           providerId?: string;
           providerBaseUrl?: string;
@@ -262,40 +263,30 @@ export const POST = withErrorHandler(async (
           defaultModel?: string;
         } = {};
 
-        const llmProviderId = appSettings.llm_provider_id;
         try {
           const { LlmProviderService } = await import('@/server/services/llm-provider-service');
           const llmService = new LlmProviderService();
 
-          let provider: Awaited<ReturnType<typeof llmService.getProvider>> = null;
-          if (llmProviderId) {
-            provider = await llmService.getProvider(llmProviderId);
-            if (!provider) provider = await llmService.getProviderByName(llmProviderId);
-            if (!provider) provider = await llmService.getProviderByNameWithDecryptedKey(llmProviderId);
-          }
-          if (!provider) {
-            provider = await llmService.getDefaultProvider();
-          }
-
-          if (provider && provider.is_enabled) {
-            const providerWithKey = await llmService.getProviderByNameWithDecryptedKey(provider.name);
+          // Use unified config loader (handles lookup + decryption)
+          const providerConfig = await llmService.loadProviderConfig(llmProviderId);
+          if (providerConfig) {
             llmProviderConfig = {
-              providerId: provider.id,
-              providerBaseUrl: provider.base_url,
-              providerApiKey: providerWithKey?.api_key || provider.api_key || '',
-              defaultModel: provider.default_model || undefined,
+              providerId: providerConfig.providerId,
+              providerBaseUrl: providerConfig.providerBaseUrl,
+              providerApiKey: providerConfig.providerApiKey,
+              defaultModel: providerConfig.defaultModel,
             };
-            logger.api.info('Using LLM provider', {
-              providerId: provider.id,
-              name: provider.name,
-              baseUrl: provider.base_url,
+            logger.api.info('[Simulation] Using LLM provider', {
+              providerId: llmProviderConfig.providerId,
+              name: providerConfig.providerName,
+              baseUrl: llmProviderConfig.providerBaseUrl,
               apiKeyLength: llmProviderConfig.providerApiKey?.length || 0,
             });
           } else {
-            logger.api.warn('No enabled LLM provider found', { providerId: llmProviderId });
+            logger.api.warn('[Simulation] No enabled LLM provider found', { providerId: llmProviderId });
           }
         } catch (error) {
-          logger.api.warn('Failed to load LLM provider config for simulation', {
+          logger.api.warn('[Simulation] Failed to load LLM provider config', {
             error,
             providerId: llmProviderId,
             conversationId,
@@ -306,10 +297,14 @@ export const POST = withErrorHandler(async (
         // This avoids a cryptic "LLM Provider 未配置" error bubbling up from deep inside
         // LLMStreamingService and surfacing as a generic "处理消息时发生错误" toast.
         if (!llmProviderConfig.providerBaseUrl || !llmProviderConfig.providerApiKey) {
-          return apiError('未配置 LLM Provider：请在「设置 → AI 模型」中配置并启用 LLM 提供商', {
-            status: HttpStatus.BAD_REQUEST,
-            code: 'NO_LLM_PROVIDER',
-          });
+          const errMsg = '未配置 LLM Provider：请在「设置 → AI 模型」中配置并启用 LLM 提供商';
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            error: true,
+            errorMessage: errMsg,
+            type: 'no_llm_provider',
+          })}\n\n`));
+          controller.close();
+          return;
         }
 
         // P2-A: Check AI max concurrent conversations — same guard as conversation path.
@@ -442,7 +437,7 @@ export const POST = withErrorHandler(async (
             content: (cleanContent || fullContent) + '\n\n[响应超时，请刷新页面重试]',
             sources: timedOutSources.length > 0 ? timedOutSources : undefined,
             confidence: 0.5,
-            confidence_breakdown: { knowledge_score: 0, tool_score: 0, llm_self_score: 0.5, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 0.5 },
+            confidence_breakdown: { knowledge_score: 0, tool_score: 0, sub_agent_score: 0, handoff_intent: false, no_support: false, final: 0.5 },
           });
 
           // Get message count — count failure is non-fatal so the reply is not lost

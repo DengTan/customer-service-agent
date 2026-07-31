@@ -11,7 +11,7 @@
 - **Language**: TypeScript 5
 - **UI**: shadcn/ui + Tailwind CSS 4
 - **Database**: Supabase (PostgreSQL)
-- **AI**: coze-coding-dev-sdk (LLM + Knowledge)
+- **AI**: Ollama (LLM 对话 + 向量嵌入) + pgvector (向量存储与检索)
 
 ### 核心架构
 
@@ -249,10 +249,10 @@ node scripts/db-admin.js init
 
 | 表名 | 用途 | 关键字段 |
 |------|------|---------|
-| `knowledge_items` | 知识库条目 | id, title, name, type(text/url/file/image), category, parent_category, content_hash, doc_ids, chunk_count, hit_count, last_hit_at, image_url |
-| `knowledge_chunks` | 文本分片 | id, knowledge_item_id, chunk_index, content, content_hash, doc_id, version_added, version_removed |
+| `knowledge_items` | 知识库条目 | id, title, name, type(text/url/file/image), category, parent_category, content_hash, **embedding**(pgvector), chunk_count, hit_count, last_hit_at, image_url |
+| `knowledge_chunks` | 文本分片 | id, knowledge_item_id, chunk_index, content, content_hash, version_added, version_removed |
 | `knowledge_versions` | 版本历史 | id, knowledge_item_id, version_number, content, chunk_diff(jsonb), chunk_count |
-| `knowledge_import_jobs` | 导入任务 | id, status, progress, chunks_preview, doc_ids |
+| `knowledge_import_jobs` | 导入任务 | id, status, progress, chunks_preview |
 | `knowledge_learning_queue` | 知识自学习 | id, question, answer, confidence, source_conversation_id, category, status |
 
 #### 客户与营销表
@@ -319,8 +319,8 @@ node scripts/db-admin.js init
 
 | 表名 | 用途 | 关键字段 |
 |------|------|---------|
-| `product_details` | 商品详情 | id, name, sku, category, brand, price, specifications(jsonb), features, description, image_urls, status, doc_ids, content_hash, hit_count, platform_connection_id |
-| `size_charts` | 尺码配置 | id, name, category, chart_type, product_id, size_columns(jsonb), size_rows(jsonb), recommend_params(jsonb), image_url, doc_ids, status, hit_count |
+| `product_details` | 商品详情 | id, name, sku, category, brand, price, specifications(jsonb), features, description, image_urls, status, **embedding**(pgvector), content_hash, hit_count, platform_connection_id |
+| `size_charts` | 尺码配置 | id, name, category, chart_type, product_id, size_columns(jsonb), size_rows(jsonb), recommend_params(jsonb), image_url, **embedding**(pgvector), status, hit_count |
 | `size_chart_versions` | 尺码表版本 | id, size_chart_id, version_number, content_snapshot(jsonb), description |
 
 #### Gorgias 集成表
@@ -334,7 +334,6 @@ node scripts/db-admin.js init
 | 脚本 | 说明 |
 |------|------|
 | `supabase/migrations/20260627_complete_schema_all.sql` | 完整数据库结构（54 表） |
-| `supabase/migrations/20260627_migrate_coze_supabase.sql` | 补充表迁移（6 表） |
 | `supabase/migrations/20260710_gorgias_message_dedup.sql` | Gorgias 消息去重索引 |
 | `supabase/migrations/20260624_gorgias_metadata.sql` | Gorgias 元数据字段 |
 
@@ -350,7 +349,7 @@ node scripts/db-admin.js init
 | settings | 系统配置键值对 |
 | shops | 店铺管理（名称、平台、知识库关联、业务配置jsonb、账号配额、联系信息、状态） |
 | shop_agent_accounts | 店铺客服账号（店铺ID、账号名、AES加密密码、平台、状态，级联删除） |
-| knowledge_items | 知识库条目追踪（标题、名称、类型text/url/file、分类、父分类、content_hash去重、doc_ids、chunk_count、hit_count引用次数、last_hit_at、image_url） |
+| knowledge_items | 知识库条目追踪（标题、名称、类型text/url/file、分类、父分类、content_hash去重、**embedding(pgvector)**、chunk_count、hit_count引用次数、last_hit_at、image_url） |
 | alerts | 异常对话告警（类型、严重度、消息、是否已处理） |
 | knowledge_learning_queue | 知识自学习候选队列（问题、答案、置信度、来源对话、分类、审核状态） |
 | push_templates | 推送模板（名称、触发事件、内容模板、渠道、启用状态） |
@@ -380,8 +379,8 @@ node scripts/db-admin.js init
 | knowledge_versions | 知识库版本历史（条目ID、版本号、标题、内容、变更摘要、创建人） |
 | agent_delegations | 子Agent委派记录（对话ID、父/子Bot ID、触发意图、输入消息、结果内容、置信度、状态、错误信息） |
 | agent_collaborations | 子Agent协作通信（对话ID、委派ID、发送/接收Bot ID、消息类型、内容、上下文、状态） |
-| product_details | 商品详情（名称/SKU/分类/品牌/价格/规格/卖点/描述/图片，含向量文档ID、引用计数） |
-| size_charts | 尺码配置（名称/类型/分类/关联商品/尺码列定义/尺码数据行/推荐参数/描述，含向量文档ID、引用计数） |
+| product_details | 商品详情（名称/SKU/分类/品牌/价格/规格/卖点/描述/图片，含 **embedding(pgvector)** 向量、引用计数） |
+| size_charts | 尺码配置（名称/类型/分类/关联商品/尺码列定义/尺码数据行/推荐参数/描述，含 **embedding(pgvector)** 向量、引用计数） |
 | size_chart_versions | 尺码表版本历史（尺码表ID、版本号、内容快照、变更描述、创建时间） |
 | knowledge_import_jobs | 知识库导入任务（进度追踪、多阶段状态、chunks预览） |
 
@@ -923,7 +922,7 @@ POST /api/knowledge/import-jobs
    ↓
 [Stage 3] 本地文本切分 (40-60%) → 保存 chunks_preview
    ↓
-[Stage 4] Coze向量化 (60-90%)
+[Stage 4] Ollama向量化 (60-90%)
    ↓
 [Stage 5] 保存知识条目 (90-100%)
 ```
@@ -932,7 +931,7 @@ POST /api/knowledge/import-jobs
 
 | 表名 | 用途 |
 |------|------|
-| knowledge_import_jobs | 导入任务记录（进度、chunks预览、doc_ids） |
+| knowledge_import_jobs | 导入任务记录（进度、chunks预览） |
 
 ### 关键文件
 
@@ -1017,7 +1016,7 @@ POST /api/knowledge/import-jobs
 | 富消息按钮无交互 | 添加 CardAction 回调，连接退款确认等操作 | `rich-message-card.tsx`, `chat-window.tsx` |
 | 硬编码坐席 ID | 改用 useAuth().user.id 动态获取 | `conversation-detail.tsx`, `workspace-page.tsx` |
 | JWT Secret 弱校验 | 生产环境强制要求配置，不允许默认密钥 | `src/lib/auth/jwt.ts` |
-| 预览环境登录失效 | Middleware 在 Edge Runtime 无法访问运行时 env vars，改为 payload 解码 + API 层完整验证；Cookie secure 属性根据 COZE_PROJECT_ENV 调整 | `src/middleware.ts`, `src/lib/auth/jwt.ts` |
+| 预览环境登录失效 | Middleware 在 Edge Runtime 无法访问运行时 env vars，改为 payload 解码 + API 层完整验证；Cookie secure 属性根据平台环境调整 | `src/middleware.ts`, `src/lib/auth/jwt.ts` |
 
 ### 已修复问题（2026-06-24）- 数据分析页面
 
@@ -1309,7 +1308,7 @@ src/server/services/tool-providers/
 | 未指派工单告警 | 扫描创建超过阈值未指派的工单 | `/api/admin/scheduler/run?tasks=unassigned_check` |
 | 超时会话提醒 | 扫描最后一条消息来自用户且超时的活跃会话（1小时去重） | `/api/admin/scheduler/run?tasks=unhandled_check` |
 | 定时营销投放 | 执行已到期的定时营销活动 | `/api/admin/scheduler/run?tasks=scheduled_campaigns` |
-| 外部 Cron 触发 | 外部定时器（如 crontab / Coze 平台定时）调用 API 触发调度 | — |
+| 外部 Cron 触发 | 外部定时器（如 crontab / 平台定时任务）调用 API 触发调度 | — |
 
 ---
 
@@ -1373,9 +1372,9 @@ function isDemoMode(): boolean {
 - **Demo 模式**：返回静态假数据，CRUD 操作不持久化（适合 UI 展示）
 - **真实模式**：所有 CRUD 操作真实写入 Supabase 数据库
 
-当前 Coze 平台已自动注入 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`，项目运行在真实模式下。
+当前平台环境已自动注入 `SUPABASE_URL`、`SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`，项目运行在真实模式下。
 
-### Coze 平台 Supabase 配置详解
+### 平台环境 Supabase 配置详解
 
 #### 连接方式
 
@@ -1404,7 +1403,7 @@ node scripts/db-admin.js migrate
 node scripts/db-admin.js init
 ```
 
-详细配置说明见 `COZE_PLATFORM_CONFIG.md`。
+详细配置说明见 `PLATFORM_CONFIG.md`。
 
 ### 数据持久化验证（2026-06-10）
 
@@ -1485,7 +1484,7 @@ node scripts/db-admin.js init
 
 #### 五、Demo 模式内存数据（仅 `isDemoMode()` 为 true 时生效）
 
-> **重要**：当前 Coze 平台已注入 Supabase 环境变量，项目运行在**真实模式**，以下数据不生效。此处仅作记录。
+> **重要**：当前平台环境已注入 Supabase 环境变量，项目运行在**真实模式**，以下数据不生效。此处仅作记录。
 
 | Repository | 变量名 | 数据量 | 说明 |
 |------------|--------|--------|------|
@@ -1845,7 +1844,6 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 | usage_instructions | text | 使用说明 |
 | image_urls | text[] | 商品图片URL数组 |
 | status | varchar(20) | on_sale/off_sale/discontinued |
-| doc_ids | jsonb | Coze SDK 向量文档ID列表 |
 | content_hash | varchar(64) | SHA-256内容哈希（去重） |
 | tags | varchar(50)[] | 标签 |
 | platform_connection_id | UUID FK | 所属店铺（多店铺支持） |
@@ -1860,8 +1858,8 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 
 ### 关键架构决策
 
-1. **独立存储，不走 knowledge_items 中转**：商品数据存在 `product_details` 表，Coze 向量文档的 doc_ids 直接存于 `doc_ids` 字段。不在 `knowledge_items` 中创建关联行。
-2. **向量文档生命周期**：创建商品时向量化 → 上架/下架时更新 doc_ids 状态 → 删除时清理向量文档
+1. **独立存储，不走 knowledge_items 中转**：商品数据存在 `product_details` 表，向量直接存储于 `embedding` 字段（pgvector 兼容）。不在 `knowledge_items` 中创建关联行。
+2. **向量生命周期**：创建商品时向量化 → 上架/下架时更新 embedding 状态 → 删除时清空向量
 3. **与知识库搜索打通**：`knowledge-search-service.search()` 返回结果后处理，如包含商品类文档则附加 `product_id`；AI 回复时注入商品上下文
 
 ### 关键文件
@@ -1929,7 +1927,6 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 | recommend_rules | text | 推荐规则说明（自然语言，供LLM理解） |
 | description | text | 尺码表补充说明（如"偏小一码建议选大一号"） |
 | image_url | varchar(500) | 尺码表图片URL（可选） |
-| doc_ids | jsonb | Coze SDK 向量文档ID |
 | content_hash | varchar(64) | SHA-256 去重哈希 |
 | status | varchar(20) | `active` / `disabled` |
 | hit_count | integer | AI引用次数 |
@@ -2053,62 +2050,3 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 | 包管理器 | pnpm |
 | 可预览 | enabled |
 
-### 根 `.coze` 配置
-
-位置：`/workspace/projects/.coze`
-
-```toml
-[project]
-sub_id = "835864e9"
-name = "smartassist"
-requires = ["nodejs-24"]
-project_type = "web"
-
-[preview]
-preview_enable = "enabled"
-
-[dev]
-build = ["bash", "./scripts/prepare.sh"]
-run = ["bash", "./scripts/dev.sh"]
-validate = ["bash", "./scripts/validate.sh"]
-deps = ["git"]
-
-[deploy.profile]
-kind = "service"
-flavor = "web"
-
-[deploy]
-build = ["bash", "./scripts/build.sh"]
-run = ["bash", "./scripts/start.sh"]
-deps = ["git"]
-
-[subprojects]
-path = ["."]
-```
-
-### 预览链路修复记录
-
-**问题**：`server.ts` 依赖 `HOSTNAME` 环境变量确定绑定地址，但 `dev.sh` 和 `start.sh` 未设置此变量，导致服务绑定到 `localhost` 而非 `0.0.0.0`。
-
-**修复**：
-1. `scripts/dev.sh`：添加 `HOSTNAME=0.0.0.0` 环境变量，传递到启动命令
-2. `scripts/start.sh`：添加 `HOSTNAME=0.0.0.0` 环境变量，传递到启动命令
-
-**验证结果**：
-- 端口绑定：`*:5000`（IPv4 全接口）
-- `/login` 返回 200
-- `/` 返回 307（重定向到登录页面）
-
-### 关键脚本
-
-| 脚本 | 职责 |
-|------|------|
-| `scripts/prepare.sh` | 安装依赖（pnpm install） |
-| `scripts/dev.sh` | 启动开发预览服务（端口 5000，绑定 0.0.0.0） |
-| `scripts/validate.sh` | 运行类型检查和 lint |
-| `scripts/build.sh` | 构建生产产物（Next.js + tsup） |
-| `scripts/start.sh` | 启动生产服务（端口 5000，绑定 0.0.0.0） |
-
-### 预览访问
-
-预览服务已在 5000 端口运行，可通过平台分配的访问地址访问。

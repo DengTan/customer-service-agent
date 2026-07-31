@@ -13,10 +13,9 @@ const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 const CollaborationConfigSchema = z
   .object({
-    auto_delegate_intents: z.array(z.string().max(100)).max(20).optional(),
-    allow_collaborate_with: z.array(z.string().max(100)).max(10).optional(),
-  })
-  .strict();
+    auto_delegate_intents: z.array(z.string().max(100)).max(20).nullish(),
+    allow_collaborate_with: z.array(z.string().max(100)).max(10).nullish(),
+  });
 
 const CreateSubAgentSchema = z.object({
   parent_bot_id: UuidSchema,
@@ -25,7 +24,7 @@ const CreateSubAgentSchema = z.object({
   system_prompt: z.string().min(1).max(16000),
   tools: z.array(z.string().max(50)).max(20).optional(),
   knowledge_ids: z.array(UuidSchema).max(20).optional(),
-  delegation_prompt: z.string().max(2000).optional(),
+  delegation_prompt: z.union([z.string().max(2000), z.null()]).optional(),
   collaboration_config: CollaborationConfigSchema.optional(),
 });
 
@@ -36,7 +35,7 @@ const UpdateSubAgentSchema = z.object({
   system_prompt: z.string().min(1).max(16000).optional(),
   tools: z.array(z.string().max(50)).max(20).optional(),
   knowledge_ids: z.array(UuidSchema).max(20).optional(),
-  delegation_prompt: z.string().max(2000).optional(),
+  delegation_prompt: z.union([z.string().max(2000), z.null()]).optional(),
   collaboration_config: CollaborationConfigSchema.optional(),
   status: z.enum(['active', 'disabled']).optional(),
 });
@@ -145,6 +144,26 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const { id, ...rest } = parsed.data;
   const result = await service.updateSubAgent({ id, ...rest });
+  return apiSuccess(result);
+});
+
+// PATCH /api/sub-agents - Update sub-agent status (partial update)
+export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
+  const denied = await requirePermission(request, 'sub_agents', 'write');
+  if (denied) return denied;
+
+  const { data: body, error: parseError } = await parseJsonBody(request);
+  if (parseError) return parseError;
+
+  const { id, status } = (body ?? {}) as { id?: string; status?: string };
+  if (!id || !status) {
+    return apiError('缺少 id 或 status 参数', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'VALIDATION_ERROR',
+    });
+  }
+
+  const result = await service.updateSubAgent({ id: id as string, status: status as string });
   return apiSuccess(result);
 });
 

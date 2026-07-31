@@ -337,7 +337,6 @@ export class LlmProviderRepository {
       .from('llm_models')
       .select('*')
       .eq('provider_id', providerId)
-      .eq('is_enabled', true)
       .order('display_name');
 
     if (error) throw new RepositoryError(`list models for provider ${providerId}`, error.message, error.code);
@@ -360,14 +359,11 @@ export class LlmProviderRepository {
         model_id: model.model_id,
         display_name: model.display_name,
         description: model.description ?? null,
-        type: model.type,
         max_tokens: model.max_tokens ?? null,
         supports_vision: model.supports_vision,
         supports_streaming: model.supports_streaming,
         supports_function_calling: model.supports_function_calling,
-        default_temperature: model.default_temperature,
         default_max_tokens: model.default_max_tokens ?? null,
-        use_case: model.use_case,
         cost_per_1k_input: model.cost_per_1k_input ?? null,
         cost_per_1k_output: model.cost_per_1k_output ?? null,
         is_enabled: model.is_enabled,
@@ -376,6 +372,25 @@ export class LlmProviderRepository {
       .single();
 
     if (error) throw new RepositoryError('create llm_model', error.message, error.code);
+    return data as LlmModelRow;
+  }
+
+  /**
+   * Update a model
+   */
+  async updateModel(id: string, updates: Partial<LlmModelRow>): Promise<LlmModelRow> {
+    if (isDemoMode()) {
+      throw new Error('Demo mode: update model not supported');
+    }
+
+    const { data, error } = await this.client
+      .from('llm_models')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new RepositoryError(`update llm_model ${id}`, error.message, error.code);
     return data as LlmModelRow;
   }
 
@@ -451,14 +466,12 @@ export class LlmProviderRepository {
         model_id: 'gpt-4o-mini',
         display_name: 'GPT-4o Mini',
         description: '轻量快速，适合日常对话',
-        type: 'chat',
         max_tokens: 4096,
         supports_vision: false,
         supports_streaming: true,
         supports_function_calling: true,
-        default_temperature: 0.7,
         default_max_tokens: 2048,
-        use_case: 'fast',
+        priority: 10,
         cost_per_1k_input: 0,
         cost_per_1k_output: 0,
         is_enabled: true,
@@ -471,14 +484,12 @@ export class LlmProviderRepository {
         model_id: 'gpt-4o',
         display_name: 'GPT-4o',
         description: '高性能，支持图片理解',
-        type: 'vision',
         max_tokens: 8192,
         supports_vision: true,
         supports_streaming: true,
         supports_function_calling: true,
-        default_temperature: 0.7,
         default_max_tokens: 4096,
-        use_case: 'quality',
+        priority: 20,
         cost_per_1k_input: 0,
         cost_per_1k_output: 0,
         is_enabled: true,

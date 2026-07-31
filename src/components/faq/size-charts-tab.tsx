@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Search, Plus, Pencil, Trash2,
@@ -51,6 +51,83 @@ const CHART_TYPE_STYLES: Record<string, string> = {
   accessories: 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 ring-violet-200 dark:ring-violet-800/50',
   custom: 'bg-muted text-muted-foreground',
 };
+
+// Custom Select Component
+function CustomSelect({
+  value,
+  onChange,
+  options,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find(o => o.value === value);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (selectRef.current && !selectRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={selectRef} className={cn('relative', className)}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+      >
+        <span className="truncate">{selectedOption?.label || '请选择'}</span>
+        <svg
+          className={cn(
+            'absolute right-2.5 w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 pointer-events-none',
+            isOpen && 'rotate-180'
+          )}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 py-1 rounded-lg bg-background border border-border/60 shadow-lg shadow-black/5 dark:shadow-black/20 overflow-hidden animate-in fade-in-0 zoom-in-95 duration-100">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'w-full px-3 py-1.5 text-xs text-left transition-colors truncate',
+                option.value === value
+                  ? 'bg-primary text-primary-foreground font-medium'
+                  : 'text-foreground hover:bg-primary/10 hover:text-primary'
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SizeChartsTab() {
   const [sizeCharts, setSizeCharts] = useState<SizeChartItem[]>([]);
@@ -217,38 +294,40 @@ export function SizeChartsTab() {
               className="w-full pl-8.5 pr-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors"
             />
           </div>
-          <select
+          <CustomSelect
             value={sizeChartFilterType}
-            onChange={e => setSizeChartFilterType(e.target.value)}
-            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
-          >
-            <option value="">全部类型</option>
-            <option value="clothing">服装</option>
-            <option value="shoes">鞋类</option>
-            <option value="accessories">配饰</option>
-            <option value="custom">自定义</option>
-          </select>
-          <select
+            onChange={setSizeChartFilterType}
+            options={[
+              { value: '', label: '全部类型' },
+              { value: 'clothing', label: '服装' },
+              { value: 'shoes', label: '鞋类' },
+              { value: 'accessories', label: '配饰' },
+              { value: 'custom', label: '自定义' },
+            ]}
+            className="w-24"
+          />
+          <CustomSelect
             value={sizeChartFilterStatus}
-            onChange={e => setSizeChartFilterStatus(e.target.value)}
-            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
-          >
-            <option value="">全部状态</option>
-            <option value="active">启用中</option>
-            <option value="disabled">已禁用</option>
-          </select>
-          <select
+            onChange={setSizeChartFilterStatus}
+            options={[
+              { value: '', label: '全部状态' },
+              { value: 'active', label: '启用中' },
+              { value: 'disabled', label: '已禁用' },
+            ]}
+            className="w-24"
+          />
+          <CustomSelect
             value={productFilter}
-            onChange={e => setProductFilter(e.target.value)}
-            className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
-          >
-            <option value="">全部商品</option>
-            {productOptions.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name} {p.sku ? `(${p.sku})` : ''}
-              </option>
-            ))}
-          </select>
+            onChange={setProductFilter}
+            options={[
+              { value: '', label: '全部商品' },
+              ...productOptions.map(p => ({
+                value: p.id,
+                label: `${p.name}${p.sku ? ` (${p.sku})` : ''}`,
+              })),
+            ]}
+            className="flex-1 min-w-[200px]"
+          />
           <button
             onClick={() => { setEditingSizeChart(null); setShowSizeChartModal(true); }}
             className="ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 active:scale-[0.97] transition-all shadow-sm shadow-primary/20"

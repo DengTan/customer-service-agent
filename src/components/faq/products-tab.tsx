@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Search, Pencil, Trash2,
@@ -45,6 +45,83 @@ const STATUS_INFO: Record<string, { label: string; styles: string; dot: string }
     dot: 'bg-muted-foreground/40',
   },
 };
+
+// Custom Select Component
+function CustomSelect({
+  value,
+  onChange,
+  options,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find(o => o.value === value);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (selectRef.current && !selectRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={selectRef} className={cn('relative', className)}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer"
+      >
+        <span>{selectedOption?.label || '请选择'}</span>
+        <svg
+          className={cn(
+            'absolute right-2.5 w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 pointer-events-none',
+            isOpen && 'rotate-180'
+          )}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 py-1 rounded-lg bg-background border border-border/60 shadow-lg shadow-black/5 dark:shadow-black/20 overflow-hidden animate-in fade-in-0 zoom-in-95 duration-100">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value);
+                setIsOpen(false);
+              }}
+              className={cn(
+                'w-full px-3 py-1.5 text-xs text-left transition-colors',
+                option.value === value
+                  ? 'bg-primary text-primary-foreground font-medium'
+                  : 'text-foreground hover:bg-primary/10 hover:text-primary'
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ProductsTab() {
   const [productList, setProductList] = useState<ProductItem[]>([]);
@@ -228,26 +305,26 @@ export function ProductsTab() {
                 className="w-full pl-8.5 pr-3 py-1.5 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors"
               />
             </div>
-            <select
+            <CustomSelect
               value={productFilterCat}
-              onChange={(e) => setProductFilterCat(e.target.value)}
-              className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
-            >
-              <option value="">全部分类</option>
-              {productCategoryOptions.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <select
+              onChange={setProductFilterCat}
+              options={[
+                { value: '', label: '全部分类' },
+                ...productCategoryOptions.map(cat => ({ value: cat, label: cat })),
+              ]}
+              className="w-28"
+            />
+            <CustomSelect
               value={productFilterStatus}
-              onChange={(e) => setProductFilterStatus(e.target.value)}
-              className="px-3 py-1.5 pr-8 rounded-lg bg-background/80 border border-border/60 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-colors cursor-pointer appearance-none"
-            >
-              <option value="">全部状态</option>
-              <option value="on_sale">在售</option>
-              <option value="off_sale">已下架</option>
-              <option value="discontinued">停售</option>
-            </select>
+              onChange={setProductFilterStatus}
+              options={[
+                { value: '', label: '全部状态' },
+                { value: 'on_sale', label: '在售' },
+                { value: 'off_sale', label: '已下架' },
+                { value: 'discontinued', label: '停售' },
+              ]}
+              className="w-28"
+            />
             <button
               onClick={() => { setEditingProduct(null); setShowProductForm(true); }}
               className="ml-auto flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 active:scale-[0.97] transition-all shadow-sm shadow-primary/20"

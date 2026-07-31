@@ -87,6 +87,7 @@ export const WRITABLE_SETTING_KEYS: ReadonlySet<string> = new Set<string>([
   'knowledge_learning_confidence_threshold',
   'knowledge_learning_scan_interval_hours',
   'knowledge_learning_auto_scan_enabled',
+  'knowledge_learning_last_scan_at', // server-managed: written by scan service, read-only from UI
   // Appearance
   'theme',
   'font_size',
@@ -128,6 +129,7 @@ export const NON_RESETTABLE_KEYS: ReadonlySet<string> = new Set<string>([
   'retrieval_hybrid_config',
   'retrieval_search_mode',
   'knowledge_image_max_citations',
+  'knowledge_learning_last_scan_at', // server-managed: written by scan service, not user-editable
   // Operator-managed Bot config (also excluded from resettable)
   'custom_tools',
   // Gorgias integration

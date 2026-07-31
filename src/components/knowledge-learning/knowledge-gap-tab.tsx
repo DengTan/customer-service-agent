@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 import {
@@ -73,6 +73,7 @@ export function KnowledgeGapTab() {
   const [scannedAt, setScannedAt] = useState<string | null>(null);
   const [expandedGapId, setExpandedGapId] = useState<string | null>(null);
   const [conversationMessages, setConversationMessages] = useState<Record<string, ConversationMessage[]>>({});
+  const [messageLoadTimes, setMessageLoadTimes] = useState<Record<string, number>>({});
   const [loadingMessages, setLoadingMessages] = useState<string | null>(null);
   const pageSize = 20;
 
@@ -92,9 +93,9 @@ export function KnowledgeGapTab() {
   }, []);
 
   // 加载指定对话的消息
-  const loadConversationMessages = useCallback(async (conversationId: string) => {
-    // 已加载过则跳过
-    if (conversationMessages[conversationId]) return;
+  const loadConversationMessages = useCallback(async (conversationId: string, forceRefresh = false) => {
+    // 已加载过则跳过（除非强制刷新）
+    if (!forceRefresh && conversationMessages[conversationId]) return;
     
     setLoadingMessages(conversationId);
     try {
@@ -108,6 +109,10 @@ export function KnowledgeGapTab() {
       setConversationMessages(prev => ({
         ...prev,
         [conversationId]: messages,
+      }));
+      setMessageLoadTimes(prev => ({
+        ...prev,
+        [conversationId]: Date.now(),
       }));
     } catch (err) {
       logger.error('Failed to load conversation messages', { error: err });
@@ -264,8 +269,17 @@ export function KnowledgeGapTab() {
     return messages.filter(msg => {
       // 只保留 user 和 assistant 角色的消息
       if (msg.role !== 'user' && msg.role !== 'assistant') return false;
-      // 排除知识缺口元数据消息
-      if (msg.content.startsWith('{"from_gap')) return false;
+      // 排除知识缺口元数据消息（检查 JSON 格式的 source_context）
+      try {
+        if (msg.content && msg.content.startsWith('{')) {
+          const parsed = JSON.parse(msg.content);
+          if (parsed && typeof parsed === 'object' && 'from_gap_id' in parsed) {
+            return false;
+          }
+        }
+      } catch {
+        // Not JSON, keep the message
+      }
       return true;
     });
   };
@@ -276,9 +290,10 @@ export function KnowledgeGapTab() {
     <div className="space-y-4">
       {/* 统计卡片 */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <StatCard label="总缺口" value={stats.total} icon={AlertTriangle} color="text-amber-600" />
           <StatCard label="待处理" value={stats.open} icon={AlertTriangle} color="text-red-600" />
+          <StatCard label="处理中" value={stats.in_progress} icon={MessageSquare} color="text-blue-600" />
           <StatCard label="已解决" value={stats.resolved} icon={CheckCircle} color="text-emerald-700" />
           <StatCard label="已忽略" value={stats.dismissed} icon={X} color="text-zinc-500" />
         </div>
@@ -359,8 +374,8 @@ export function KnowledgeGapTab() {
             </thead>
             <tbody className="divide-y divide-border">
               {gaps.map((gap) => (
-                <>
-                  <tr key={gap.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => handleToggleExpand(gap)}>
+                <React.Fragment key={gap.id}>
+                  <tr className="hover:bg-muted/20 cursor-pointer" onClick={() => handleToggleExpand(gap)}>
                     <td className="px-3 py-2">
                       <div className="flex items-start gap-2">
                         <ChevronRight className={`w-4 h-4 mt-0.5 flex-shrink-0 transition-transform ${expandedGapId === gap.id ? 'rotate-90' : ''}`} />
@@ -431,7 +446,7 @@ export function KnowledgeGapTab() {
                   </tr>
                   {/* 展开的对话上下文 */}
                   {expandedGapId === gap.id && (
-                    <tr key={`${gap.id}-expanded`} className="bg-muted/20">
+                    <tr className="bg-muted/20">
                       <td colSpan={6} className="px-6 py-4">
                         <div className="space-y-3">
                           <div className="flex items-center justify-between">
@@ -515,7 +530,7 @@ export function KnowledgeGapTab() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

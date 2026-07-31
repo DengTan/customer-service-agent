@@ -39,6 +39,8 @@ interface AuthContextValue {
   checkAuth: () => Promise<boolean>;
   /** Refresh user data from server */
   refreshUser: () => Promise<void>;
+  /** Directly update user avatar in local state (optimized for avatar changes) */
+  updateUserAvatar: (avatar: string | null) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -140,6 +142,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await checkAuthInternal();
   }, []);
 
+  /**
+   * Directly update user avatar in local state (optimized for avatar changes)
+   * Avoids full API call just to refresh avatar field
+   */
+  const updateUserAvatar = useCallback((avatar: string | null): void => {
+    setUser(prev => prev ? { ...prev, avatar } : null);
+  }, []);
+
 
   const value: AuthContextValue = {
     user,
@@ -148,6 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     checkAuth,
     refreshUser,
+    updateUserAvatar,
   };
 
   return (

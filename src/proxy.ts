@@ -1,7 +1,8 @@
 /**
- * Next.js middleware for authentication protection
+ * Next.js middleware for authentication protection and route access control.
  *
- * Protects routes that require authentication by checking for a valid JWT token.
+ * This file is named proxy.ts but contains the actual middleware implementation.
+ * It protects routes that require authentication by checking for a valid JWT token.
  * - Unauthenticated users accessing protected routes are redirected to /login
  * - Authenticated users accessing /login are redirected to /
  *

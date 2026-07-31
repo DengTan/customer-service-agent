@@ -158,6 +158,67 @@ export class ContentFilterService {
   }
 
   /**
+   * Filter AI assistant response content
+   * For AI responses, sensitive words are replaced/warned but not blocked (allow AI to provide information)
+   * URLs are also filtered using the same whitelist logic
+   * @param content The AI assistant's response content
+   * @returns Filtered content with replacements applied, or the original if no issues found
+   */
+  async filterAssistantContent(content: string): Promise<string> {
+    try {
+      // Check if content filter is enabled
+      const contentFilterEnabled = (await this.settingsRepository.get('content_filter_enabled')) === 'true';
+      if (!contentFilterEnabled) {
+        return content;
+      }
+
+      let filteredContent = content;
+
+      // Check and filter sensitive words
+      const sensitiveWordEnabled = (await this.settingsRepository.get('sensitive_word_filter_enabled')) === 'true';
+      if (sensitiveWordEnabled) {
+        const wordMatches = await this.checkSensitiveWords(content);
+
+        // Process matches in reverse order to maintain correct positions after replacement
+        const sortedMatches = [...wordMatches].sort((a, b) => b.position - a.position);
+
+        for (const match of sortedMatches) {
+          if (match.action === 'replace' && match.replacement) {
+            // Replace the word in content
+            filteredContent = this.replaceWordAt(filteredContent, match.position, match.length, match.replacement);
+          } else if (match.action === 'warn') {
+            // For AI responses, we don't want to block, so we just replace with asterisks for sensitive words
+            filteredContent = this.replaceWordAt(filteredContent, match.position, match.length, '*'.repeat(match.length));
+          }
+          // If action is 'block', we still replace with asterisks for AI responses
+          // (we don't block AI entirely, just sanitize)
+          else if (match.action === 'block') {
+            filteredContent = this.replaceWordAt(filteredContent, match.position, match.length, '*'.repeat(match.length));
+          }
+        }
+      }
+
+      // Check and filter URLs (remove disallowed URLs from AI responses)
+      const urlFilterEnabled = (await this.settingsRepository.get('url_filter_enabled')) === 'true';
+      if (urlFilterEnabled) {
+        const urlMatches = await this.checkUrls(filteredContent);
+        const disallowedUrls = urlMatches.filter((m) => !m.isAllowed);
+
+        // Remove disallowed URLs from AI response
+        for (const match of disallowedUrls) {
+          filteredContent = filteredContent.replace(match.url, '[链接已屏蔽]');
+        }
+      }
+
+      return filteredContent;
+    } catch (error) {
+      // On error, return original content (fail open for AI responses to avoid disrupting conversation)
+      logger.api.error('AI content filter error, returning original', { error, contentLength: content.length });
+      return content;
+    }
+  }
+
+  /**
    * Check content for sensitive words
    */
   async checkSensitiveWords(content: string): Promise<SensitiveWordMatch[]> {
@@ -166,15 +227,20 @@ export class ContentFilterService {
 
     const words = await this.getSensitiveWords();
 
+    // Read default action from settings as fallback when individual word action is empty
+    const defaultAction = (await this.settingsRepository.get('sensitive_word_default_action')) || 'block';
+
     for (const wordConfig of words) {
       const positions = this.findWordPositions(content, wordConfig.word, wordConfig.match_mode);
       for (const pos of positions) {
+        // Use word's own action, or fall back to the default action from settings
+        const action = wordConfig.action || defaultAction;
         matches.push({
           word: wordConfig.word,
           position: pos,
           length: wordConfig.word.length,
           match_mode: wordConfig.match_mode,
-          action: wordConfig.action,
+          action: action as 'block' | 'replace' | 'warn',
           replacement: wordConfig.replacement,
           category: wordConfig.category,
         });

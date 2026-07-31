@@ -1,6 +1,8 @@
 'use client';
 
 import { NumberInput } from '@/components/common/number-input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useCallback, useRef } from 'react';
 
 interface KnowledgeLearningSettingsProps {
@@ -63,16 +65,22 @@ export function KnowledgeLearningSettings({
           <p className="text-xs text-muted-foreground mb-3">
             避免短时间内重复扫描同一对话
           </p>
-          <select
+          <Select
             value={settings.knowledge_learning_scan_interval_hours ?? '24'}
-            onChange={(e) => onSettingsChange((prev) => ({ ...prev, knowledge_learning_scan_interval_hours: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onValueChange={(value) =>
+              onSettingsChange((prev) => ({ ...prev, knowledge_learning_scan_interval_hours: value }))
+            }
           >
-            <option value="6">6 小时</option>
-            <option value="12">12 小时</option>
-            <option value="24">24 小时</option>
-            <option value="168">每周（168 小时）</option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="6">6 小时</SelectItem>
+              <SelectItem value="12">12 小时</SelectItem>
+              <SelectItem value="24">24 小时</SelectItem>
+              <SelectItem value="168">每周（168 小时）</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Auto Scan Toggle */}
@@ -84,14 +92,15 @@ export function KnowledgeLearningSettings({
                 定时执行扫描任务，自动提取候选知识
               </p>
             </div>
-            <select
-              value={settings.knowledge_learning_auto_scan_enabled ?? 'false'}
-              onChange={(e) => onSettingsChange((prev) => ({ ...prev, knowledge_learning_auto_scan_enabled: e.target.value }))}
-              className="px-3 py-2 rounded-lg bg-muted border-none text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="false">关闭</option>
-              <option value="true">开启</option>
-            </select>
+            <Switch
+              checked={settings.knowledge_learning_auto_scan_enabled === 'true'}
+              onCheckedChange={(checked) =>
+                onSettingsChange((prev) => ({
+                  ...prev,
+                  knowledge_learning_auto_scan_enabled: String(checked),
+                }))
+              }
+            />
           </div>
         </div>
       </div>

@@ -9,9 +9,11 @@ import { KnowledgeGapService } from './knowledge-gap-service';
 import { ClaimSupportVerifier, type ClaimVerificationResult } from './claim-support-verifier';
 import { LLMClientAdapter } from './llm-client-adapter';
 import { RetrievalTraceService } from './retrieval-trace-service';
+import { ContentFilterService } from './content-filter-service';
+import { LlmProviderService } from './llm-provider-service';
 import type { CitationItem, EvidenceBundle } from './retrieval-orchestrator';
 import type { RetrievalGateDecision } from './retrieval-gating-service';
-import type { KnowledgeImageRef } from './knowledge-search-service';
+import type { KnowledgeImageRef, KnowledgeSourceItem } from './knowledge-search-service';
 import type { MessageHistoryItem } from '@/server/repositories/conversation-repository';
 import {
   buildConfidenceFromContent,
@@ -111,6 +113,9 @@ export interface LLMStreamOptions {
   /** P0-C: AbortSignal — when provided, post-stream DB operations are skipped if
    *  the client disconnected before the stream finished. */
   abortSignal?: AbortSignal;
+  /** P0-B: Tool scoping — when a routed bot is active, its tool list restricts which
+   *  tools the LLM may call during this stream. */
+  routedBotTools?: string[];
 }
 
 type ImageUrlPart = { type: 'image_url'; image_url: { url: string; detail?: string } };
@@ -216,19 +221,6 @@ const SUB_AGENT_DELEGATION_PROMPT = `
 - 不要委派一般性问题，只委派需要专业处理的场景
 - 委派标记应该自然嵌入到你的回复中`;
 
-// LLM self-evaluation confidence prompt
-const CONFIDENCE_SELF_EVAL_PROMPT = `
-
-【置信度自评】
-请在回复的最末尾添加你对本次回答可靠性的自评置信度，格式为 [CONF:0.X]，其中 0.X 是 0.0~1.0 之间的数字。
-评分标准：
-- 0.9~1.0：回答基于知识库确凿信息或成功的工具调用结果，高度可靠
-- 0.7~0.9：回答有知识库或工具支撑，但部分内容基于推理
-- 0.5~0.7：回答主要基于通用知识，没有直接的知识库匹配
-- 0.3~0.5：回答不太确定，建议用户确认或咨询人工
-- 0.0~0.3：无法回答或回答很可能不准确
-注意：此标签仅用于系统内部评估，不会展示给用户。每次回复必须包含此标签。`;
-
 const TOOL_CALL_PATTERN = /\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g;
 
 // Image reference pattern: [IMG:url](alt text)
@@ -236,13 +228,12 @@ const IMAGE_REF_PATTERN = /\[IMG:([^\]]+)\]\(([^)]+)\)/g;
 
 /**
  * Strip internal markers from LLM output before sending to client.
- * Removes: [TOOL_CALL]...[/TOOL_CALL], [CONF:x.x], [DELEGATE_TO]...[/DELEGATE_TO]
+ * Removes: [TOOL_CALL]...[/TOOL_CALL], [DELEGATE_TO]...[/DELEGATE_TO]
  * Preserves: [IMG:url](alt) — these are rendered as images on the client side.
  */
 function stripInternalMarkers(text: string): string {
   return text
     .replace(/\[TOOL_CALL\](\w+)\|({[^}]*})\[\/TOOL_CALL\]/g, '')
-    .replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '')
     .replace(/\[DELEGATE_TO\][\s\S]*?\[\/DELEGATE_TO\]/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -256,6 +247,7 @@ export class LLMStreamingService {
   private readonly conversationService = new ConversationService();
   private readonly subAgentService = new SubAgentService();
   private readonly knowledgeGapService = new KnowledgeGapService();
+  private readonly contentFilterService = new ContentFilterService();
 
   /**
    * Create a streaming LLM response with SSE.
@@ -283,6 +275,7 @@ export class LLMStreamingService {
     const buildLLMMessages = this.buildLLMMessages.bind(this);
     const handlePostStreamOperations = this.handlePostStreamOperations.bind(this);
     const subAgentService = this.subAgentService;
+    const contentFilterService = this.contentFilterService;
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -305,11 +298,94 @@ export class LLMStreamingService {
           const defaultAiModel = '';
           const defaultMultimodalModel = '';
           const multimodalEnabled = options.multimodalEnabled !== false; // default true
-          let llmModel: string;
+          let llmModel: string = '';
+          let resolvedProviderId: string | undefined;
+          let resolvedProviderBaseUrl: string | undefined;
+          let resolvedProviderApiKey: string | undefined;
+          let modelSelectionError: string | null = null;
+
+          // Track user's explicit model requirements for fallback compatibility
+          const userModelRequirements: { supportsVision?: boolean; supportsFunctionCalling?: boolean; supportsStreaming?: boolean } = {};
+
+          // Try to auto-select a model from the configured LLM providers/models.
+          // Selection: highest llm_models.priority among enabled providers,
+          //             default provider wins ties.
+          const llmProviderService = new LlmProviderService();
+          const needsVision = !!options.imageUrl;
+
+          /**
+           * Find a compatible model as fallback when the originally requested model is unavailable.
+           * Compatibility rules (downgrade only, not upgrade):
+           * - Vision model → can fallback to any model (vision or non-vision)
+           * - Non-vision model → can only fallback to non-vision models
+           * - Function-calling model → can fallback to any model (fc or non-fc)
+           * - Non-function-calling model → can only fallback to non-function-calling models
+           * - Streaming model → can fallback to any model (streaming or non-streaming)
+           * - Non-streaming model → can only fallback to non-streaming models
+           */
+          const findCompatibleFallbackModel = async (
+            providerId: string,
+            originalCapabilities: { supportsVision?: boolean; supportsFunctionCalling?: boolean; supportsStreaming?: boolean },
+          ): Promise<string | null> => {
+            try {
+              const models = await llmProviderService.listProviderModels(providerId);
+              const enabledModels = models.filter(m => m.is_enabled);
+
+              // Sort by priority descending
+              enabledModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+              // Find the first model that is compatible (capabilities >= original)
+              const compatibleModel = enabledModels.find(m => {
+                // Vision: if original needs vision, fallback can use any; if not, only non-vision
+                if (originalCapabilities.supportsVision === false && m.supports_vision) {
+                  return false; // Cannot upgrade to vision
+                }
+                // Function calling: if original doesn't need fc, fallback cannot have fc
+                if (originalCapabilities.supportsFunctionCalling === false && m.supports_function_calling) {
+                  return false; // Cannot upgrade to function calling
+                }
+                // Streaming: if original doesn't need streaming, fallback cannot have streaming
+                if (originalCapabilities.supportsStreaming === false && m.supports_streaming) {
+                  return false; // Cannot upgrade to streaming
+                }
+                return true;
+              });
+
+              return compatibleModel?.model_id || null;
+            } catch (error) {
+              logger.warn('Failed to find compatible fallback model', { providerId, error });
+              return null;
+            }
+          };
+
+          // Step 1: Try to auto-select a model
+          let selectedProvider: Awaited<ReturnType<typeof llmProviderService.selectBestModel>> = null;
+          try {
+            selectedProvider = await llmProviderService.selectBestModel({
+              type: needsVision ? 'vision' : 'chat',
+              supportsVision: needsVision || undefined,
+              supportsFunctionCalling: undefined,
+            });
+          } catch (error) {
+            logger.warn('Failed to auto-select model', { error });
+          }
+
+          if (selectedProvider) {
+            llmModel = selectedProvider.model.model_id;
+            resolvedProviderId = selectedProvider.provider.id;
+            // Set user requirements based on the selected model
+            userModelRequirements.supportsVision = selectedProvider.model.supports_vision;
+            userModelRequirements.supportsFunctionCalling = selectedProvider.model.supports_function_calling;
+            userModelRequirements.supportsStreaming = selectedProvider.model.supports_streaming;
+            if (selectedProvider.provider.base_url && selectedProvider.provider.api_key) {
+              resolvedProviderBaseUrl = selectedProvider.provider.base_url;
+              resolvedProviderApiKey = selectedProvider.provider.api_key;
+            }
+          }
 
           if (options.imageUrl) {
             if (multimodalEnabled) {
-              llmModel = options.multimodalModel || defaultMultimodalModel;
+              llmModel = llmModel || options.multimodalModel || defaultMultimodalModel;
             } else {
               // Multimodal disabled — handle based on configured action
               const action = options.multimodalDisabledAction || 'fixed_message';
@@ -329,7 +405,6 @@ export class LLMStreamingService {
               const fallbackBreakdown: ConfidenceBreakdown = {
                 knowledge_score: 0,
                 tool_score: 0,
-                llm_self_score: 0,
                 sub_agent_score: 0,
                 handoff_intent: action === 'handoff',
                 no_support: true,
@@ -353,17 +428,94 @@ export class LLMStreamingService {
             }
           } else {
             // No image present — pick the right model
-            // Priority: extended provider's default model > ai_model setting > multimodal fallback
-            if (options.llmProviderDefaultModel) {
+            // Priority: auto-selected model > explicit llmProviderDefaultModel > aiModel setting > multimodal fallback
+            if (!llmModel && options.llmProviderDefaultModel) {
               llmModel = options.llmProviderDefaultModel;
-            } else if (options.aiModel) {
+              // Ensure provider credentials are loaded if not already resolved
+              if (!resolvedProviderBaseUrl && !resolvedProviderApiKey && options.llmProviderId) {
+                try {
+                  const provider = await llmProviderService.getProviderWithDecryptedKey(options.llmProviderId);
+                  if (provider) {
+                    resolvedProviderBaseUrl = provider.base_url;
+                    resolvedProviderApiKey = provider.api_key || undefined;
+                  }
+                } catch (error) {
+                  logger.warn('Failed to load provider credentials for fallback', { error });
+                }
+              }
+            } else if (!llmModel && options.aiModel) {
               llmModel = options.aiModel;
-            } else if (multimodalEnabled) {
+            } else if (!llmModel && multimodalEnabled) {
               llmModel = options.multimodalModel || defaultMultimodalModel;
-            } else {
+            } else if (!llmModel) {
               llmModel = defaultAiModel;
             }
           }
+
+          // Step 2: If model is set but provider credentials are missing, try to load them
+          if (llmModel && !resolvedProviderBaseUrl && !resolvedProviderApiKey && options.llmProviderId) {
+            try {
+              const provider = await llmProviderService.getProviderWithDecryptedKey(options.llmProviderId);
+              if (provider) {
+                resolvedProviderBaseUrl = provider.base_url;
+                resolvedProviderApiKey = provider.api_key || undefined;
+              }
+            } catch (error) {
+              logger.warn('Failed to load provider credentials', { error });
+            }
+          }
+
+          // Step 3: Check if the selected model is available, if not find a compatible fallback
+          const effectiveProviderId = resolvedProviderId || options.llmProviderId;
+          if (llmModel && effectiveProviderId) {
+            // Check if the model is available in the provider
+            let modelAvailable = false;
+
+            try {
+              const models = await llmProviderService.listProviderModels(effectiveProviderId);
+              const selectedModel = models.find(m => m.model_id === llmModel && m.is_enabled);
+              if (selectedModel) {
+                modelAvailable = true;
+                // Update user requirements based on the actually selected model
+                userModelRequirements.supportsVision = selectedModel.supports_vision;
+                userModelRequirements.supportsFunctionCalling = selectedModel.supports_function_calling;
+                userModelRequirements.supportsStreaming = selectedModel.supports_streaming;
+              } else {
+                // Model not found or disabled, try to find compatible fallback
+                const fallbackModel = await findCompatibleFallbackModel(effectiveProviderId, userModelRequirements);
+                if (fallbackModel) {
+                  logger.info('Model not available, using fallback', {
+                    originalModel: llmModel,
+                    fallbackModel,
+                    providerId: effectiveProviderId,
+                  });
+                  llmModel = fallbackModel;
+                  modelAvailable = true;
+                  // Update user requirements for the fallback model
+                  const fallbackModelInfo = models.find(m => m.model_id === fallbackModel);
+                  if (fallbackModelInfo) {
+                    userModelRequirements.supportsVision = fallbackModelInfo.supports_vision;
+                    userModelRequirements.supportsFunctionCalling = fallbackModelInfo.supports_function_calling;
+                    userModelRequirements.supportsStreaming = fallbackModelInfo.supports_streaming;
+                  }
+                } else {
+                  // No compatible model found in current provider
+                  const enabledModels = models.filter(m => m.is_enabled);
+                  if (enabledModels.length === 0) {
+                    modelSelectionError = '当前模型提供商「' + (options.llmProviderId ? '未命名提供商' : '') + '」无可用模型（所有模型已被禁用），请在「设置 → AI 模型」中启用至少一个模型';
+                  } else {
+                    modelSelectionError = '当前模型「' + llmModel + '」不可用，且当前提供商无可用替代模型，请检查模型配置';
+                  }
+                }
+              }
+            } catch (error) {
+              logger.warn('Failed to check model availability', { model: llmModel, error });
+            }
+          }
+
+          // Use resolved provider credentials if not overridden
+          const effectiveBaseUrl = resolvedProviderBaseUrl || options.llmProviderBaseUrl;
+          const effectiveApiKey = resolvedProviderApiKey || options.llmProviderApiKey;
 
           // Determine which LLM client to use based on provider type
           const llmTemperature = options.temperature ?? 0.7;
@@ -371,30 +523,69 @@ export class LLMStreamingService {
           const customHeaders = options.customHeaders || {};
 
           // Check if using extended LLM provider
-          const useExtendedProvider = options.llmProviderBaseUrl && options.llmProviderApiKey;
+          const useExtendedProvider = !!(effectiveBaseUrl && effectiveApiKey);
 
-          let llmStreamIterator: AsyncGenerator<{ content?: string }>;
-
-          if (useExtendedProvider) {
-            // Use generic OpenAI-compatible adapter for extended providers
-            const adapter = new LLMClientAdapter({
-              baseUrl: options.llmProviderBaseUrl!,
-              apiKey: options.llmProviderApiKey!,
-              customHeaders: options.customHeaders,
-            });
-
-            const streamOptions = {
-              model: llmModel,
-              temperature: llmTemperature,
-            };
-            if (llmMaxTokens) {
-              (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
+          // Provide friendly error message if provider is not configured
+          // Prioritize model selection error over provider configuration error
+          if (modelSelectionError) {
+            // If we have a model selection error but also missing provider config,
+            // show the more specific model error (provider config error would be confusing)
+            if (!useExtendedProvider) {
+              // Return as SSE event for toast instead of throwing
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+                error: true,
+                errorMessage: modelSelectionError,
+                type: 'model_unavailable',
+              })}\n\n`));
+              controller.close();
+              return;
             }
-
-            llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
-          } else {
-            throw new Error('LLM Provider 未配置：请在设置 → AI 模型 中配置 LLM 提供商');
+            // Provider is configured but model selection failed
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              error: true,
+              errorMessage: modelSelectionError,
+              type: 'model_unavailable',
+            })}\n\n`));
+            controller.close();
+            return;
           }
+
+          if (!useExtendedProvider) {
+            const hasProviderId = !!(options.llmProviderId || resolvedProviderId);
+            const hasBaseUrl = !!(effectiveBaseUrl || options.llmProviderBaseUrl);
+            const hasApiKey = !!(effectiveApiKey || options.llmProviderApiKey);
+
+            let errorMessage = 'LLM Provider 未配置';
+            if (hasProviderId) {
+              if (!hasBaseUrl && !hasApiKey) {
+                errorMessage = 'LLM 提供商未设置 Base URL 和 API Key，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+              } else if (!hasBaseUrl) {
+                errorMessage = 'LLM 提供商未设置 Base URL，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+              } else if (!hasApiKey) {
+                errorMessage = 'LLM 提供商未设置 API Key，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+              }
+            } else {
+              errorMessage = '未配置 LLM 提供商，请进入「设置 → AI 模型」添加并配置 LLM 提供商';
+            }
+            throw new Error(errorMessage);
+          }
+
+          // Create adapter and stream iterator
+          const adapter = new LLMClientAdapter({
+            baseUrl: effectiveBaseUrl!,
+            apiKey: effectiveApiKey!,
+            customHeaders: options.customHeaders,
+          });
+
+          const streamOptions = {
+            model: llmModel,
+            temperature: llmTemperature,
+          };
+          if (llmMaxTokens) {
+            (streamOptions as Record<string, unknown>).max_tokens = llmMaxTokens;
+          }
+
+          const llmStreamIterator = adapter.stream(llmMessages as Parameters<typeof adapter.stream>[0], streamOptions as Parameters<typeof adapter.stream>[1]);
 
           for await (const chunk of llmStreamIterator) {
             if (isAborted) break;
@@ -439,10 +630,10 @@ export class LLMStreamingService {
             // Get continuation stream using the same provider
             let continueStreamIterator: AsyncGenerator<{ content?: string }>;
 
-            if (useExtendedProvider && options.llmProviderBaseUrl && options.llmProviderApiKey) {
+            if (useExtendedProvider && effectiveBaseUrl && effectiveApiKey) {
               const adapter = new LLMClientAdapter({
-                baseUrl: options.llmProviderBaseUrl,
-                apiKey: options.llmProviderApiKey,
+                baseUrl: effectiveBaseUrl,
+                apiKey: effectiveApiKey,
                 customHeaders: options.customHeaders,
               });
 
@@ -493,8 +684,8 @@ export class LLMStreamingService {
                     // R-2: Thread productContext, sizeChartContext, and llmProviderConfig through
                     productContext: options.productContext,
                     sizeChartContext: options.sizeChartContext,
-                    llmProviderConfig: options.llmProviderBaseUrl && options.llmProviderApiKey
-                      ? { baseUrl: options.llmProviderBaseUrl, apiKey: options.llmProviderApiKey, model: options.llmProviderDefaultModel }
+                    llmProviderConfig: effectiveBaseUrl && effectiveApiKey
+                      ? { baseUrl: effectiveBaseUrl, apiKey: effectiveApiKey, model: options.llmProviderDefaultModel ?? llmModel }
                       : undefined,
                   });
 
@@ -560,21 +751,17 @@ export class LLMStreamingService {
           const hasProductContext = !!(options.productContext && typeof options.productContext === 'string' && options.productContext.trim());
           const hasSizeChartContext = !!(options.sizeChartContext && typeof options.sizeChartContext === 'string' && options.sizeChartContext.trim());
 
-          // Use shared confidence calculation with content-based extraction
+          // Use shared confidence calculation
           const confidenceBreakdown = buildConfidenceFromContent(fullContent, {
             hasKnowledge,
             knowledgeConfidence,
             hasTools,
             toolExecutions: toolExecutions.map(te => ({ confidence: te.confidence })),
-            llmSelfConfidence: 0, // Extracted from content by buildConfidenceFromContent
             hasSubAgentDelegation,
             subAgentDelegationConfidence,
             hasProductContext,
             hasSizeChartContext,
           });
-
-          // Strip self-eval tags from content after extraction
-          fullContent = fullContent.replace(/\[CONF:[0-9]*\.?[0-9]+\]/g, '').trim();
 
           const overallConfidence = confidenceBreakdown.final;
 
@@ -740,7 +927,11 @@ if (claimVerificationResult !== null) {
             })}\n\n`));
           }
 
-          // Send final event with metadata
+          // Filter AI response content for sensitive words and URLs (bidirectional filtering)
+          // Also send filtered content in SSE done event for frontend display consistency
+          const filteredFinalContent = await contentFilterService.filterAssistantContent(fullContent);
+
+          // Send final event with metadata and filtered content for frontend consistency
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             done: true,
             sources,
@@ -751,6 +942,8 @@ if (claimVerificationResult !== null) {
             images: whitelistedImages.length > 0 ? whitelistedImages : undefined,
             botId: options.parentBotId,
             botName: options.parentBotName,
+            // Include filtered content for frontend to use (replaces streamed content if different)
+            finalContent: filteredFinalContent !== fullContent ? filteredFinalContent : undefined,
           })}\n\n`));
 
           // Post-stream operations (fire-and-forget, non-blocking)
@@ -820,26 +1013,20 @@ if (claimVerificationResult !== null) {
       }
 
       // P1: Guard against empty content after marker stripping.
-      // If the entire LLM response was just internal markers (e.g. only [TOOL_CALL]...[CONF:0.8]),
+      // If the entire LLM response was just internal markers (e.g. only [TOOL_CALL]...[/TOOL_CALL]),
       // fullContent will be empty after stripInternalMarkers(). Generate a placeholder instead.
       const finalContent = fullContent || (toolCallsData.length > 0
         ? '已执行工具查询，请查看结果。'
         : '[AI 处理中...]');
 
-      // Debug: Log if CONF markers are still present after stripping
-      if (/\[CONF:/.test(finalContent)) {
-        logger.agent.warn('[LLMStreamingService] CONF marker found in finalContent after stripping', {
-          conversationId,
-          finalContentLength: finalContent.length,
-          finalContentPreview: finalContent.substring(0, 200),
-        });
-      }
+      // Filter AI response content for sensitive words and URLs (bidirectional filtering)
+      const filteredFinalContent = await this.contentFilterService.filterAssistantContent(finalContent);
 
       const knowledgeImages = extractedImages && extractedImages.length > 0 ? extractedImages : undefined;
       await this.conversationService.insertMessage({
         conversation_id: conversationId,
         role: 'assistant' as const,
-        content: finalContent,
+        content: filteredFinalContent,
         confidence: overallConfidence,
         sources: sources.length > 0 ? sources : null,
         tool_calls: toolCallsData.length > 0 ? toolCallsData : null,
@@ -958,7 +1145,7 @@ if (claimVerificationResult !== null) {
 
     await this.knowledgeGapService.analyzeAndRecord({
       userQuestion: userMessage,
-      sources: sources as never,
+      sources: sources as KnowledgeSourceItem[],
       triggeredHandoff,
       conversationId,
     });
@@ -982,7 +1169,7 @@ if (claimVerificationResult !== null) {
   ): LLMMessage[] {
     // Use custom system prompt from settings if provided, otherwise use default
     const baseSystemPrompt = customSystemPrompt || SYSTEM_PROMPT;
-    let systemPrompt = baseSystemPrompt + TOOL_SYSTEM_PROMPT + CONFIDENCE_SELF_EVAL_PROMPT;
+    let systemPrompt = baseSystemPrompt + TOOL_SYSTEM_PROMPT;
 
     // Add sub-agent delegation prompt if enabled
     if (enableSubAgentDelegation) {

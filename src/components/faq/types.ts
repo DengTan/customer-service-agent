@@ -83,7 +83,7 @@ export interface LearningItem {
   confidence: number;
   conversation_id: string | null;
   conversation_title: string | null;
-  source_context: string | null;
+  source_context: Record<string, unknown> | null;
   category: string;
   status: 'pending' | 'approved' | 'rejected';
   reviewed_at: string | null;

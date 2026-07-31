@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Camera, Upload, X, User as UserIcon, UserCog, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { USER } from '@/lib/constants';
 
 interface ProfileSettingsProps {
   className?: string;
@@ -21,9 +22,10 @@ function getUserInitials(name: string): string {
 }
 
 export function ProfileSettings({ className }: ProfileSettingsProps) {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, updateUserAvatar } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(user?.avatar || null);
 
   const handleAvatarClick = () => {
@@ -45,9 +47,9 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
     const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     const allowedExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('图片大小不能超过 2MB');
+    // Validate file size (max defined in constants)
+    if (file.size > USER.AVATAR_MAX_SIZE_BYTES) {
+      toast.error(`图片大小不能超过 ${USER.AVATAR_MAX_SIZE_BYTES / 1024 / 1024}MB`);
       return;
     }
 
@@ -89,25 +91,50 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
       // Create preview
       setPreviewUrl(event.target?.result as string);
 
-      // Upload file
+      // Upload file with progress tracking
       setUploading(true);
+      setUploadProgress(10);
       try {
         const formData = new FormData();
         formData.append('file', file);
 
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
+        // Use XHR for progress tracking
+        const uploadResult = await new Promise<{ url: string }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/upload');
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const progress = Math.round((e.loaded / e.total) * 70) + 10; // 10-80%
+              setUploadProgress(progress);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                resolve({ url: data.url });
+              } catch {
+                reject(new Error('解析上传响应失败'));
+              }
+            } else {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                reject(new Error(data.error || '上传失败'));
+              } catch {
+                reject(new Error(`上传失败 (${xhr.status})`));
+              }
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('网络错误'));
+          xhr.withCredentials = true;
+          xhr.send(formData);
         });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || '上传失败');
-        }
-
-        const data = await res.json();
-        const avatarUrl = data.url;
+        const avatarUrl = uploadResult.url;
+        setUploadProgress(85);
 
         // Update user profile with new avatar using /api/users/me
         const updateRes = await fetch('/api/users/me', {
@@ -121,19 +148,19 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
           throw new Error('更新头像失败');
         }
 
+        setUploadProgress(100);
         toast.success('头像上传成功');
 
-        // Update local preview state immediately
+        // Update local preview and auth state immediately
         setPreviewUrl(avatarUrl);
-
-        // Refresh user data
-        await refreshUser?.();
+        updateUserAvatar(avatarUrl);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : '上传失败');
         // Restore preview URL to current user avatar on failure
         setPreviewUrl(user?.avatar || null);
       } finally {
         setUploading(false);
+        setUploadProgress(0);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -146,7 +173,7 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
 
   const handleRemoveAvatar = async () => {
     setPreviewUrl(null);
-    
+
     try {
       const res = await fetch('/api/users/me', {
         method: 'PATCH',
@@ -160,7 +187,7 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
       }
 
       toast.success('头像已移除');
-      await refreshUser?.();
+      updateUserAvatar(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '移除失败');
       setPreviewUrl(user?.avatar || null);
@@ -226,7 +253,7 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
                 {uploading ? (
                   <>
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    上传中...
+                    {uploadProgress > 0 ? `${uploadProgress}%` : '上传中...'}
                   </>
                 ) : (
                   <>
@@ -235,12 +262,11 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
                   </>
                 )}
               </Button>
-              {user.avatar && (
+              {user.avatar && !uploading && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleRemoveAvatar}
-                  disabled={uploading}
                   className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
                   <X className="w-4 h-4" />
@@ -248,8 +274,16 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
                 </Button>
               )}
             </div>
+            {uploading && uploadProgress > 0 && (
+              <div className="w-48 h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
-              支持 JPG、PNG、GIF、WebP 格式，最大 2MB
+              支持 JPG、PNG、GIF、WebP 格式，最大 {USER.AVATAR_MAX_SIZE_BYTES / 1024 / 1024}MB
             </p>
           </div>
 
@@ -280,12 +314,9 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
           </div>
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground font-medium">邮箱</label>
-            <div className="group relative flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border-none text-sm cursor-default">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted border-none text-sm">
               <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span className="truncate">{user.email}</span>
-              <span className="absolute left-0 top-full mt-1 px-3 py-2 bg-popover border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity whitespace-nowrap z-50 text-sm">
-                {user.email}
-              </span>
+              <span className="truncate" title={user.email}>{user.email}</span>
             </div>
           </div>
           <div className="space-y-2">

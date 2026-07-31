@@ -25,7 +25,6 @@ export const HANDOFF_INTENT_PATTERNS = [
 export interface ConfidenceBreakdown {
   knowledge_score: number;    // Knowledge base vector similarity contribution
   tool_score: number;         // Tool execution confidence contribution
-  llm_self_score: number;     // LLM self-evaluated confidence contribution
   sub_agent_score: number;     // Sub-agent delegation confidence contribution
   handoff_intent: boolean;    // Whether handoff intent was detected
   no_support: boolean;        // Whether no grounding source exists (pure LLM)
@@ -38,24 +37,10 @@ export interface ConfidenceCalculationInput {
   knowledgeConfidence: number;
   hasTools: boolean;
   toolExecutions?: Array<{ confidence: number }>;
-  llmSelfConfidence: number;
   hasSubAgentDelegation: boolean;
   subAgentDelegationConfidence?: number;
   hasProductContext?: boolean;
   hasSizeChartContext?: boolean;
-}
-
-/**
- * Extract LLM self-evaluation confidence tag [CONF:x.x] from content.
- * Returns the confidence value (0-1) or 0 if not found.
- */
-export function extractLlmSelfConfidence(content: string): number {
-  const confMatches = [...content.matchAll(/\[CONF:([0-9]*\.?[0-9]+)\]/g)];
-  if (confMatches.length > 0) {
-    const lastMatch = confMatches[confMatches.length - 1];
-    return Math.max(0, Math.min(1, parseFloat(lastMatch[1])));
-  }
-  return 0;
 }
 
 /**
@@ -68,7 +53,7 @@ export function detectHandoffIntent(content: string): boolean {
 
 /**
  * Calculate confidence score using weighted fusion.
- * Weights: knowledge 40%, tool 30%, LLM self-eval 30%
+ * Weights: knowledge 55%, tool 45% (LLM self-eval removed)
  * When missing sources, redistribute weights accordingly.
  */
 export function calculateConfidence(input: ConfidenceCalculationInput): ConfidenceBreakdown {
@@ -77,7 +62,6 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
     knowledgeConfidence,
     hasTools,
     toolExecutions = [],
-    llmSelfConfidence,
     hasSubAgentDelegation,
     subAgentDelegationConfidence = 0,
     hasProductContext = false,
@@ -91,7 +75,6 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
   const breakdown: ConfidenceBreakdown = {
     knowledge_score: hasKnowledge ? Math.min(knowledgeConfidence, 0.9) : 0,
     tool_score: 0,
-    llm_self_score: llmSelfConfidence,
     sub_agent_score: hasSubAgentDelegation ? subAgentDelegationConfidence : 0,
     handoff_intent: handoffIntent,
     no_support: !hasGrounding,
@@ -107,8 +90,8 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
 
     if (hasKnowledge) {
       const knScore = Math.min(knowledgeConfidence, 0.9);
-      weightedSum += knScore * 0.4;
-      totalWeight += 0.4;
+      weightedSum += knScore * 0.55;
+      totalWeight += 0.55;
     }
 
     if (hasProductContext || hasSizeChartContext) {
@@ -125,31 +108,15 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
         : 0.6;
       const toolScore = Math.min(avgToolConf, 0.9);
       breakdown.tool_score = toolScore;
-      weightedSum += toolScore * 0.3;
-      totalWeight += 0.3;
-    }
-
-    if (llmSelfConfidence > 0) {
-      weightedSum += llmSelfConfidence * 0.3;
-      totalWeight += 0.3;
-    } else {
-      // LLM self-eval missing: assign base score 0.5 * 0.3 to prevent
-      // the missing 30% weight from being absorbed by other signals,
-      // which would inflate the overall confidence.
-      weightedSum += 0.5 * 0.3;
-      totalWeight += 0.3;
+      weightedSum += toolScore * 0.45;
+      totalWeight += 0.45;
     }
 
     finalConfidence = totalWeight > 0 ? weightedSum / totalWeight : 0.3;
   } else {
     // No grounding — pure LLM free generation
     // Base confidence is low (0.3) since there's no grounding
-    if (llmSelfConfidence > 0) {
-      // LLM self-eval gets higher weight (50%) when no other signals exist
-      finalConfidence = 0.2 * 0.5 + llmSelfConfidence * 0.5;
-    } else {
-      finalConfidence = 0.3;
-    }
+    finalConfidence = 0.3;
   }
 
   // Handoff intent detection overrides confidence to low
@@ -170,23 +137,17 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
 
 /**
  * Build confidence breakdown from LLM response content.
- * This version extracts confidence from content and applies handoff detection.
+ * This version applies handoff detection.
  */
 export function buildConfidenceFromContent(
   content: string,
   input: ConfidenceCalculationInput
 ): ConfidenceBreakdown {
-  // Extract LLM self-confidence from content
-  const llmSelfConfidence = extractLlmSelfConfidence(content);
-  
   // Detect handoff intent from content
   const handoffIntentDetected = detectHandoffIntent(content);
 
-  // Calculate confidence with content-based overrides
-  const result = calculateConfidence({
-    ...input,
-    llmSelfConfidence,
-  });
+  // Calculate confidence
+  const result = calculateConfidence(input);
 
   // Override handoff intent based on content detection
   result.handoff_intent = handoffIntentDetected;
@@ -215,7 +176,6 @@ export function calculateSimulationConfidence(
   const breakdown: ConfidenceBreakdown = {
     knowledge_score: hasKnowledge ? Math.min(knowledgeConfidence, 0.9) : 0,
     tool_score: 0,
-    llm_self_score: 0.5, // Default fallback for simulation
     sub_agent_score: 0,
     handoff_intent: handoffIntentDetected,
     no_support: !hasGrounding,
@@ -231,8 +191,8 @@ export function calculateSimulationConfidence(
 
     if (hasKnowledge) {
       const knScore = Math.min(knowledgeConfidence, 0.9);
-      weightedSum += knScore * 0.4;
-      totalWeight += 0.4;
+      weightedSum += knScore * 0.55;
+      totalWeight += 0.55;
     }
 
     if (hasProductContext || hasSizeChartContext) {
@@ -241,10 +201,6 @@ export function calculateSimulationConfidence(
       weightedSum += contextScore * 0.3;
       totalWeight += 0.3;
     }
-
-    // LLM self-eval fallback for simulation
-    weightedSum += 0.5 * 0.3;
-    totalWeight += 0.3;
 
     finalConfidence = totalWeight > 0 ? weightedSum / totalWeight : 0.3;
   } else {

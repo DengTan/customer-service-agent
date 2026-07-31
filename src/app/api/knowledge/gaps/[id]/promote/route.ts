@@ -29,6 +29,14 @@ export const POST = withErrorHandler(async (
     return apiSuccess({ success: false, error: 'gap not found' });
   }
 
+  // Prevent duplicate promote for already in_progress or resolved gaps
+  if (gap.status === 'in_progress') {
+    return apiSuccess({ success: false, error: '缺口已在处理中' });
+  }
+  if (gap.status === 'resolved') {
+    return apiSuccess({ success: false, error: '缺口已解决，不能转入学习队列' });
+  }
+
   const { getSupabaseClient } = await import('@/storage/database/supabase-client');
   const client = getSupabaseClient();
 
@@ -40,11 +48,11 @@ export const POST = withErrorHandler(async (
       confidence: gap.last_top_score ?? 0,
       conversation_id: gap.source_conversation_ids?.[0] ?? null,
       conversation_title: '来自知识缺口',
-      source_context: JSON.stringify({
+      source_context: {
         from_gap_id: gap.id,
         from_gap_hash: gap.question_hash,
         from_gap_frequency: gap.frequency,
-      }),
+      },
       category: body?.category ?? gap.question_category ?? '待定',
       status: 'pending',
     })

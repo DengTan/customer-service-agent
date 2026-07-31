@@ -244,11 +244,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <Bell className="w-4 h-4 text-muted-foreground hover:text-foreground transition-colors" />
                     {notificationsLoading ? (
                       // Show subtle loading indicator during initial load to prevent UI shift
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-[10px] font-semibold text-white shadow-sm animate-pulse">
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[12px] h-3 px-0.5 flex items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-[9px] font-semibold text-white shadow-sm animate-pulse">
                         •
                       </span>
                     ) : notificationCount && notificationCount !== '0' ? (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-[10px] font-semibold text-white shadow-sm">
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[12px] h-3 px-0.5 flex items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-[9px] font-semibold text-white shadow-sm">
                         {notificationCount}
                       </span>
                     ) : null}

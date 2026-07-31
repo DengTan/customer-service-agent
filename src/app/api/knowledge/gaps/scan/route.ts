@@ -12,6 +12,7 @@ interface ScanBody {
 
 const STOP_WORDS = new Set(['的', '了', '和', '是', '就', '都', '而', '及', '与', '或']);
 const MIN_LENGTH = 4;
+const MAX_SAMPLES_SEEN = 10000;
 
 /**
  * Manually trigger a gap analysis. Scans user messages from the last `windowDays` days
@@ -57,6 +58,9 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     message_count: number;
     updated_at: string;
   }>) {
+    // Skip if dedupe set is full
+    if (sampleSeen.size >= MAX_SAMPLES_SEEN) break;
+
     const { data: msgs } = await client
       .from('messages')
       .select('id, role, content, sources, conversation_id')
@@ -73,15 +77,17 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       scanned += 1;
 
       // Find the AI response that followed this user message
+      // Use message id ordering to ensure assistant message comes after user message
       const { data: aiMsgs } = await client
         .from('messages')
         .select('sources, confidence')
         .eq('conversation_id', m.conversation_id)
         .eq('role', 'assistant')
-        .gt('inserted_at', m.id ? '1970-01-01' : '1970-01-01') // safety
-        .order('inserted_at', { ascending: true })
-        .limit(1);
-      const ai = (aiMsgs ?? [])[0] as { sources?: unknown; confidence?: number } | undefined;
+        .order('id', { ascending: true })  // Use id ordering for causality
+        .limit(10);
+      // Find the first assistant message after this user message (by array index in ordered result)
+      const userMsgIndex = msgs?.findIndex(msg => msg.id === m.id) ?? -1;
+      const ai = (aiMsgs ?? []).find((msg, idx) => idx > userMsgIndex) as { sources?: unknown; confidence?: number } | undefined;
       const sources = (ai?.sources as Array<{ score?: number }> | null) ?? [];
       const topScore = sources.length
         ? Math.max(...sources.map((s) => Number(s.score ?? 0)))

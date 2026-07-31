@@ -145,7 +145,7 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
 
   try {
     await userService.deleteUser(targetId);
-    return apiSuccess({ success: true });
+    return apiSuccess({ success: true, deleted: [targetId], protected: [] });
   } catch (error) {
     // Handle LAST_ADMIN_PROTECTION error
     if (error instanceof Error && 'code' in error) {

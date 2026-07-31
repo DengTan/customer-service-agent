@@ -85,32 +85,43 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
   const trackMaxTokens = trackField('ai_max_tokens');
   const trackMaxConcurrent = trackField('ai_max_concurrent');
   const trackSearchLimit = trackField('knowledge_search_limit');
-  const trackImageLimit = trackField('knowledge_image_search_limit');
+  const trackImageLimit = trackField('knowledge_image_limit');
 
-  const loadProviderModels = async (providerId: string, forceRefresh = false) => {
-    // Skip cache if force refresh is requested
-    if (!forceRefresh && loadedProviderIds.current.has(providerId)) {
-      return;
-    }
+  // Refs to hold latest values for async callbacks
+  const latestProviderIdRef = useRef<string | null>(null);
+  const latestRefreshTriggerRef = useRef<number>(0);
+
+  const loadProviderModels = async (providerId: string) => {
     setModelsLoading(true);
+    latestProviderIdRef.current = providerId;
+    const currentTrigger = latestRefreshTriggerRef.current;
     try {
       const res = await fetch(`/api/llm-providers?provider_id=${providerId}`);
       const data = await res.json();
-      loadedProviderIds.current.add(providerId);
-      setProviderModels(prev => ({ ...prev, [providerId]: data.models || [] }));
+      // Only update state if this is still the current trigger
+      if (currentTrigger === latestRefreshTriggerRef.current) {
+        setProviderModels(prev => ({ ...prev, [providerId]: data.models || [] }));
+        loadedProviderIds.current.add(providerId);
+      }
     } catch (error) {
       logger.error('Failed to load provider models', { error });
     } finally {
-      setModelsLoading(false);
+      if (currentTrigger === latestRefreshTriggerRef.current) {
+        setModelsLoading(false);
+      }
     }
   };
 
   // Handle models change callback from LlmProviderManager
-  const handleModelsChange = (providerId: string) => {
-    // Force refresh the models for this provider
-    loadedProviderIds.current.delete(providerId);
-    loadProviderModels(providerId, true);
-  };
+  const handleModelsChange = useCallback((providerId: string) => {
+    // Increment refresh trigger to cancel any pending request and trigger new load
+    latestRefreshTriggerRef.current += 1;
+    // Load models for the specified provider
+    loadProviderModels(providerId);
+  }, []);
+
+  // Handle model saved callback from LlmProviderManager (same as models change)
+  const handleModelSaved = handleModelsChange;
 
   // Load providers and models on mount
   useEffect(() => {
@@ -149,12 +160,49 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
     }
   }, []);
 
+  // Check if current provider is enabled
+  const currentProvider = providers.find(p => p.id === settings.llm_provider_id);
+  const isProviderEnabled = currentProvider?.is_enabled ?? true;
+
   // Load models when provider changes
   useEffect(() => {
     if (settings.llm_provider_id) {
+      latestRefreshTriggerRef.current += 1;
       loadProviderModels(settings.llm_provider_id);
     }
   }, [settings.llm_provider_id]);
+
+  // Auto-select first model when provider changes or when model list loads with no selection
+  useEffect(() => {
+    const models = providerModels[settings.llm_provider_id || ''] || [];
+    const currentModel = settings.ai_model;
+    const textModels = models.filter(m => !m.supports_vision);
+    
+    // Only auto-select if:
+    // 1. Models have loaded (not empty)
+    // 2. No model is currently selected OR current model is not in the list
+    // 3. Provider is enabled
+    if (textModels.length > 0 && isProviderEnabled && (!currentModel || !textModels.some(m => m.model_id === currentModel))) {
+      const firstModel = textModels[0];
+      onSettingsChange((prev) => ({ ...prev, ai_model: firstModel.model_id }));
+    }
+  }, [providerModels, settings.llm_provider_id, isProviderEnabled]);
+
+  // Auto-select first multimodal model when provider changes or when model list loads with no selection
+  useEffect(() => {
+    const models = providerModels[settings.llm_provider_id || ''] || [];
+    const currentModel = settings.multimodal_model;
+    const visionModels = models.filter(m => m.supports_vision);
+    
+    // Only auto-select if:
+    // 1. Models have loaded (not empty)
+    // 2. No model is currently selected OR current model is not in the list
+    // 3. Provider is enabled
+    if (visionModels.length > 0 && isProviderEnabled && (!currentModel || !visionModels.some(m => m.model_id === currentModel))) {
+      const firstModel = visionModels[0];
+      onSettingsChange((prev) => ({ ...prev, multimodal_model: firstModel.model_id }));
+    }
+  }, [providerModels, settings.llm_provider_id, isProviderEnabled]);
 
   const getCurrentProviderModels = () => {
     return providerModels[settings.llm_provider_id || ''] || [];
@@ -185,12 +233,16 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
               onSettingsChange((prev) => ({ ...prev, llm_provider_id: providerId }));
               loadProviderModels(providerId);
             }}
+            onProviderListChange={setProviders}
+            onModelSaved={handleModelSaved}
             onModelsChange={handleModelsChange}
           />
         </div>
 
         {/* Regular Model Selection */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className={`rounded-xl border border-border bg-card p-5 transition-opacity ${
+          !isProviderEnabled ? 'opacity-50 pointer-events-none select-none' : ''
+        }`}>
           <div className="flex items-center justify-between mb-1">
             <label className="text-xs font-medium text-foreground block">普通模型</label>
             <button
@@ -204,6 +256,11 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
               }`} />
             </button>
           </div>
+          {!isProviderEnabled && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+              当前提供商已禁用
+            </p>
+          )}
           <p className="text-xs text-muted-foreground mb-3">
             {settings.ai_model_enabled !== 'false'
               ? '已启用，用于日常文本对话'
@@ -266,7 +323,9 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
         </div>
 
         {/* Multimodal Model Selection */}
-        <div className="rounded-xl border border-border bg-card p-5">
+        <div className={`rounded-xl border border-border bg-card p-5 transition-opacity ${
+          !isProviderEnabled ? 'opacity-50 pointer-events-none select-none' : ''
+        }`}>
           <div className="flex items-center justify-between mb-1">
             <label className="text-xs font-medium text-foreground block">多模态模型</label>
             <button
@@ -280,6 +339,11 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
               }`} />
             </button>
           </div>
+          {!isProviderEnabled && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+              当前提供商已禁用
+            </p>
+          )}
           <p className="text-xs text-muted-foreground mb-3">
             {settings.multimodal_enabled !== 'false'
               ? '已启用，用户发送图片时自动调用多模态模型进行识别'
@@ -324,7 +388,7 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
-                        <ImageIcon className="w-3 h-3" /> 多模态
+                        <ImageIcon className="w-3 h-3" /> 视觉理解
                       </span>
                       {model.supports_streaming && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">

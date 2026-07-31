@@ -23,6 +23,7 @@ export interface Attachment {
   name: string;
   type: string;
   url: string;
+  size?: number;
 }
 
 export interface Agent {
