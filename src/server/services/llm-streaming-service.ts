@@ -359,10 +359,13 @@ export class LLMStreamingService {
           };
 
           // Step 1: Try to auto-select a model
+          // P0 fix: 优先使用 llm_provider_id 配置指定的 Provider
+          // 只有当配置了 providerId 时才使用，否则按 default 排序选择
           let selectedProvider: Awaited<ReturnType<typeof llmProviderService.selectBestModel>> = null;
           try {
             selectedProvider = await llmProviderService.selectBestModel({
               type: needsVision ? 'vision' : 'chat',
+              providerId: options.llmProviderId || undefined,
               supportsVision: needsVision || undefined,
               supportsFunctionCalling: undefined,
             });
@@ -381,6 +384,12 @@ export class LLMStreamingService {
               resolvedProviderBaseUrl = selectedProvider.provider.base_url;
               resolvedProviderApiKey = selectedProvider.provider.api_key;
             }
+            logger.info('[LLMStreamingService] Provider selected', {
+              providerId: resolvedProviderId,
+              providerName: selectedProvider.provider.name,
+              model: llmModel,
+              requestedProviderId: options.llmProviderId,
+            });
           }
 
           if (options.imageUrl) {
