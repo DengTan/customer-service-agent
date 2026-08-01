@@ -116,6 +116,7 @@ function DashboardPageInner() {
   const [ticketTrend, setTicketTrend] = useState<Array<{ date: string; created: number; closed: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [alertsLoading, setAlertsLoading] = useState(false);
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -609,18 +610,36 @@ function DashboardPageInner() {
                     <button
                       onClick={async (e) => {
                         e.stopPropagation();
+                        if (resolvingIds.has(alert.id)) return;
+                        setResolvingIds(prev => {
+                          const next = new Set(prev);
+                          next.add(alert.id);
+                          return next;
+                        });
                         try {
-                          const res = await fetch(`/api/alerts?id=${alert.id}`, { method: 'PATCH' });
+                          const res = await fetch(`/api/alerts?id=${alert.id}`, {
+                            method: 'PATCH',
+                            headers: { 'content-type': 'application/json' },
+                            body: JSON.stringify({ action: 'resolve' }),
+                          });
                           if (!res.ok) {
                             toast.error('标记失败');
                             return;
                           }
-                          setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, is_resolved: true } : a));
+                          setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, is_resolved: true, status: 'resolved' } : a));
                         } catch { /* ignore */ }
+                        finally {
+                          setResolvingIds(prev => {
+                            const next = new Set(prev);
+                            next.delete(alert.id);
+                            return next;
+                          });
+                        }
                       }}
-                      className="text-[10px] px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      disabled={resolvingIds.has(alert.id)}
+                      className="text-[10px] px-2 py-1 rounded-md bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      标记已处理
+                      {resolvingIds.has(alert.id) ? '处理中' : '标记已处理'}
                     </button>
                   )}
                 </div>
