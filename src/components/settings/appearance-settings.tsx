@@ -4,6 +4,7 @@ import { ToggleLeft, ToggleRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { useThemeSettings } from '@/lib/theme-settings-context';
 import type { ThemeMode } from '@/lib/theme-settings-context';
+import { SettingSlider } from '@/components/common/setting-slider';
 import { THEME_OPTIONS } from './types';
 
 interface AppearanceSettingsProps {
@@ -62,30 +63,25 @@ export function AppearanceSettings({ settings, onSettingsChange, onValidationCha
         </div>
 
         {/* Font Size */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-xs font-medium text-foreground block">对话字体大小</label>
-            <span className="text-xs text-muted-foreground">{settings.font_size || '14'}px</span>
-          </div>
-          <input
-            type="range"
-            min="12"
-            max="18"
-            step="1"
-            value={settings.font_size || '14'}
-            onChange={(e) => {
-              themeSettingsHook.setFontSize(e.target.value);
-              // Sync to parent settings for consistency
-              onSettingsChange((prev) => ({ ...prev, font_size: e.target.value }));
-            }}
-            className="w-full accent-primary"
-          />
-          <div className="flex justify-between text-xs text-muted-foreground/50 mt-1">
-            <span>小</span>
-            <span>标准</span>
-            <span>大</span>
-          </div>
-        </div>
+        <SettingSlider
+          settingKey="font_size"
+          id="appearance-font-size"
+          label="对话字体大小"
+          description="调整聊天界面文字大小（推荐 14px）"
+          value={settings.font_size || '14'}
+          fallback="14"
+          renderValue={(n) => `${Math.round(n)}px`}
+          onChange={(v) => {
+            themeSettingsHook.setFontSize(v);
+            // Sync to parent settings for consistency
+            onSettingsChange((prev) => ({ ...prev, font_size: v }));
+          }}
+          marks={[
+            [12, '小'],
+            [15, '标准'],
+            [18, '大'],
+          ]}
+        />
 
         {/* Message Bubbles */}
         <div className="rounded-xl border border-border bg-card p-5">

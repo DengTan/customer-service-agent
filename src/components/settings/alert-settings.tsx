@@ -2,7 +2,8 @@
 
 import { AlertTriangle } from 'lucide-react';
 import { NumberInput } from '@/components/common/number-input';
-import { useCallback, useEffect, useRef } from 'react';
+import { SettingSlider } from '@/components/common/setting-slider';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface AlertSettingsProps {
   settings: Record<string, string>;
@@ -26,23 +27,30 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
   // Critical ≤ Warning means the more-severe alert fires no later than
   // the less-severe one, which makes no operational sense.
   const fieldValidityRef = useRef<Record<string, boolean>>({});
-  const crossFieldErrorRef = useRef<string | null>(null);
+  // Cross-field error key is mirrored into state so the JSX can render
+  // the inline error message without reading a ref during render.
+  const [crossFieldError, setCrossFieldError] = useState<string | null>(null);
   // Hold the latest settings in a ref so the closures below don't capture
   // stale snapshots. Without this, `trackField` would always read the
   // settings from the moment it was first memoised.
   const settingsRef = useRef(settings);
-  settingsRef.current = settings;
+
+  // Keep the ref in sync without writing during render — see React docs
+  // for "Cannot access refs during render". The effect runs after commit.
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const reportValidity = useCallback(() => {
     if (!onValidationChange) return;
-    if (crossFieldErrorRef.current) {
-      onValidationChange(false, crossFieldErrorRef.current);
+    if (crossFieldError) {
+      onValidationChange(false, crossFieldError);
       return;
     }
     const invalidKey =
       Object.entries(fieldValidityRef.current).find(([, v]) => !v)?.[0] ?? null;
     onValidationChange(invalidKey === null, invalidKey);
-  }, [onValidationChange]);
+  }, [onValidationChange, crossFieldError]);
 
   const recomputeCrossFieldError = useCallback(() => {
     const s = settingsRef.current;
@@ -75,9 +83,8 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
     // Report the first failing rule. Rounds takes priority because it's
     // more directly user-edited (NumberInput); confidence is range so
     // the violation is rarer and lower-stakes to surface.
-    crossFieldErrorRef.current = roundsErr ?? confErr;
-    reportValidity();
-  }, [reportValidity]);
+    setCrossFieldError(roundsErr ?? confErr);
+  }, []);
 
   const trackField = useCallback(
     (key: string) => (isValid: boolean) => {
@@ -106,9 +113,21 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
     recomputeCrossFieldError,
   ]);
 
+  // After `crossFieldError` updates, propagate it to the parent's save
+  // gating. Setting state inside `recomputeCrossFieldError` doesn't
+  // trigger a re-validate call there, so we listen for the state change
+  // here (the effect runs after commit with the new state).
+  useEffect(() => {
+    reportValidity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crossFieldError]);
+
   const trackWarningRounds = trackField('alert_high_rounds_threshold');
   const trackCriticalRounds = trackField('alert_high_rounds_critical_threshold');
   const trackAutoHandoffRounds = trackField('alert_auto_handoff_rounds');
+  const trackConfidenceWarning = trackField('alert_confidence_threshold');
+  const trackConfidenceCritical = trackField('alert_confidence_critical_threshold');
+  const trackDedupWindow = trackField('alert_dedup_window_minutes');
 
   return (
     <section>
@@ -120,51 +139,28 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
           <label className="text-xs font-medium text-foreground mb-1 block">低置信度告警阈值</label>
           <p className="text-xs text-muted-foreground mb-3">AI 回复置信度低于此值时产生告警</p>
           <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-muted-foreground">告警阈值（Warning）</span>
-                <span className="text-xs font-medium text-foreground">{(parseThreshold(settings, 'alert_confidence_threshold', '0.4') * 100).toFixed(0)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="0.9"
-                step="0.05"
-                value={settings.alert_confidence_threshold || '0.4'}
-                onChange={(e) => onSettingsChange((prev) => ({ ...prev, alert_confidence_threshold: e.target.value }))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground/50 mt-1">
-                <span>10%</span>
-                <span>50%</span>
-                <span>90%</span>
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-muted-foreground">严重告警阈值（Critical）</span>
-                <span className="text-xs font-medium text-foreground">{(parseThreshold(settings, 'alert_confidence_critical_threshold', '0.2') * 100).toFixed(0)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.05"
-                max="0.5"
-                step="0.05"
-                value={settings.alert_confidence_critical_threshold || '0.2'}
-                onChange={(e) => onSettingsChange((prev) => ({ ...prev, alert_confidence_critical_threshold: e.target.value }))}
-                className="w-full accent-destructive"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground/50 mt-1">
-                <span>5%</span>
-                <span>25%</span>
-                <span>50%</span>
-              </div>
-              {crossFieldErrorRef.current === 'alert_confidence_critical_threshold' && (
-                <p className="mt-1 text-xs text-destructive" role="alert">
-                  严重告警置信度阈值必须小于告警阈值
-                </p>
-              )}
-            </div>
+            <SettingSlider
+              settingKey="alert_confidence_threshold"
+              id="alert-confidence-warning"
+              label="告警阈值（Warning）"
+              description="AI 回复置信度低于此值时产生告警"
+              value={settings.alert_confidence_threshold || '0.4'}
+              fallback="0.4"
+              renderValue={(n) => `${Math.round(n * 100)}%`}
+              onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_confidence_threshold: v }))}
+              onValidationChange={trackConfidenceWarning}
+            />
+            <SettingSlider
+              settingKey="alert_confidence_critical_threshold"
+              id="alert-confidence-critical"
+              label="严重告警阈值（Critical）"
+              description="严重告警置信度阈值必须小于告警阈值"
+              value={settings.alert_confidence_critical_threshold || '0.2'}
+              fallback="0.2"
+              renderValue={(n) => `${Math.round(n * 100)}%`}
+              onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_confidence_critical_threshold: v }))}
+              onValidationChange={trackConfidenceCritical}
+            />
           </div>
         </div>
 
@@ -176,29 +172,25 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Warning（轮次）</label>
             <NumberInput
+              settingKey="alert_high_rounds_threshold"
               id="alert-warning-rounds"
               value={settings.alert_high_rounds_threshold || '10'}
               onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_high_rounds_threshold: v }))}
               onValidationChange={trackWarningRounds}
-              min={1}
-              max={1_000}
-              step={1}
               fallback="10"
             />
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Critical（轮次）</label>
             <NumberInput
+              settingKey="alert_high_rounds_critical_threshold"
               id="alert-critical-rounds"
               value={settings.alert_high_rounds_critical_threshold || '15'}
               onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_high_rounds_critical_threshold: v }))}
               onValidationChange={trackCriticalRounds}
-              min={1}
-              max={1_000}
-              step={1}
               fallback="15"
             />
-            {crossFieldErrorRef.current === 'alert_high_rounds_critical_threshold' && (
+            {crossFieldError === 'alert_high_rounds_critical_threshold' && (
               <p className="mt-1 text-xs text-destructive" role="alert">
                 严重告警轮次必须大于告警轮次
               </p>
@@ -214,15 +206,34 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">最小轮次</label>
             <NumberInput
+              settingKey="alert_auto_handoff_rounds"
               id="alert-auto-handoff-rounds"
               value={settings.alert_auto_handoff_rounds || '6'}
               onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_auto_handoff_rounds: v }))}
               onValidationChange={trackAutoHandoffRounds}
-              min={1}
-              max={1_000}
-              step={1}
               fallback="6"
             />
+          </div>
+        </div>
+
+        {/* Dedup Window */}
+        <div className="rounded-xl border border-border bg-card p-5">
+          <label className="text-xs font-medium text-foreground mb-1 block">告警去重窗口</label>
+          <p className="text-xs text-muted-foreground mb-3">同一对话同一类型告警在该时间窗口内视为重复，重复请求不会写入数据库</p>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">窗口（分钟）</label>
+            <NumberInput
+              settingKey="alert_dedup_window_minutes"
+              id="alert-dedup-window-minutes"
+              value={settings.alert_dedup_window_minutes || '30'}
+              onChange={(v) => onSettingsChange((prev) => ({ ...prev, alert_dedup_window_minutes: v }))}
+              onValidationChange={trackDedupWindow}
+              fallback="30"
+              placeholder="30"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              范围 1 ~ 1440 分钟；保存后最多 30 秒内缓存自动失效，新值立即生效。
+            </p>
           </div>
         </div>
 
@@ -238,6 +249,7 @@ export function AlertSettings({ settings, onSettingsChange, onValidationChange }
             <li>消息数 &gt; {settings.alert_high_rounds_threshold || '10'} → Warning 告警</li>
             <li>消息数 &gt; {settings.alert_high_rounds_critical_threshold || '15'} → Critical 告警</li>
             <li>置信度低于阈值 且 消息数 &gt; {settings.alert_auto_handoff_rounds || '6'} → 自动转人工</li>
+            <li>同对话同类告警 {settings.alert_dedup_window_minutes || '30'} 分钟内去重</li>
           </ul>
         </div>
       </div>

@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { NextRequest } from 'next/server';
+import { withErrorHandlerSimple, apiSuccess, apiError, requirePermission, HttpStatus } from '@/lib/api-utils';
 import { TicketService } from '@/server/services/ticket-service';
 import { getLogger } from '@/lib/logger';
 import { TICKET } from '@/lib/constants';
@@ -41,33 +41,21 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { success: false, error: '请求体格式无效' },
-      { status: 400 }
-    );
+    return apiError('请求体格式无效', { status: HttpStatus.BAD_REQUEST });
   }
   const { title, description, category, priority, conversation_id, creator_id, assignee_id, custom_field_values } = body ?? {};
 
   // Validate required fields
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
-    return NextResponse.json(
-      { success: false, error: '标题不能为空' },
-      { status: 400 }
-    );
+    return apiError('标题不能为空', { status: HttpStatus.BAD_REQUEST });
   }
 
   if (title.length > 500) {
-    return NextResponse.json(
-      { success: false, error: '标题不能超过500个字符' },
-      { status: 400 }
-    );
+    return apiError('标题不能超过500个字符', { status: HttpStatus.BAD_REQUEST });
   }
 
   if (description && typeof description === 'string' && description.length > TICKET.MAX_DESCRIPTION_LENGTH) {
-    return NextResponse.json(
-      { success: false, error: `描述不能超过${TICKET.MAX_DESCRIPTION_LENGTH}个字符` },
-      { status: 400 }
-    );
+    return apiError(`描述不能超过${TICKET.MAX_DESCRIPTION_LENGTH}个字符`, { status: HttpStatus.BAD_REQUEST });
   }
 
   const ticket = await ticketService.createTicket({
@@ -91,18 +79,12 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { success: false, error: '请求体格式无效' },
-      { status: 400 }
-    );
+    return apiError('请求体格式无效', { status: HttpStatus.BAD_REQUEST });
   }
   const { ids, status, assignee_id, priority, category } = body ?? {};
 
   if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    return NextResponse.json(
-      { success: false, error: '请选择至少一个工单' },
-      { status: 400 }
-    );
+    return apiError('请选择至少一个工单', { status: HttpStatus.BAD_REQUEST });
   }
 
   const result = await ticketService.batchUpdate(ids, {

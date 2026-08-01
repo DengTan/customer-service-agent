@@ -23,6 +23,20 @@ export class AutoReplyService {
     }
   }
 
+  async listRulesPaginated({ page, limit, offset, search, filterMode }: { 
+    page: number; 
+    limit: number; 
+    offset: number;
+    search?: string;
+    filterMode?: 'all' | 'enabled' | 'disabled';
+  }): Promise<{ rules: AutoReplyRule[]; total: number }> {
+    try {
+      return await this.autoReplies.listPaginated({ page, limit, offset, search, filterMode });
+    } catch (error) {
+      throw toServiceError(error, 'Failed to fetch auto reply rules');
+    }
+  }
+
   async createRule(input: CreateAutoReplyRuleInput): Promise<AutoReplyRule> {
     if (!input.keyword || !input.reply_content) {
       throw new ServiceError('Keyword and reply content are required', {

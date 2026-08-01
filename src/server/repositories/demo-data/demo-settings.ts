@@ -17,6 +17,7 @@ export const DEMO_SETTINGS: SettingRow[] = [
   { key: 'alert_high_rounds_threshold', value: '10' },
   { key: 'alert_high_rounds_critical_threshold', value: '15' },
   { key: 'alert_auto_handoff_rounds', value: '6' },
+  { key: 'alert_dedup_window_minutes', value: '30' },
   { key: 'max_conversation_rounds', value: '20' },
   { key: 'ticket_notify_enabled', value: 'true' },
   { key: 'ticket_auto_assign', value: 'false' },

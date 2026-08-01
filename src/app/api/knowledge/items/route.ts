@@ -4,6 +4,7 @@ import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requirePermis
 import { KnowledgeService } from '@/server/services/knowledge-service';
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/logger';
+import { PAGINATION } from '@/lib/constants';
 
 const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -22,9 +23,9 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const category = searchParams.get('category')?.trim() || undefined;
 
   const pageRaw = parseInt(searchParams.get('page') || '1', 10);
-  const limitRaw = parseInt(searchParams.get('limit') || '20', 10);
+  const limitRaw = parseInt(searchParams.get('limit') || String(PAGINATION.DEFAULT_PAGE_SIZE), 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
-  const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 20;
+  const limit = Number.isFinite(limitRaw) ? Math.min(PAGINATION.MAX_PAGE_SIZE, Math.max(1, limitRaw)) : PAGINATION.DEFAULT_PAGE_SIZE;
 
   const result = await knowledgeService.listItems({
     includeArchived,

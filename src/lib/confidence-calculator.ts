@@ -69,7 +69,9 @@ export function calculateConfidence(input: ConfidenceCalculationInput): Confiden
   } = input;
 
   const hasGrounding = hasKnowledge || hasTools || hasProductContext || hasSizeChartContext;
-  const handoffIntent = detectHandoffIntent(''); // Content-based detection is done separately
+  // Note: handoffIntent detection is done via buildConfidenceFromContent or calculateSimulationConfidence
+  // using content-based pattern matching. This internal call should not be here.
+  const handoffIntent = false; // Will be overridden by callers using actual content
 
   // Build base breakdown
   const breakdown: ConfidenceBreakdown = {

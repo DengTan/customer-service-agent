@@ -92,26 +92,22 @@ export function ChatSettings({ settings, onSettingsChange, onValidationChange }:
           <div>
             <label className="text-xs font-medium text-foreground mb-1 block">对话超时时间（分钟）</label>
             <NumberInput
+              settingKey="session_timeout"
               id="chat-session-timeout"
               value={settings.session_timeout || '30'}
               onChange={(v) => onSettingsChange((prev) => ({ ...prev, session_timeout: v }))}
               onValidationChange={trackSessionTimeout}
-              min={0}
-              max={24 * 60}
-              step={1}
               fallback="30"
             />
           </div>
           <div>
             <label className="text-xs font-medium text-foreground mb-1 block">最大对话轮次</label>
             <NumberInput
+              settingKey="max_turns"
               id="chat-max-turns"
               value={settings.max_turns || '20'}
               onChange={(v) => onSettingsChange((prev) => ({ ...prev, max_turns: v }))}
               onValidationChange={trackMaxTurns}
-              min={0}
-              max={1_000}
-              step={1}
               fallback="20"
             />
           </div>
@@ -170,13 +166,11 @@ export function ChatSettings({ settings, onSettingsChange, onValidationChange }:
             未处理超时阈值（分钟）
           </label>
           <NumberInput
+            settingKey="unhandled_remind_minutes"
             id="chat-unhandled-minutes"
             value={settings.unhandled_remind_minutes ?? '30'}
             onChange={(v) => onSettingsChange((prev) => ({ ...prev, unhandled_remind_minutes: v }))}
             onValidationChange={trackUnhandledMinutes}
-            min={1}
-            max={24 * 60}
-            step={1}
             fallback="30"
             placeholder="30"
           />

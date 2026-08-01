@@ -7,7 +7,7 @@
  * - Reset password for existing users
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requireRole, parseJsonBody } from '@/lib/api-utils';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password';

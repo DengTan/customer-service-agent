@@ -1,32 +1,7 @@
 import { NextRequest } from 'next/server';
 import { apiSuccess, apiError, HttpStatus, withErrorHandler, getAuthenticatedUserId, extractUserRole } from '@/lib/api-utils';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
-
-/**
- * Check if user has permission to access a simulation conversation
- * - Admin can access all
- * - Creator (created_by) can access their own
- * - null created_by (legacy) only accessible by admin
- */
-function canAccessConversation(
-  simulation: { created_by?: string | null },
-  userId: string | null,
-  role: string | null
-): boolean {
-  // Admin can access all
-  if (role === 'admin') return true;
-
-  // Must be logged in to access
-  if (!userId) return false;
-
-  // If created_by is null (legacy data), only admin can access
-  if (simulation.created_by === null || simulation.created_by === undefined) {
-    return false;
-  }
-
-  // Creator can access their own
-  return simulation.created_by === userId;
-}
+import { canAccessConversation } from '@/lib/simulation-access';
 
 // GET /api/simulations/[id] - Get simulation details and messages
 export const GET = withErrorHandler(async (

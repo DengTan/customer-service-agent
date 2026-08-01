@@ -134,7 +134,9 @@ export class LLMClientAdapter {
           error: errorText,
           url,
         });
-        throw new Error(`LLM request failed: ${response.status} ${errorText}`);
+        const { userMessage, internalMessage } = this.translateHttpError(response.status, errorText);
+        logger.error('LLM HTTP error', { status: response.status, internalMessage, url });
+        throw new Error(userMessage);
       }
 
       if (!response.body) {
@@ -189,7 +191,7 @@ export class LLMClientAdapter {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new Error(`LLM request timeout after ${this.timeout}ms`);
+        throw new Error(`LLM 请求超时（${this.timeout / 1000}s），请稍后重试或更换 provider`);
       }
       throw error;
     }
@@ -237,7 +239,9 @@ export class LLMClientAdapter {
           error: errorText,
           url,
         });
-        throw new Error(`LLM request failed: ${response.status} ${errorText}`);
+        const { userMessage, internalMessage } = this.translateHttpError(response.status, errorText);
+        logger.error('LLM HTTP error', { status: response.status, internalMessage, url });
+        throw new Error(userMessage);
       }
 
       const data: LLMChatResponse = await response.json();
@@ -265,7 +269,7 @@ export class LLMClientAdapter {
       };
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new Error(`LLM request timeout after ${this.timeout}ms`);
+        throw new Error(`LLM 请求超时（${this.timeout / 1000}s），请稍后重试或更换 provider`);
       }
       throw error;
     }
@@ -291,6 +295,61 @@ export class LLMClientAdapter {
       }
       return { role: msg.role, content: msg.content };
     });
+  }
+
+  /**
+   * Translate HTTP status codes to user/internal error message pair.
+   * - userMessage: safe to show to end users (no internal details)
+   * - internalMessage: developer-facing diagnostic (write to logs)
+   */
+  private translateHttpError(status: number, errorText: string): { userMessage: string; internalMessage: string } {
+    const sanitizeErrorText = (text: string): string =>
+      text
+        .replace(/("(?:api[_-]?key|apiKey|secret|token|password|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token)"\s*:\s*)"[^"]*"/gi, '$1"[REDACTED]"')
+        .replace(/(Bearer\s+)[A-Za-z0-9\-_.=]+/gi, '$1[REDACTED]')
+        .replace(/\b[A-Fa-f0-9]{32,}\b/g, '[REDACTED]')
+        .replace(/\b[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{40,}\b/g, '[REDACTED]');
+
+    const safeText = sanitizeErrorText(errorText);
+    const truncated = safeText.slice(0, 200);
+    switch (status) {
+      case 401:
+        return {
+          userMessage: 'AI 服务认证失败，请联系管理员',
+          internalMessage: 'LLM Provider 鉴权失败 (401)，请检查 api_key 是否正确或已过期',
+        };
+      case 403:
+        return {
+          userMessage: 'AI 服务认证失败，请联系管理员',
+          internalMessage: 'LLM Provider 拒绝访问 (403)，请检查 api_key 权限或 IP 白名单',
+        };
+      case 404:
+        return {
+          userMessage: 'AI 服务地址不存在，请联系管理员',
+          internalMessage: 'LLM Provider 接口不存在 (404)，请检查 base_url 是否正确（应在结尾去除 /v1）',
+        };
+      case 429:
+        return {
+          userMessage: 'AI 服务繁忙，请稍后再试',
+          internalMessage: 'LLM Provider 触发限流 (429)，请稍后重试或更换 provider',
+        };
+      case 400:
+        return {
+          userMessage: `AI 请求格式异常：${truncated}`,
+          internalMessage: `LLM Provider 请求格式错误 (400)：${truncated}`,
+        };
+      default:
+        if (status >= 500) {
+          return {
+            userMessage: 'AI 服务暂时不可用，请稍后再试',
+            internalMessage: `LLM Provider 服务异常 (${status})，请稍后重试`,
+          };
+        }
+        return {
+          userMessage: `AI 服务调用失败 (${status})`,
+          internalMessage: `LLM request failed: ${status} ${truncated}`,
+        };
+    }
   }
 
   /**

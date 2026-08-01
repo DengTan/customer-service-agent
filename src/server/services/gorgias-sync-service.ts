@@ -1400,6 +1400,8 @@ export class GorgiasSyncService {
           confidence: 1.0,
           sources: [{ type: 'auto_reply', keyword: autoReply.rule.keyword }],
         });
+        // Update message count for the auto-reply message
+        await conversationService.incrementMessageCount(conversationId);
         logger.info('GorgiasSync: Auto-reply sent', { context: { conversationId } });
         return;
       }

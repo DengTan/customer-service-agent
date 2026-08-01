@@ -1,4 +1,3 @@
-import { NextRequest } from 'next/server';
 import { ShopService } from '@/server/services/shop-service';
 import { parseJsonBody, apiSuccess, withErrorHandlerSimple, requireRole } from '@/lib/api-utils';
 

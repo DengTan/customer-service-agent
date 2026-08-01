@@ -201,6 +201,9 @@ export class MarketingService {
           sources: [{ type: 'marketing_campaign', campaignId, campaignName: campaign.name, variant }],
         });
 
+        // Update message count for the welcome message
+        await conversationService.incrementMessageCount(conversation.id);
+
         // Create marketing log
         await this.repo.createMarketingLog({
           campaign_id: campaignId,

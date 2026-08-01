@@ -45,15 +45,13 @@ export function KnowledgeLearningSettings({
             AI 回复置信度高于此值时不提取为候选知识
           </p>
           <NumberInput
+            settingKey="knowledge_learning_confidence_threshold"
             id="knowledge-learning-confidence"
             value={settings.knowledge_learning_confidence_threshold ?? '0.85'}
             onChange={(v) =>
               onSettingsChange((prev) => ({ ...prev, knowledge_learning_confidence_threshold: v }))
             }
             onValidationChange={trackConfidence}
-            min={0}
-            max={1}
-            step={0.05}
             fallback="0.85"
           />
           <p className="text-xs text-muted-foreground mt-1">（范围: 0 - 1）</p>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/api-utils';
+import { requirePermission, HttpStatus } from '@/lib/api-utils';
 import { TicketService } from '@/server/services/ticket-service';
 import { getLogger } from '@/lib/logger';
 
@@ -19,6 +19,6 @@ export async function GET(
     return NextResponse.json({ audit_log: auditLog });
   } catch (error) {
     logger.error('[Ticket Audit Log] GET error', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json({ error: '获取审计日志失败' }, { status: 500 });
+    return NextResponse.json({ error: '获取审计日志失败' }, { status: HttpStatus.INTERNAL_SERVER_ERROR });
   }
 }

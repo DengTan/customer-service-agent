@@ -3,7 +3,7 @@
  * Get current authenticated user from JWT token
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { verifyToken, extractTokenFromCookies } from '@/lib/auth/jwt';
 import { UserRepository } from '@/server/repositories/user-repository';

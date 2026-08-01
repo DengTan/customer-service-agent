@@ -4,6 +4,7 @@
  */
 
 import { SSE } from './constants';
+import { formatMessageTime as formatTime } from './format';
 
 /**
  * 消息基础结构（仅包含时间渲染所需的字段）
@@ -12,13 +13,8 @@ interface MessageBase {
   created_at: string;
 }
 
-/**
- * 格式化消息时间为 HH:mm
- */
-export function formatMessageTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-}
+// Re-export formatMessageTime from format.ts for backward compatibility
+export { formatTime as formatMessageTime };
 
 /**
  * 判断两条消息之间是否需要显示时间分隔线

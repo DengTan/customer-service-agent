@@ -3,7 +3,7 @@
  * Clear authentication cookie and log out user
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { getIsHttps, isSameOriginRequest } from '@/lib/auth/proxy-utils';
 import { HTTP } from '@/lib/constants';

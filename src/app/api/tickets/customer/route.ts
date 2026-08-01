@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requirePermission } from '@/lib/api-utils';
+import { requirePermission, HttpStatus } from '@/lib/api-utils';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getLogger } from '@/lib/logger';
 import { TICKET } from '@/lib/constants';
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const customerId = searchParams.get('customer_id');
 
     if (!conversationId && !customerId) {
-      return NextResponse.json({ error: '请提供 conversation_id 或 customer_id' }, { status: 400 });
+      return NextResponse.json({ error: '请提供 conversation_id 或 customer_id' }, { status: HttpStatus.BAD_REQUEST });
     }
 
     const supabase = getSupabaseClient();
@@ -63,6 +63,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ tickets });
   } catch (error) {
     logger.error('[Ticket Customer] GET error', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json({ error: '查询工单失败' }, { status: 500 });
+    return NextResponse.json({ error: '查询工单失败' }, { status: HttpStatus.INTERNAL_SERVER_ERROR });
   }
 }

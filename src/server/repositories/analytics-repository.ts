@@ -3,13 +3,7 @@ import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-clien
 import { RepositoryError } from './repository-error';
 import type { AlertRow } from './types';
 import { toAlertRow } from './types';
-import { DEMO_ALERTS } from './demo-data/demo-alerts';
 import { logger } from '@/lib/logger';
-import {
-  DEMO_METRICS,
-  DEMO_SOURCE_DISTRIBUTION,
-  DEMO_HANDOVER_COUNT,
-} from './demo-data/demo-analytics';
 
 export interface ConversationMessage {
   created_at: string;

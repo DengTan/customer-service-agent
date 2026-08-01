@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { withErrorHandler, apiSuccess, apiError } from '@/lib/api-utils';
 import { CustomerTagService } from '@/server/services/customer-tag-service';
 

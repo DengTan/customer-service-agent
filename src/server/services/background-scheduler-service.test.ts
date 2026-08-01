@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   settingsList: vi.fn(),
   findUnhandled: vi.fn(),
   findRecent: vi.fn(),
+  findRecentBatch: vi.fn(),
   createAlert: vi.fn(),
 }));
 
@@ -15,7 +16,11 @@ vi.mock('@/server/repositories/conversation-repository', () => ({
   ConversationRepository: class { findUnhandledConversations = mocks.findUnhandled; },
 }));
 vi.mock('@/server/repositories/alert-repository', () => ({
-  AlertRepository: class { findRecentUnresolved = mocks.findRecent; create = mocks.createAlert; },
+  AlertRepository: class {
+    findRecentUnresolved = mocks.findRecent;
+    findRecentUnresolvedBatch = mocks.findRecentBatch;
+    create = mocks.createAlert;
+  },
 }));
 vi.mock('./ticket-service', () => ({ TicketService: class {} }));
 vi.mock('./marketing-service', () => ({ MarketingService: class {} }));
@@ -35,6 +40,7 @@ describe('BackgroundSchedulerService.runUnhandledReminder', () => {
     mocks.settingsList.mockResolvedValue(enabledSettings);
     mocks.findUnhandled.mockResolvedValue([]);
     mocks.findRecent.mockResolvedValue(null);
+    mocks.findRecentBatch.mockResolvedValue([]);
     mocks.createAlert.mockResolvedValue({ id: 'alert' });
   });
 
@@ -55,20 +61,25 @@ describe('BackgroundSchedulerService.runUnhandledReminder', () => {
     expect(mocks.findUnhandled).not.toHaveBeenCalled();
   });
 
-  it('counts checked conversations and only newly created alerts', async () => {
+  it('deduplicates all conversations with one batch alert query', async () => {
     mocks.findUnhandled.mockResolvedValue([
       { id: 'c1', title: 'One' },
       { id: 'c2', title: 'Two' },
       { id: 'c3', title: 'Three' },
     ]);
-    mocks.findRecent
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 'existing' })
-      .mockResolvedValueOnce(null);
+    mocks.findRecentBatch.mockResolvedValue([
+      { conversation_id: 'c2', type: 'unhandled_remind' },
+    ]);
 
     const result = await new BackgroundSchedulerService().runUnhandledReminder();
 
     expect(result).toEqual({ ok: true, checked: 3, created: 2 });
+    expect(mocks.findRecentBatch).toHaveBeenCalledTimes(1);
+    expect(mocks.findRecentBatch).toHaveBeenCalledWith(
+      ['unhandled_remind'],
+      expect.any(String),
+    );
+    expect(mocks.findRecent).not.toHaveBeenCalled();
     expect(mocks.createAlert).toHaveBeenCalledTimes(2);
     expect(mocks.createAlert).toHaveBeenNthCalledWith(1, expect.objectContaining({ conversation_id: 'c1' }));
     expect(mocks.createAlert).toHaveBeenNthCalledWith(2, expect.objectContaining({ conversation_id: 'c3' }));

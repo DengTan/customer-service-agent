@@ -75,7 +75,6 @@ interface ShadowComparatorResponse {
 }
 
 const METRIC_KEYS = ['answer_correct', 'cite_precision', 'recall_at_10', 'false_handoff_rate'] as const;
-type MetricKey = (typeof METRIC_KEYS)[number];
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 

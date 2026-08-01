@@ -4,6 +4,7 @@ import { SettingsService } from '@/server/services/settings-service';
 import {
   invalidateKnowledgeSearchSettingsCache,
 } from '@/server/services/knowledge-search-service';
+import { invalidateAlertDedupCache } from '@/server/services/alert-service';
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { logger } from '@/lib/logger';
 
@@ -67,6 +68,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     invalidateKnowledgeSearchSettingsCache();
   } catch (err) {
     logger.warn('[Settings] Cache invalidation after PUT failed (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Drop the alert-dedup window cache so changes to alert_dedup_window_minutes
+  // take effect immediately (otherwise the old value is held for up to 30s).
+  try {
+    invalidateAlertDedupCache();
+  } catch (err) {
+    logger.warn('[Settings] Alert-dedup cache invalidation after PUT failed (non-fatal)', {
       error: err instanceof Error ? err.message : String(err),
     });
   }

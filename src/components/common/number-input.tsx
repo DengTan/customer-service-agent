@@ -21,20 +21,23 @@
  *   - 上下箭头受 min/max/step 约束
  *   - onValidationChange 回调让父组件禁用保存按钮
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { getSettingNumberRange } from '@/lib/setting-number-ranges';
 
 export interface NumberInputProps {
+  /** 设置项 key — 自动从 `setting-number-ranges.ts` 拉取 [min, max, step]（若未注册则退回 props） */
+  settingKey?: string;
   /** 当前值（字符串格式，与 settings 表保持一致） */
   value: string;
   /** 校验通过时回调（返回归一化后的字符串） */
   onChange: (normalized: string) => void;
   /** 校验失败时回调，父组件可用它禁用保存按钮 */
   onValidationChange?: (isValid: boolean, error: string | null) => void;
-  /** 最小值（含） */
-  min: number;
-  /** 最大值（含） */
-  max: number;
+  /** 最小值（含）。`settingKey` 优先；本 prop 仅在未传 `settingKey` 或未注册时生效 */
+  min?: number;
+  /** 最大值（含）。同 `min` 优先级规则 */
+  max?: number;
   /** 步长（决定浮点/整数字段） */
   step?: number;
   /** 缺省值：失焦且输入框为空时回填 */
@@ -103,12 +106,13 @@ export function validateNumberInput(
 }
 
 export function NumberInput({
+  settingKey,
   value,
   onChange,
   onValidationChange,
-  min,
-  max,
-  step = 1,
+  min: minProp,
+  max: maxProp,
+  step: stepProp = 1,
   fallback,
   placeholder,
   disabled = false,
@@ -116,6 +120,25 @@ export function NumberInput({
   id,
   'aria-label': ariaLabel,
 }: NumberInputProps) {
+  // Resolve bounds: settingKey → props → fallback [0, 1]
+  const { min, max, step } = useMemo(() => {
+    const fromKey = settingKey ? getSettingNumberRange(settingKey) : null;
+    if (fromKey) {
+      const inferredStep = stepProp ?? (fromKey.integer ? 1 : 0.05);
+      return { min: fromKey.min, max: fromKey.max, step: inferredStep };
+    }
+    if (typeof minProp === 'number' && typeof maxProp === 'number') {
+      return { min: minProp, max: maxProp, step: stepProp };
+    }
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[NumberInput] "${settingKey ?? id ?? '(unnamed)'}" 没有传 settingKey，也没传 min/max — 兜底使用 [0, 1]`,
+      );
+    }
+    return { min: 0, max: 1, step: stepProp };
+  }, [settingKey, minProp, maxProp, stepProp, id]);
+
   // 受控输入：本地维护正在编辑的字符串，避免父组件归一化打断用户输入
   // （例如用户键入 "0." 时光标位置会被重置）
   const [draft, setDraft] = useState(value);

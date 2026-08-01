@@ -59,12 +59,14 @@ export function ChatInputBar({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSend = () => {
     if (!inputText.trim() && attachments.length === 0) return;
     onSend(inputText, noteMode, attachments);
     setInputText('');
     setAttachments([]);
+    if (textareaRef.current) textareaRef.current.style.height = '';
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +131,7 @@ export function ChatInputBar({
       )}
 
       {/* Input row */}
-      <div className={`px-4 py-3 max-h-24 flex items-start gap-2`}>
+      <div className="px-4 py-3 max-h-44 flex items-end gap-2">
         <div className="grid grid-cols-2 gap-1 shrink-0">
           <Button
             variant="ghost"
@@ -186,14 +188,15 @@ export function ChatInputBar({
 
         <div className="flex-1 relative">
           <textarea
+            ref={textareaRef}
             value={inputText}
-            rows={1}
+            rows={3}
             onChange={(e) => {
               const val = e.target.value;
               setInputText(val);
               e.target.style.height = 'auto';
               const lineHeight = parseInt(getComputedStyle(e.target).lineHeight) || 20;
-              const maxHeight = lineHeight * 3;
+              const maxHeight = lineHeight * 5 + 18;
               e.target.style.height = Math.min(e.target.scrollHeight, maxHeight) + 'px';
               const match = val.match(/@([^\s@]*)$/);
               if (match) {
@@ -210,7 +213,7 @@ export function ChatInputBar({
               }
             }}
             placeholder={noteMode ? '输入内部备注，@提及同事' : '输入消息...'}
-            className={`w-full min-h-[1lh] max-h-[3lh] resize-none rounded-md border bg-transparent px-3 py-2 text-base outline-none transition-[color,box-shadow] placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
+            className={`w-full min-h-[90px] max-h-36 resize-none overflow-y-auto rounded-md border bg-transparent px-3 py-2 text-base outline-none transition-[color,box-shadow] placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
               noteMode
                 ? 'border-amber-300 dark:border-amber-700 focus-visible:border-amber-400 dark:focus-visible:border-amber-600 focus-visible:ring-amber-200 dark:focus-visible:ring-amber-800 bg-white dark:bg-amber-950/20'
                 : 'border-input focus-visible:border-ring'
@@ -245,27 +248,32 @@ export function ChatInputBar({
           )}
         </div>
 
-        {/* Character counter */}
-        <div
-          className={`shrink-0 select-none text-[10px] tabular-nums ${
-            inputText.length > maxLength * 0.9
-              ? inputText.length > maxLength
-                ? 'text-red-500 font-medium'
-                : 'text-amber-500'
-              : 'text-muted-foreground/50'
-          }`}
-        >
-          {inputText.length}/{maxLength}
-        </div>
+        {/* Send button + character counter stacked vertically */}
+        <div className="shrink-0 flex flex-col items-center gap-1 self-stretch">
+          <Button
+            size="icon"
+            onClick={handleSend}
+            disabled={!inputText.trim() && attachments.length === 0}
+            className={`shrink-0 transition-all ${noteMode ? 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700' : 'bg-primary hover:bg-primary/90'}`}
+          >
+            <Send className="w-4 h-4" />
+          </Button>
 
-        <Button
-          size="icon"
-          onClick={handleSend}
-          disabled={!inputText.trim() && attachments.length === 0}
-          className={`shrink-0 transition-all ${noteMode ? 'bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700' : 'bg-primary hover:bg-primary/90'}`}
-        >
-          <Send className="w-4 h-4" />
-        </Button>
+          {/* Character counter sits above the send button */}
+          <div
+            className={`select-none text-[10px] tabular-nums leading-none ${
+              inputText.length > maxLength * 0.9
+                ? inputText.length > maxLength
+                  ? 'text-red-500 font-medium'
+                  : 'text-amber-500'
+                : 'text-muted-foreground/50'
+            }`}
+            aria-label="字符计数"
+            title="字符计数"
+          >
+            {inputText.length}/{maxLength}
+          </div>
+        </div>
       </div>
 
       {/* Attachment preview */}

@@ -127,6 +127,10 @@ export interface Alert {
   severity: 'info' | 'warning' | 'critical';
   message: string;
   is_resolved: boolean;
+  /** Lifecycle state — mirrors the alert state machine. */
+  status?: 'open' | 'resolved' | 'dismissed';
+  /** Free-form metadata; resolution/dismiss/reopen audit fields live here. */
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   resolved_at?: string | null;
 }

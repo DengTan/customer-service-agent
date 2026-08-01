@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { Search, Plus, LayoutList, Headphones, FileText, ImageIcon } from 'lucide-react';
+import { Search, Plus, LayoutList, FileText, ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { Conversation } from './chat-page';
 

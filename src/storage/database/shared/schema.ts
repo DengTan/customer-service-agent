@@ -417,6 +417,7 @@ export const alerts = pgTable(
     severity: varchar("severity", { length: 20 }).notNull().default("warning"), // info, warning, critical
     message: text("message").notNull(),
     is_resolved: boolean("is_resolved").notNull().default(false),
+    status: varchar("status", { length: 20 }).notNull().default("open"), // open | resolved | dismissed (state machine)
     metadata: jsonb("metadata"),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     resolved_at: timestamp("resolved_at", { withTimezone: true }),
@@ -424,6 +425,7 @@ export const alerts = pgTable(
   (table) => [
     index("alerts_conversation_id_idx").on(table.conversation_id),
     index("alerts_is_resolved_idx").on(table.is_resolved),
+    index("alerts_status_idx").on(table.status),
     index("alerts_created_at_idx").on(table.created_at),
   ]
 );

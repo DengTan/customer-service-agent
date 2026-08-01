@@ -7,14 +7,97 @@ import {
 } from '@/server/repositories/alert-repository';
 import { ConversationRepository } from '@/server/repositories/conversation-repository';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
+import { isDemoMode } from '@/storage/database/supabase-client';
 import { ServiceError } from './service-error';
 import { toServiceError } from './service-utils';
+import {
+  alertStateMachine,
+  type AlertState,
+  type AlertTransitionPayload,
+} from '@/lib/alert-state-machine';
+import {
+  applyTransition,
+  GuardRejectionError,
+  UnknownTransitionError,
+} from '@/lib/state-machine';
+import type { HandoffService } from './handoff-service';
+
+/** Audit context for state-machine operations on an alert. */
+export interface AlertOperator {
+  operatorId: string | null;
+  operatorRole: string | null;
+}
 
 // Alert type constants
 export const ALERT_TYPE_LOW_CONFIDENCE = 'low_confidence';
 export const ALERT_TYPE_HIGH_ROUNDS = 'high_rounds';
 export const ALERT_TYPE_QUALITY_CHECK_FAILED = 'quality_check_failed';
 export const ALERT_TYPE_SATISFACTION_BELOW = 'satisfaction_below';
+
+// Default dedup window: 30 minutes (kept as fallback for tests / when settings
+// table is unreachable). The runtime value is read from `alert_dedup_window_minutes`
+// via getAlertDedupWindowMs() below.
+const DEFAULT_ALERT_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+const ALERT_DEDUP_CACHE_TTL_MS = 30_000;
+const ALERT_DEDUP_WINDOW_MINUTES_MIN = 1;
+const ALERT_DEDUP_WINDOW_MINUTES_MAX = 1440;
+
+let cachedDedupWindowMs: number | null = null;
+let cachedDedupWindowAt = 0;
+const alertDedupSettingsRepo = new SettingsRepository();
+
+/**
+ * Read the alert dedup window (ms) from settings, with a 30s TTL cache.
+ * Mirrors `getSearchSettings()` in `knowledge-search-service.ts`.
+ *
+ * Settings key: `alert_dedup_window_minutes` (integer minutes in
+ * [1, 1440]). Falls back to DEFAULT_ALERT_DEDUP_WINDOW_MS (30 minutes)
+ * when the key is unset, unparseable, out of range, or the read fails.
+ *
+ * The cache invalidation function `invalidateAlertDedupCache()` is exported
+ * so the settings PUT handler can drop the cache immediately after a write.
+ */
+async function getAlertDedupWindowMs(): Promise<number> {
+  const now = Date.now();
+  if (cachedDedupWindowMs !== null && now - cachedDedupWindowAt < ALERT_DEDUP_CACHE_TTL_MS) {
+    return cachedDedupWindowMs;
+  }
+
+  let valueMs = DEFAULT_ALERT_DEDUP_WINDOW_MS;
+  if (!isDemoMode()) {
+    try {
+      const raw = await alertDedupSettingsRepo.get('alert_dedup_window_minutes');
+      if (raw !== null) {
+        const minutes = Number.parseInt(raw, 10);
+        if (
+          Number.isInteger(minutes) &&
+          minutes >= ALERT_DEDUP_WINDOW_MINUTES_MIN &&
+          minutes <= ALERT_DEDUP_WINDOW_MINUTES_MAX
+        ) {
+          valueMs = minutes * 60 * 1000;
+        }
+      }
+    } catch (err) {
+      // Settings table read failure must never break alert dedup; keep default.
+      logger.agent.warn('[AlertService] Failed to read alert_dedup_window_minutes, using default', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  cachedDedupWindowMs = valueMs;
+  cachedDedupWindowAt = now;
+  return valueMs;
+}
+
+/**
+ * Test/diagnostic helper: drop the cached dedup window so the next call
+ * re-reads the settings table. Called by PUT /api/settings after a write.
+ */
+export function invalidateAlertDedupCache(): void {
+  cachedDedupWindowMs = null;
+  cachedDedupWindowAt = 0;
+}
 
 // Default thresholds (used when settings are not available)
 export const DEFAULT_ALERT_SETTINGS = {
@@ -48,29 +131,63 @@ export class AlertService {
     private readonly alerts = new AlertRepository(),
     private readonly conversations = new ConversationRepository(),
     private readonly settingsRepo = new SettingsRepository(),
+    private readonly handoffService: Pick<HandoffService, 'requestHandoff'> | null = null,
   ) {}
 
   async listAlerts(filters: AlertFilters): Promise<{ alerts: Alert[]; stats: AlertStats }> {
     try {
-      const [alerts, statsRows] = await Promise.all([
+      // Aggregate stats come from the `alerts_aggregate_stats` RPC (single
+      // round-trip with FILTER aggregates). On RPC failure we fall back to
+      // the legacy in-memory aggregation so a missing function or transient
+      // RLS denial does not break the dashboard.
+      const [alerts, aggregate] = await Promise.all([
         this.alerts.list(filters),
-        this.alerts.listStatsRows(),
+        this.getStatsWithFallback(),
       ]);
 
-      const stats = {
-        total: statsRows.length,
-        unresolved: statsRows.filter((alert) => !alert.is_resolved).length,
-        critical: statsRows.filter(
-          (alert) => alert.severity === 'critical' && !alert.is_resolved,
-        ).length,
-        warning: statsRows.filter(
-          (alert) => alert.severity === 'warning' && !alert.is_resolved,
-        ).length,
+      return {
+        alerts,
+        stats: {
+          total: aggregate.total,
+          unresolved: aggregate.unresolved,
+          critical: aggregate.critical,
+          warning: aggregate.warning,
+        },
       };
-
-      return { alerts, stats };
     } catch (error) {
       throw toServiceError(error, 'Failed to fetch alerts');
+    }
+  }
+
+  private async getStatsWithFallback(): Promise<{
+    total: number;
+    unresolved: number;
+    critical: number;
+    warning: number;
+  }> {
+    try {
+      const aggregate = await this.alerts.getAggregateStats();
+      return {
+        total: aggregate.total,
+        unresolved: aggregate.unresolved,
+        critical: aggregate.critical,
+        warning: aggregate.warning,
+      };
+    } catch (error) {
+      // RPC path is preferred, but the legacy in-memory scan stays as a
+      // safety net so a freshly-deployed environment without the function
+      // does not 500 the dashboard. listStatsRows() throws on a hard DB
+      // failure which is propagated up by the outer try/catch.
+      logger.warn('[AlertService] alerts_aggregate_stats RPC failed, falling back to listStatsRows', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const rows = await this.alerts.listStatsRows();
+      return {
+        total: rows.length,
+        unresolved: rows.filter((r) => !r.is_resolved).length,
+        critical: rows.filter((r) => r.severity === 'critical' && !r.is_resolved).length,
+        warning: rows.filter((r) => r.severity === 'warning' && !r.is_resolved).length,
+      };
     }
   }
 
@@ -93,16 +210,164 @@ export class AlertService {
     }
   }
 
-  async resolveAlert(id: string | null): Promise<void> {
+  async resolveAlert(id: string | null, operator: AlertOperator = { operatorId: null, operatorRole: null }): Promise<void> {
     if (!id) {
       throw new ServiceError('Alert id is required', { status: 400, code: 'VALIDATION_ERROR' });
     }
 
     try {
-      await this.alerts.resolve(id);
+      const alert = await this.alerts.findById(id);
+      if (!alert) {
+        throw new ServiceError('告警不存在', { status: 404, code: 'NOT_FOUND' });
+      }
+
+      const currentState = this.deriveState(alert);
+      await this.applyTransition(alert, currentState, { type: 'resolve' }, operator, async (next) => {
+        await this.alerts.update(id, {
+          status: next,
+          is_resolved: true,
+          resolved_at: new Date().toISOString(),
+          metadataMerge: { resolved_by: operator.operatorId ?? null },
+        });
+      });
     } catch (error) {
       throw toServiceError(error, 'Failed to resolve alert');
     }
+  }
+
+  /**
+   * Dismiss an alert — operator acknowledges the alert as noise. The alert
+   * stays un-resolved (no `is_resolved` flip) but its status moves to
+   * `dismissed` and a `metadata.dismissed_by`/`dismissed_at` audit trail is
+   * written. Dismissed alerts do not surface in the Dashboard's "unresolved"
+   * filter but remain visible in the history drawer.
+   */
+  async dismissAlert(id: string, operator: AlertOperator): Promise<void> {
+    if (!id) {
+      throw new ServiceError('缺少告警 ID', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+
+    try {
+      const alert = await this.alerts.findById(id);
+      if (!alert) {
+        throw new ServiceError('告警不存在', { status: 404, code: 'NOT_FOUND' });
+      }
+
+      const currentState = this.deriveState(alert);
+      await this.applyTransition(alert, currentState, { type: 'dismiss' }, operator, async (next) => {
+        await this.alerts.update(id, {
+          status: next,
+          is_resolved: true,
+          metadataMerge: {
+            dismissed_by: operator.operatorId ?? null,
+            dismissed_at: new Date().toISOString(),
+          },
+        });
+      });
+    } catch (error) {
+      throw toServiceError(error, 'Failed to dismiss alert');
+    }
+  }
+
+  /**
+   * Reopen a previously resolved alert. Only admins may do this — the state
+   * machine guard enforces the role check. Reopen clears `resolved_at` and
+   * flips `is_resolved` back to false.
+   */
+  async reopenAlert(id: string, operator: AlertOperator): Promise<void> {
+    if (!id) {
+      throw new ServiceError('缺少告警 ID', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+
+    try {
+      const alert = await this.alerts.findById(id);
+      if (!alert) {
+        throw new ServiceError('告警不存在', { status: 404, code: 'NOT_FOUND' });
+      }
+
+      const currentState = this.deriveState(alert);
+      await this.applyTransition(alert, currentState, { type: 'reopen' }, operator, async (next) => {
+        await this.alerts.update(id, {
+          status: next,
+          is_resolved: false,
+          resolved_at: null,
+          metadataMerge: { reopened_by: operator.operatorId ?? null },
+        });
+      });
+    } catch (error) {
+      throw toServiceError(error, 'Failed to reopen alert');
+    }
+  }
+
+  /**
+   * Derive the state-machine input state from a stored alert. Prefers the
+   * explicit `status` column; falls back to `is_resolved` for legacy rows
+   * that pre-date the migration so existing tests + backfill flows work
+   * without a separate write path. Legacy "dismissed" rows are still
+   * recognisable via the `metadata.dismissed_by` audit key.
+   */
+  private deriveState(alert: Alert): AlertState {
+    const status = (alert as { status?: string }).status;
+    if (status === 'resolved' || status === 'dismissed' || status === 'open') {
+      return status;
+    }
+    const metadata = (alert.metadata ?? {}) as Record<string, unknown>;
+    if (metadata.dismissed_by || metadata.dismissed_at) {
+      return 'dismissed';
+    }
+    return alert.is_resolved ? 'resolved' : 'open';
+  }
+
+  /**
+   * Shared helper: run a state-machine transition and translate its errors to
+   * `ServiceError` with the right HTTP semantics. The `apply` callback runs
+   * after the state machine accepts the transition and persists the side
+   * effects the state requires.
+   */
+  private async applyTransition(
+    alert: Alert,
+    currentState: AlertState,
+    event: { type: 'resolve' | 'dismiss' | 'reopen' },
+    operator: AlertOperator,
+    apply: (nextState: AlertState) => Promise<void>,
+  ): Promise<void> {
+    const payload: AlertTransitionPayload = {
+      operatorId: operator.operatorId ?? null,
+      operatorRole: operator.operatorRole ?? null,
+    };
+
+    let nextState: AlertState;
+    try {
+      const result = await applyTransition(
+        alertStateMachine,
+        currentState,
+        event,
+        { payload: payload as unknown as Record<string, unknown> },
+      );
+      nextState = result.nextState;
+    } catch (err) {
+      if (err instanceof UnknownTransitionError) {
+        throw new ServiceError(
+          `告警当前状态 "${currentState}" 不允许执行操作 "${event.type}"`,
+          {
+            status: 409,
+            code: 'INVALID_STATE_TRANSITION',
+          },
+        );
+      }
+      if (err instanceof GuardRejectionError) {
+        const status = err.reason.includes('admin') || err.reason.includes('管理员')
+          ? 403
+          : 409;
+        throw new ServiceError(err.reason, {
+          status,
+          code: status === 403 ? 'FORBIDDEN' : 'INVALID_STATE_TRANSITION',
+        });
+      }
+      throw err;
+    }
+
+    await apply(nextState);
   }
 
   /**
@@ -179,8 +444,9 @@ export class AlertService {
   }
 
   private async findRecentUnresolved(conversationId: string, type: string): Promise<{ id: string } | null> {
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    return this.alerts.findRecentUnresolved(conversationId, type, thirtyMinAgo);
+    const windowMs = await getAlertDedupWindowMs();
+    const sinceIso = new Date(Date.now() - windowMs).toISOString();
+    return this.alerts.findRecentUnresolved(conversationId, type, sinceIso);
   }
 
   /**

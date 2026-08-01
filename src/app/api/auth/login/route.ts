@@ -3,7 +3,7 @@
  * Authenticate user with email and password
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { UserRepository } from '@/server/repositories/user-repository';

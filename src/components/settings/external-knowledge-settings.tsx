@@ -31,13 +31,6 @@ export type ExternalKbSettingsRequest = {
   useRerank?: boolean;
 };
 
-/** API error response shape (used for type narrowing) */
-interface ApiErrorResponse {
-  success: false;
-  error: string;
-  code?: string;
-}
-
 export interface ExternalKnowledgeSettingsProps {
   externalKbSettings: ExternalKbSettingsState;
   onSettingsChange: React.Dispatch<React.SetStateAction<ExternalKbSettingsState>>;

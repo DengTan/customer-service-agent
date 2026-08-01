@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
-import type { QualityRule, QualityCheck, QualityRuleType } from '@/lib/types';
+import type { QualityRule, QualityRuleType } from '@/lib/types';
 import { trimDemoArray } from '@/lib/api-utils';
 import { DEMO_QUALITY_RULES } from './demo-data/demo-quality';
 import { getLogger } from '@/lib/logger';

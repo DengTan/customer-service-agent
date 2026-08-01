@@ -5,6 +5,14 @@ import { RepositoryError } from './repository-error';
 import { trimDemoArray } from '@/lib/api-utils';
 import { DEMO_AUTO_REPLY_RULES } from './demo-data/demo-auto-reply';
 
+export interface UpdateAutoReplyRuleInput {
+  keyword?: string;
+  match_mode?: 'exact' | 'fuzzy';
+  reply_content?: string;
+  is_enabled?: boolean;
+  priority?: number;
+}
+
 export interface CreateAutoReplyRuleInput {
   keyword: string;
   match_mode?: AutoReplyRule['match_mode'];
@@ -36,6 +44,77 @@ export class AutoReplyRepository {
 
     if (error) throw new RepositoryError('list auto reply rules', error.message, error.code);
     return (data ?? []) as AutoReplyRule[];
+  }
+
+  async listPaginated({ 
+    limit, 
+    offset,
+    search,
+    filterMode,
+  }: { 
+    page: number; 
+    limit: number; 
+    offset: number;
+    search?: string;
+    filterMode?: 'all' | 'enabled' | 'disabled';
+  }): Promise<{ rules: AutoReplyRule[]; total: number }> {
+    if (isDemoMode()) {
+      let filtered = [...DEMO_AUTO_REPLY_RULES];
+      
+      // Apply filters
+      if (filterMode === 'enabled') {
+        filtered = filtered.filter(r => r.is_enabled);
+      } else if (filterMode === 'disabled') {
+        filtered = filtered.filter(r => !r.is_enabled);
+      }
+      
+      // Apply search
+      if (search) {
+        const query = search.toLowerCase();
+        filtered = filtered.filter(r => 
+          r.keyword.toLowerCase().includes(query) ||
+          r.reply_content.toLowerCase().includes(query)
+        );
+      }
+      
+      const sorted = filtered.sort((a, b) => b.priority - a.priority);
+      return {
+        rules: sorted.slice(offset, offset + limit),
+        total: sorted.length,
+      };
+    }
+    
+    // Build filter conditions - chain directly on the base query builder
+    const baseQuery = this.client.from('auto_reply_rules');
+    let countQuery = baseQuery.select('*', { count: 'exact', head: true });
+    let dataQuery = baseQuery.select('*');
+
+    if (filterMode === 'enabled') {
+      countQuery = countQuery.eq('is_enabled', true);
+      dataQuery = dataQuery.eq('is_enabled', true);
+    } else if (filterMode === 'disabled') {
+      countQuery = countQuery.eq('is_enabled', false);
+      dataQuery = dataQuery.eq('is_enabled', false);
+    }
+    if (search) {
+      const searchPattern = `%${search}%`;
+      countQuery = countQuery.or(`keyword.ilike.${searchPattern},reply_content.ilike.${searchPattern}`);
+      dataQuery = dataQuery.or(`keyword.ilike.${searchPattern},reply_content.ilike.${searchPattern}`);
+    }
+
+    // Get total count
+    const countResult = await countQuery;
+    const count = 'count' in countResult ? countResult.count : null;
+    const countError = 'error' in countResult ? countResult.error : null;
+    if (countError) throw new RepositoryError('count auto reply rules', countError.message, countError.code);
+
+    // Get paginated data
+    const dataResult = await dataQuery.order('priority', { ascending: false }).range(offset, offset + limit - 1);
+    const data = 'data' in dataResult ? dataResult.data : null;
+    const error = 'error' in dataResult ? dataResult.error : null;
+
+    if (error) throw new RepositoryError('list auto reply rules', error.message, error.code);
+    return { rules: (data ?? []) as AutoReplyRule[], total: count ?? 0 };
   }
 
   async listEnabled(): Promise<AutoReplyRule[]> {
@@ -99,6 +178,38 @@ export class AutoReplyRepository {
     const { data, error } = await this.client
       .from('auto_reply_rules')
       .update({ is_enabled: isEnabled, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select();
+
+    if (error) throw new RepositoryError('update auto reply rule', error.message, error.code);
+    return ((data ?? [])[0] as AutoReplyRule | undefined) ?? null;
+  }
+
+  async update(id: string, input: UpdateAutoReplyRuleInput): Promise<AutoReplyRule | null> {
+    if (isDemoMode()) {
+      const rule = DEMO_AUTO_REPLY_RULES.find(r => r.id === id);
+      if (rule) {
+        if (input.keyword !== undefined) rule.keyword = input.keyword;
+        if (input.match_mode !== undefined) rule.match_mode = input.match_mode;
+        if (input.reply_content !== undefined) rule.reply_content = input.reply_content;
+        if (input.is_enabled !== undefined) rule.is_enabled = input.is_enabled;
+        if (input.priority !== undefined) rule.priority = input.priority;
+        rule.updated_at = new Date().toISOString();
+        return rule;
+      }
+      return null;
+    }
+    
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.keyword !== undefined) updateData.keyword = input.keyword;
+    if (input.match_mode !== undefined) updateData.match_mode = input.match_mode;
+    if (input.reply_content !== undefined) updateData.reply_content = input.reply_content;
+    if (input.is_enabled !== undefined) updateData.is_enabled = input.is_enabled;
+    if (input.priority !== undefined) updateData.priority = input.priority;
+
+    const { data, error } = await this.client
+      .from('auto_reply_rules')
+      .update(updateData)
       .eq('id', id)
       .select();
 

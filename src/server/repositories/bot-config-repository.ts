@@ -2,9 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { RepositoryError } from './repository-error';
 import { DEMO_MAIN_BOTS, DEMO_SUB_AGENTS } from './demo-data/demo-bots';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('BotConfigRepository');
 
 export interface BotConfigRow {
   id: string;

@@ -423,7 +423,7 @@ export function SettingsPage() {
   const renderSection = () => {
     switch (activeSection) {
       case 'auto-reply':
-        return <AutoReplySettings rules={rules} onRulesChange={setRules} />;
+        return <AutoReplySettings />;
       case 'chat':
         return (
           <ChatSettings

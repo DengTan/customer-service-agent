@@ -124,11 +124,16 @@ export class BackgroundSchedulerService {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
       const unhandled = await convRepo.findUnhandledConversations(unhandledMinutes);
+      if (unhandled.length === 0) {
+        return { ok: true, checked: 0, created: 0 };
+      }
+
+      const recentAlerts = await alertRepo.findRecentUnresolvedBatch(['unhandled_remind'], oneHourAgo);
+      const recentlyRemindedConversationIds = new Set(recentAlerts.map(alert => alert.conversation_id));
       let created = 0;
 
       for (const conv of unhandled) {
-        const existing = await alertRepo.findRecentUnresolved(conv.id, 'unhandled_remind', oneHourAgo);
-        if (!existing) {
+        if (!recentlyRemindedConversationIds.has(conv.id)) {
           await alertRepo.create({
             conversation_id: conv.id,
             type: 'unhandled_remind',

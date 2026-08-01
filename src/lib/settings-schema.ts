@@ -55,6 +55,8 @@ export const WRITABLE_SETTING_KEYS: ReadonlySet<string> = new Set<string>([
   'alert_high_rounds_threshold',
   'alert_high_rounds_critical_threshold',
   'alert_auto_handoff_rounds',
+  // Alert dedup window (minutes; integer in [1, 1440])
+  'alert_dedup_window_minutes',
   // AI model
   'ai_model_enabled',
   'ai_model',

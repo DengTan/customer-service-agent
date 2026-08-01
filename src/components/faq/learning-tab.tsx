@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   Search,
-  GraduationCap, Scan, Inbox, CheckCircle, XCircle, Target,
+  GraduationCap, Inbox, CheckCircle, XCircle, Target,
   Folder,
   ChevronLeft, ChevronRight, ChevronDown,
   X, Check,

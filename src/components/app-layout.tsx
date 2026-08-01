@@ -30,6 +30,7 @@ import { useAuth, useIsAuthenticated } from '@/lib/auth';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { UserAvatarTooltip } from '@/components/common/user-avatar-tooltip';
+import { AGENT_STATUS_LABELS, AGENT_STATUS_COLORS } from '@/lib/types';
 
 const navItems = [
   { href: '/dashboard', label: '数据分析', icon: BarChart3, roles: ['admin', 'agent', 'observer'], shortcut: '1' },
@@ -56,23 +57,23 @@ const roleLabels: Record<string, string> = {
 // Status indicator configuration with visual effects
 const statusConfig: Record<string, { label: string; color: string; bgColor: string; ringColor: string; pulse: boolean }> = {
   online: { 
-    label: '在线', 
+    label: AGENT_STATUS_LABELS.online, 
     color: 'text-green-600 dark:text-green-400', 
-    bgColor: 'bg-green-500', 
+    bgColor: AGENT_STATUS_COLORS.online, 
     ringColor: 'ring-green-500/50',
     pulse: true 
   },
   away: { 
-    label: '离开', 
+    label: AGENT_STATUS_LABELS.away, 
     color: 'text-yellow-600 dark:text-yellow-400', 
-    bgColor: 'bg-yellow-500', 
+    bgColor: AGENT_STATUS_COLORS.away, 
     ringColor: 'ring-yellow-500/50',
     pulse: false 
   },
   offline: { 
-    label: '离线', 
+    label: AGENT_STATUS_LABELS.offline, 
     color: 'text-gray-400 dark:text-gray-500', 
-    bgColor: 'bg-gray-400 dark:bg-gray-600', 
+    bgColor: AGENT_STATUS_COLORS.offline, 
     ringColor: 'ring-gray-400/30',
     pulse: false 
   },
@@ -409,7 +410,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     {user.role === 'agent' && (
                       <button
                         onClick={async () => {
-                          await refreshUser?.();
+                          await refreshUser();
                           closeMenu();
                         }}
                         role="menuitem"

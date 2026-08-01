@@ -66,10 +66,20 @@ class FakeAlertRepository {
     return this.rows.find((r) => r.id === id) ?? null;
   });
 
-  update = vi.fn(async (id: string, patch: Partial<FakeAlertRow>) => {
+  update = vi.fn(async (id: string, patch: Partial<FakeAlertRow> & { metadataMerge?: Record<string, unknown> }) => {
     const idx = this.rows.findIndex((r) => r.id === id);
     if (idx === -1) return null;
-    const merged = { ...this.rows[idx]!, ...patch };
+    const current = this.rows[idx]!;
+    // Mirror AlertRepository.update's metadata merge semantics so tests reflect
+    // the real persistence shape, not a shallow overwrite.
+    const baseMetadata = (current.metadata ?? {}) as Record<string, unknown>;
+    const mergedMetadata = patch.metadataMerge
+      ? { ...baseMetadata, ...patch.metadataMerge }
+      : patch.metadata ?? baseMetadata;
+    const { metadataMerge: _ignored, ...patchNoMerge } = patch as Partial<FakeAlertRow> & {
+      metadataMerge?: Record<string, unknown>;
+    };
+    const merged = { ...current, ...patchNoMerge, metadata: mergedMetadata };
     this.rows[idx] = merged as FakeAlertRow;
     return merged;
   });
@@ -273,7 +283,7 @@ describe('AlertService.dismissAlert — M-5', () => {
       new FakeConversationRepository() as never,
       new FakeSettingsRepository() as never,
     );
-    await expect(svc.dismissAlert('a-3')).rejects.toBeInstanceOf(SvcErr);
+    await expect(svc.dismissAlert('a-3', { operatorId: 'u-1', operatorRole: 'agent' })).rejects.toBeInstanceOf(SvcErr);
   });
 });
 
@@ -306,7 +316,7 @@ describe('AlertService.reopenAlert — M-5 admin-only', () => {
 
   it('forbids non-admins outright', async () => {
     const { svc, ServiceError: SvcErr } = await setup();
-    await expect(svc.reopenAlert('a-4', { operatorRole: 'agent' })).rejects.toBeInstanceOf(SvcErr);
+    await expect(svc.reopenAlert('a-4', { operatorId: null, operatorRole: 'agent' })).rejects.toBeInstanceOf(SvcErr);
   });
 
   it('lets admins reopen a resolved alert and clears resolved_at', async () => {
@@ -321,7 +331,7 @@ describe('AlertService.reopenAlert — M-5 admin-only', () => {
     const { svc, repo, ServiceError: SvcErr } = await setup();
     repo.rows[0]!.metadata = { dismissed_by: 'u-1', dismissed_at: new Date().toISOString() };
     await expect(
-      svc.reopenAlert('a-4', { operatorRole: 'admin' }),
+      svc.reopenAlert('a-4', { operatorId: 'u-admin', operatorRole: 'admin' }),
     ).rejects.toBeInstanceOf(SvcErr);
   });
 });

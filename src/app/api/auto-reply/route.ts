@@ -9,8 +9,18 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const denied = await requirePermission(request, 'auto_reply', 'read');
   if (denied) return denied;
 
-  const rules = await autoReplyService.listRules();
-  return apiSuccess({ rules });
+  const { searchParams } = new URL(request.url);
+  const page = parseInt(searchParams.get('page') || '1');
+  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100); // Max 100
+  const offset = (page - 1) * limit;
+  
+  // Validate search parameter length to prevent performance issues
+  const rawSearch = searchParams.get('search') || '';
+  const search = rawSearch.length > 200 ? rawSearch.slice(0, 200) : rawSearch || undefined;
+  const filterMode = (searchParams.get('filter') || 'all') as 'all' | 'enabled' | 'disabled';
+
+  const { rules, total } = await autoReplyService.listRulesPaginated({ page, limit, offset, search, filterMode });
+  return apiSuccess({ rules, total, page, limit });
 });
 
 export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {

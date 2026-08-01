@@ -87,6 +87,8 @@ export const FACTORY_DEFAULTS: Record<string, string> = {
   alert_high_rounds_threshold: '10',
   alert_high_rounds_critical_threshold: '15',
   alert_auto_handoff_rounds: '6',
+  // 告警去重窗口（分钟）：同一对话同一类型告警在窗口内视为重复
+  alert_dedup_window_minutes: '30',
 
   // —— AI 模型 ——
   ai_model_enabled: 'true',

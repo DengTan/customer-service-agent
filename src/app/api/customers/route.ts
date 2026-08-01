@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { NextRequest } from 'next/server';
+import { withErrorHandlerSimple, apiSuccess, apiError, requirePermission, HttpStatus } from '@/lib/api-utils';
 import { CustomerService } from '@/server/services/customer-service';
+import { PAGINATION } from '@/lib/constants';
 
 const customerService = new CustomerService();
 
@@ -15,7 +16,7 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     platform: searchParams.get('platform') ?? undefined,
     tag: searchParams.get('tag') ?? undefined,
     page: parseInt(searchParams.get('page') || '1'),
-    pageSize: parseInt(searchParams.get('pageSize') || '20'),
+    pageSize: parseInt(searchParams.get('pageSize') || String(PAGINATION.DEFAULT_PAGE_SIZE), 10),
     includeAnonymous,
   };
   const result = await customerService.listCustomers(filters);
@@ -49,46 +50,31 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { success: false, error: '请求体格式无效' },
-      { status: 400 }
-    );
+    return apiError('请求体格式无效', { status: HttpStatus.BAD_REQUEST });
   }
   const { name, phone, email, source_platform, tags, notes, metadata } = body ?? {};
 
   // Validate required fields
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
-    return NextResponse.json(
-      { success: false, error: '客户姓名不能为空' },
-      { status: 400 }
-    );
+    return apiError('客户姓名不能为空', { status: HttpStatus.BAD_REQUEST });
   }
 
   if (name.length > 200) {
-    return NextResponse.json(
-      { success: false, error: '客户姓名不能超过200个字符' },
-      { status: 400 }
-    );
+    return apiError('客户姓名不能超过200个字符', { status: HttpStatus.BAD_REQUEST });
   }
 
   // Validate email format if provided
   if (email && typeof email === 'string') {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { success: false, error: '邮箱格式不正确' },
-        { status: 400 }
-      );
+      return apiError('邮箱格式不正确', { status: HttpStatus.BAD_REQUEST });
     }
   }
 
   // Validate phone format if provided
   if (phone && typeof phone === 'string' && phone.length > 0) {
     if (phone.length > 50) {
-      return NextResponse.json(
-        { success: false, error: '手机号不能超过50个字符' },
-        { status: 400 }
-      );
+      return apiError('手机号不能超过50个字符', { status: HttpStatus.BAD_REQUEST });
     }
   }
 
@@ -112,34 +98,22 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { success: false, error: '请求体格式无效' },
-      { status: 400 }
-    );
+    return apiError('请求体格式无效', { status: HttpStatus.BAD_REQUEST });
   }
   const { id, name, phone, email, tags, notes, metadata, is_anonymous } = body ?? {};
 
   // Validate required fields
   if (!id || typeof id !== 'string' || id.trim().length === 0) {
-    return NextResponse.json(
-      { success: false, error: '客户ID不能为空' },
-      { status: 400 }
-    );
+    return apiError('客户ID不能为空', { status: HttpStatus.BAD_REQUEST });
   }
 
   // Validate name if provided
   if (name !== undefined) {
     if (typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json(
-        { success: false, error: '客户姓名不能为空' },
-        { status: 400 }
-      );
+      return apiError('客户姓名不能为空', { status: HttpStatus.BAD_REQUEST });
     }
     if (name.length > 200) {
-      return NextResponse.json(
-        { success: false, error: '客户姓名不能超过200个字符' },
-        { status: 400 }
-      );
+      return apiError('客户姓名不能超过200个字符', { status: HttpStatus.BAD_REQUEST });
     }
   }
 
@@ -147,20 +121,14 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   if (email !== undefined && email !== null && typeof email === 'string') {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { success: false, error: '邮箱格式不正确' },
-        { status: 400 }
-      );
+      return apiError('邮箱格式不正确', { status: HttpStatus.BAD_REQUEST });
     }
   }
 
   // Validate phone if provided
   if (phone !== undefined && phone !== null && typeof phone === 'string' && phone.length > 0) {
     if (phone.length > 50) {
-      return NextResponse.json(
-        { success: false, error: '手机号不能超过50个字符' },
-        { status: 400 }
-      );
+      return apiError('手机号不能超过50个字符', { status: HttpStatus.BAD_REQUEST });
     }
   }
 
@@ -187,10 +155,7 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
   const id = searchParams.get('id');
 
   if (!id) {
-    return NextResponse.json(
-      { success: false, error: '缺少 ID 参数' },
-      { status: 400 }
-    );
+    return apiError('缺少 ID 参数', { status: HttpStatus.BAD_REQUEST });
   }
 
   // 检查是否有进行中的对话
@@ -200,10 +165,7 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
       .filter(c => c.status !== 'completed');
 
     if (activeConversations.length > 0) {
-      return NextResponse.json(
-        { success: false, error: '该客户有进行中的对话，无法删除' },
-        { status: 400 }
-      );
+      return apiError('该客户有进行中的对话，无法删除', { status: HttpStatus.BAD_REQUEST });
     }
   } catch {
     // 客户不存在，继续删除

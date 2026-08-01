@@ -37,25 +37,37 @@ export const INTEGER_RANGE_KEYS: Record<string, { min: number; max: number }> = 
   alert_high_rounds_threshold: { min: 1, max: 1_000 },
   alert_high_rounds_critical_threshold: { min: 1, max: 1_000 },
   alert_auto_handoff_rounds: { min: 1, max: 1_000 },
+  // 1 min floor avoids effectively disabling dedup; 1440 (24h) caps operator
+  // input to a sane ceiling so a typo can't accidentally raise the dedup
+  // window beyond the operational day.
+  alert_dedup_window_minutes: { min: 1, max: 1_440 },
   ai_max_tokens: { min: 1, max: 32_000 },
-  ai_max_concurrent: { min: 0, max: 10_000 },
+  ai_max_concurrent: { min: 1, max: 20 },
   knowledge_search_limit: { min: 1, max: 50 },
   knowledge_image_search_limit: { min: 0, max: 20 },
   knowledge_chunk_size: { min: 50, max: 4_000 },
   knowledge_chunk_overlap: { min: 0, max: 2_000 },
   knowledge_learning_scan_interval_hours: { min: 1, max: 24 * 30 },
-  font_size: { min: 8, max: 32 },
+  // UI 收紧：仅 12~18px。10px 以下用户难以阅读；20px 以上聊天界面排版被破坏
+  font_size: { min: 12, max: 18 },
   max_main_bots: { min: 1, max: 1_000 },
 };
 
 /**
  * Float-bounded settings: must parse to a finite number in [min, max].
  * Step on the UI input is `0.05` (two-decimal precision).
+ *
+ * 部分 key 使用了收紧区间（UI 与后端共用同一区间），理由如下：
+ * - knowledge_min_score [0.5, 0.95]：低于 0.5 会召回到大量噪声；高于 0.95 通常无结果
+ * - alert_confidence_threshold [0.1, 0.9]：告警阈值 < 10% 太频繁；> 90% 失去告警意义
+ * - alert_confidence_critical_threshold [0.05, 0.5]：Critical 应比 Warning 紧，
+ *   必须能落入 Warning 之下；上限 0.5 保证跨字段约束 (critical < warning) 可满足
  */
 export const FLOAT_RANGE_KEYS: Record<string, { min: number; max: number }> = {
-  alert_confidence_threshold: { min: 0, max: 1 },
-  alert_confidence_critical_threshold: { min: 0, max: 1 },
-  knowledge_min_score: { min: 0, max: 1 },
+  // 收紧区间（与后端 validateSettings 共享）
+  alert_confidence_threshold: { min: 0.1, max: 0.9 },
+  alert_confidence_critical_threshold: { min: 0.05, max: 0.5 },
+  knowledge_min_score: { min: 0.5, max: 0.95 },
   knowledge_learning_confidence_threshold: { min: 0, max: 1 },
   ai_temperature: { min: 0, max: 2 },
 };

@@ -33,6 +33,8 @@ export class HandoffService {
         role: 'system',
         content: 'Connecting you to a human agent. Please wait a moment.',
       });
+      // Update message count for the system message
+      await this.conversations.incrementMessageCount(input.conversationId);
 
       await this.alerts.createAlert({
         conversation_id: input.conversationId,

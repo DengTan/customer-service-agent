@@ -35,7 +35,11 @@ export function useVisibilityAwarePoll(
   const start = useCallback(() => {
     if (intervalRef.current) return;
     intervalRef.current = setInterval(() => {
-      callbackRef.current();
+      try {
+        callbackRef.current();
+      } catch (error) {
+        console.error('[useVisibilityAwarePoll] Callback error:', error);
+      }
     }, intervalMs);
   }, [intervalMs]);
 

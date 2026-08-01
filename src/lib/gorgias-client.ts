@@ -279,6 +279,11 @@ function createAuthHeader(email: string, apiKey: string): string {
 /**
  * 处理 API 响应
  */
+interface GorgiasApiError extends Error {
+  status: number;
+  statusText: string;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let errorBody = '';
@@ -288,9 +293,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // ignore
     }
     
-    const error = new Error(`Gorgias API error ${response.status}: ${errorBody || response.statusText}`);
-    (error as any).status = response.status;
-    (error as any).statusText = response.statusText;
+    const error = new Error(`Gorgias API error ${response.status}: ${errorBody || response.statusText}`) as GorgiasApiError;
+    error.status = response.status;
+    error.statusText = response.statusText;
     throw error;
   }
   

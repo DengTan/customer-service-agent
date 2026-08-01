@@ -61,7 +61,7 @@ export function WorkspacePage() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
 
   // Refs for tracking loaded counts (avoid closure staleness)
   const queuedItemsLengthRef = useRef(0);
@@ -257,7 +257,10 @@ export function WorkspacePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user?.id, status }),
       });
-      if (res.ok) setAgentStatus(status);
+      if (res.ok) {
+        setAgentStatus(status);
+        await refreshUser();
+      }
       else toast.error('切换状态失败');
     } catch {
       toast.error('切换状态失败');

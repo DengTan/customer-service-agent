@@ -7,9 +7,7 @@ import {
   Package, PackageX, TrendingUp,
   ArrowDownCircle, ArrowUpCircle,
   PlusCircle, RefreshCw,
-  CheckCircle2,
   Tag,
-  Layers,
   Hash,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
