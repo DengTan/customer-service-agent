@@ -1,7 +1,22 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandlerSimple } from '@/lib/api-utils';
+import {
+  apiError,
+  apiSuccess,
+  extractUserRole,
+  getAuthenticatedUserId,
+  HttpStatus,
+  parseJsonBody,
+  requireRole,
+  withErrorHandlerSimple,
+} from '@/lib/api-utils';
 import { AlertService } from '@/server/services/alert-service';
 import type { CreateAlertInput } from '@/server/repositories/alert-repository';
+
+type AlertAction = 'resolve' | 'dismiss' | 'reopen';
+
+const ALERT_ACTION_BODY: AlertAction[] = ['resolve', 'dismiss', 'reopen'];
+const WRITE_ROLES = ['admin', 'agent'];
+const ADMIN_ROLES = ['admin'];
 
 const alertService = new AlertService();
 
@@ -33,12 +48,25 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
 export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   let id: string | null = null;
+  let action: AlertAction = 'resolve';
   const contentType = request.headers.get('content-type') || '';
 
   if (contentType.includes('application/json')) {
-    const { data: body, error: parseError } = await parseJsonBody<{ id?: string }>(request);
+    const { data: body, error: parseError } = await parseJsonBody<{
+      id?: string | null;
+      action?: AlertAction | null;
+    }>(request);
     if (parseError) return parseError;
     id = body?.id ?? null;
+    const requestedAction = body?.action ?? null;
+    if (requestedAction && ALERT_ACTION_BODY.includes(requestedAction)) {
+      action = requestedAction;
+    } else if (requestedAction) {
+      return apiError('未知 action', {
+        status: HttpStatus.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+      });
+    }
   }
 
   if (!id) {
@@ -46,6 +74,35 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
     id = searchParams.get('id');
   }
 
-  await alertService.resolveAlert(id);
+  if (!id) {
+    return apiError('缺少告警 ID', {
+      status: HttpStatus.BAD_REQUEST,
+      code: 'VALIDATION_ERROR',
+    });
+  }
+
+  // Reopen is privileged: only admins may un-resolve an alert. Other actions
+  // remain open to both admins and agents so the operational state machine
+  // stays reversible inside the on-call rotation.
+  const allowedRoles = action === 'reopen' ? ADMIN_ROLES : WRITE_ROLES;
+  const denial = requireRole(request, allowedRoles);
+  if (denial) return denial;
+
+  const operator = {
+    operatorId: getAuthenticatedUserId(request),
+    operatorRole: extractUserRole(request),
+  };
+
+  switch (action) {
+    case 'resolve':
+      await alertService.resolveAlert(id, operator);
+      break;
+    case 'dismiss':
+      await alertService.dismissAlert(id, operator);
+      break;
+    case 'reopen':
+      await alertService.reopenAlert(id, operator);
+      break;
+  }
   return apiSuccess({});
 });
