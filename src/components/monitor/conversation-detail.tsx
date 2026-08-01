@@ -33,38 +33,12 @@ import { useAuth } from '@/lib/auth';
 import type { Conversation, Message, CardAction } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
 import { RichMessageCard } from '@/components/chat/rich-message-card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { MonitorDetailSkeleton } from './monitor-skeleton';
 import { formatMessageTime, shouldShowTimeDivider } from '@/lib/chat-utils';
 import { HTTP } from '@/lib/constants';
 import { useThemeSettings } from '@/lib/theme-settings-context';
 import { logger } from '@/lib/logger';
 import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
-
-/** Skeleton for message loading state */
-function MessageSkeletonList() {
-  return (
-    <div className="space-y-3 max-w-3xl mx-auto px-6">
-      {Array.from({ length: 4 }).map((_, i) => {
-        const isUser = i % 2 === 0;
-        return (
-          <div key={i} className={`flex gap-2 animate-skeleton-pulse ${isUser ? 'justify-end' : 'justify-start'}`} style={{ animationDelay: `${i * 80}ms` }}>
-            {!isUser && <div className="w-7 h-7 rounded-full shrink-0 mt-0.5 bg-muted" />}
-            <div className="space-y-1.5 flex-1 max-w-[70%]">
-              <div className="h-3 w-20 rounded bg-muted" />
-              <div className={`space-y-1 ${isUser ? 'ml-auto' : ''}`}>
-                <div className={`h-9 rounded-lg ${isUser ? 'w-2/3 ml-auto bg-muted' : 'w-3/4 bg-muted'}`} />
-                {(i === 1 || i === 3) && (
-                  <div className={`h-9 rounded-lg ${isUser ? 'w-1/2 ml-auto bg-muted' : 'w-5/6 bg-muted'}`} />
-                )}
-              </div>
-            </div>
-            {isUser && <div className="w-7 h-7 rounded-full shrink-0 mt-0.5 bg-muted" />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 interface ConversationDetailProps {
   conversation: Conversation | null;
@@ -211,6 +185,13 @@ export function ConversationDetail({
     );
   }
 
+  // Loading state — same layout shell as the real detail panel so the
+  // first paint after switching conversations doesn't show a half-rendered
+  // header followed by an empty messages region.
+  if (isLoading) {
+    return <MonitorDetailSkeleton />;
+  }
+
   const isEnded = conversation.status === 'ended';
   const isHandoff = conversation.status === 'handoff';
   const isActive = conversation.status === 'active';
@@ -339,11 +320,7 @@ export function ConversationDetail({
 
       {/* Messages - read only view */}
       <div className="flex-1 overflow-y-auto py-4 min-h-0">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <MessageSkeletonList />
-          </div>
-        ) : messages.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm">
             <Bot className="w-8 h-8 mb-2 text-muted-foreground/40" />
             暂无消息
