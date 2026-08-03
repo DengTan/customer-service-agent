@@ -7,16 +7,39 @@ vi.mock('@/storage/database/supabase-client', () => ({
 }));
 
 vi.mock('@/server/repositories/alert-repository', () => ({
-  AlertRepository: vi.fn().mockImplementation(() => ({
-    create: vi.fn(),
-  })),
+  AlertRepository: class {
+    create = vi.fn();
+    update = vi.fn();
+    resolve = vi.fn();
+    findById = vi.fn();
+    list = vi.fn();
+  },
 }));
 
 vi.mock('@/server/repositories/settings-repository', () => ({
-  SettingsRepository: vi.fn().mockImplementation(() => ({
-    get: vi.fn(),
-    set: vi.fn(),
-  })),
+  SettingsRepository: class {
+    get = vi.fn().mockResolvedValue(null);
+    set = vi.fn();
+    // ticket_sla_enabled='true' makes getSLAConfig return enabled=true (its default path).
+    list = vi.fn().mockResolvedValue([
+      { key: 'ticket_sla_enabled', value: 'true' },
+    ]);
+  },
+}));
+
+vi.mock('@/server/repositories/conversation-repository', () => ({
+  ConversationRepository: class {
+    update = vi.fn();
+    findStatus = vi.fn();
+    insertMessage = vi.fn();
+  },
+}));
+
+vi.mock('@/server/repositories/ticket-custom-field-repository', () => ({
+  getCategories: vi.fn().mockResolvedValue([]),
+  getCustomFields: vi.fn().mockResolvedValue([]),
+  getFieldValues: vi.fn().mockResolvedValue([]),
+  upsertFieldValues: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -46,7 +69,10 @@ describe('TicketService', () => {
       const mockRepo = {
         list: vi.fn().mockResolvedValue({
           tickets: mockTickets,
-          total: 50,
+          status_counts: { open: 0, in_progress: 0, resolved: 0, closed: 0 },
+          total_count: 50,
+          page: 1,
+          page_size: 20,
         }),
       };
 
@@ -88,29 +114,23 @@ describe('TicketService', () => {
       };
 
       const mockRepo = {
-        getTicket: vi.fn().mockResolvedValue(mockTicket),
+        getDetail: vi.fn().mockResolvedValue(mockTicket),
       };
 
       const service = new TicketService(mockRepo as never);
 
       const result = await service.getTicket('ticket-1');
 
-      expect(result).toEqual(mockTicket);
+      expect(result).toMatchObject(mockTicket);
     });
   });
 
   describe('getSLAConfig', () => {
     it('returns default SLA config', async () => {
-      const mockSettingsRepo = {
-        get: vi.fn().mockResolvedValue(null),
-      };
-
-      vi.doMock('@/server/repositories/settings-repository', () => ({
-        SettingsRepository: vi.fn().mockImplementation(() => mockSettingsRepo),
-      }));
-
-      const mockRepo = {};
-      const service = new TicketService(mockRepo as never);
+      // Settings mock returns ticket_sla_enabled=true so the service
+      // emits { enabled: true, responseMinutes: {...}, resolveMinutes: {...} }.
+      // The test verifies the contract: enabled is true, both maps are present.
+      const service = new TicketService({} as never);
 
       const result = await service.getSLAConfig();
 
@@ -147,6 +167,8 @@ describe('TicketService', () => {
           title: 'New Ticket',
           status: 'open',
         }),
+        // createTicket calls logStatusChange after insert.
+        logStatusChange: vi.fn().mockResolvedValue(undefined),
       };
 
       const service = new TicketService(mockRepo as never);

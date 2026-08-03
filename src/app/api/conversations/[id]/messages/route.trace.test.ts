@@ -27,7 +27,7 @@ vi.mock('@/storage/database/supabase-client', () => ({
     delete: vi.fn().mockReturnThis(),
   })),
   isDemoMode: () => false,
-  getServiceRoleClient: vi.fn(() => ({
+  getServiceClient: vi.fn(() => ({
     rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
     from: vi.fn().mockReturnThis(),
     select: vi.fn().mockReturnThis(),
