@@ -1,0 +1,4 @@
+
+ FAIL  src/server/repositories/export-repository.test.ts > ExportRepository.getAnalyticsStats > counts ended conversations as completed (P0: schema enum is active|ended|handoff)
+ FAIL  src/server/services/settings-service.test.ts > SettingsService.validateSettings 鈥?allowlist + per-key type rules > accepts every key the real settings UI submits
+

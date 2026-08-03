@@ -1415,3 +1415,183 @@ export const llmModels = pgTable(
     index("llm_models_select_idx").on(table.is_enabled, table.priority),
   ]
 );
+
+// ============================================
+// 工单扩展表（Phase 7-10：分类、自定义字段、关联、审计）
+// 来源：supabase/migrations/20260627_migrate_coze_supabase.sql
+// ============================================
+
+// 工单分类表（支持层级分类树）
+export const ticketCategories = pgTable(
+  "ticket_categories",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 100 }).notNull(),
+    description: text("description"),
+    // 父分类（支持两级分类树）
+    parent_id: varchar("parent_id", { length: 36 }),
+    // 优先级（数字越大优先级越高，影响工单排序）
+    priority: integer("priority").notNull().default(0),
+    // 是否启用
+    is_active: boolean("is_active").notNull().default(true),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("ticket_categories_parent_id_idx").on(table.parent_id),
+    index("ticket_categories_is_active_idx").on(table.is_active),
+  ]
+);
+
+// 工单自定义字段定义表
+export const ticketCustomFields = pgTable(
+  "ticket_custom_fields",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 100 }).notNull(),
+    // 字段唯一标识键（API 中引用）
+    field_key: varchar("field_key", { length: 50 }).notNull().unique(),
+    // 字段类型：text/number/select/multi_select/date/checkbox
+    field_type: varchar("field_type", { length: 20 }).notNull().default("text"),
+    // select/multi_select 的选项列表
+    options: jsonb("options").default(sql`'[]'::jsonb`),
+    // 是否必填
+    is_required: boolean("is_required").notNull().default(false),
+    // 是否启用
+    is_active: boolean("is_active").notNull().default(true),
+    // 排序权重
+    display_order: integer("display_order").notNull().default(0),
+    // 默认值
+    default_value: text("default_value"),
+    // 占位符提示
+    placeholder: text("placeholder"),
+    // 关联分类（空数组表示所有分类通用）
+    category_ids: jsonb("category_ids").default(sql`'[]'::jsonb`),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("ticket_custom_fields_field_key_idx").on(table.field_key),
+    index("ticket_custom_fields_is_active_idx").on(table.is_active),
+    index("ticket_custom_fields_display_order_idx").on(table.display_order),
+  ]
+);
+
+// 工单自定义字段值表
+export const ticketFieldValues = pgTable(
+  "ticket_field_values",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联工单
+    ticket_id: varchar("ticket_id", { length: 36 }).notNull(),
+    // 关联字段定义
+    field_id: varchar("field_id", { length: 36 }).notNull(),
+    // 冗余存储 field_key 便于快速查询
+    field_key: varchar("field_key", { length: 50 }).notNull(),
+    // 字段值
+    field_value: text("field_value"),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true }),
+  },
+  (table) => [
+    // 唯一约束：同一工单同一字段只有一个值
+    uniqueIndex("ticket_field_values_ticket_field_idx").on(table.ticket_id, table.field_id),
+    index("ticket_field_values_ticket_id_idx").on(table.ticket_id),
+    index("ticket_field_values_field_id_idx").on(table.field_id),
+    index("ticket_field_values_field_key_idx").on(table.field_key),
+  ]
+);
+
+// 工单关联表（blocks/related/duplicates）
+export const ticketRelations = pgTable(
+  "ticket_relations",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 源工单
+    source_ticket_id: varchar("source_ticket_id", { length: 36 }).notNull(),
+    // 目标工单
+    target_ticket_id: varchar("target_ticket_id", { length: 36 }).notNull(),
+    // 关联类型：blocks/related/duplicates
+    relation_type: varchar("relation_type", { length: 20 }).notNull().default("related"),
+    // 创建人
+    created_by: varchar("created_by", { length: 36 }),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("ticket_relations_source_target_idx").on(table.source_ticket_id, table.target_ticket_id),
+    index("ticket_relations_source_idx").on(table.source_ticket_id),
+    index("ticket_relations_target_idx").on(table.target_ticket_id),
+    index("ticket_relations_type_idx").on(table.relation_type),
+  ]
+);
+
+// 工单操作审计日志表
+export const ticketAuditLog = pgTable(
+  "ticket_audit_log",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // 关联工单
+    ticket_id: varchar("ticket_id", { length: 36 }).notNull(),
+    // 操作类型：created/updated_status/updated_priority/assigned/commented/closed/reopened
+    action: varchar("action", { length: 50 }).notNull(),
+    // 操作人
+    actor_id: varchar("actor_id", { length: 36 }),
+    actor_name: varchar("actor_name", { length: 100 }),
+    // 变更内容（结构化 diff）
+    changes: jsonb("changes"),
+    old_value: jsonb("old_value"),
+    new_value: jsonb("new_value"),
+    // 额外元数据
+    metadata: jsonb("metadata"),
+    // 审计字段
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("ticket_audit_log_ticket_id_idx").on(table.ticket_id),
+    index("ticket_audit_log_actor_id_idx").on(table.actor_id),
+    index("ticket_audit_log_action_idx").on(table.action),
+    index("ticket_audit_log_created_at_idx").on(table.created_at),
+  ]
+);
+
+// ============================================
+// Effect Outbox (B4a/B4b: RC-5 post-stream reliability)
+// ============================================
+export const effectOutbox = pgTable(
+  "effect_outbox",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    // Effect identifier (matches EffectBus.register key)
+    effect_name: varchar("effect_name", { length: 100 }).notNull(),
+    // Serialized context — no secrets in the payload (message content ok, tokens ok)
+    payload: jsonb("payload").notNull(),
+    // Scheduling
+    next_run_at: timestamp("next_run_at", { withTimezone: true }).defaultNow().notNull(),
+    // Retry state
+    attempt_count: integer("attempt_count").notNull().default(0),
+    max_attempts: integer("max_attempts").notNull().default(5),
+    // Idempotency: hash of effect_name + relevant payload keys
+    idempotency_key: varchar("idempotency_key", { length: 200 }),
+    // Status
+    status: varchar("status", { length: 20 }).notNull().default('pending'),
+    // 'pending' — waiting to run
+    // 'running' — currently executing (worker has claimed it)
+    // 'completed' — finished successfully
+    // 'failed' — exhausted all retries
+    // 'cancelled' — manually cancelled
+    last_error: text("last_error"),
+    last_attempt_at: timestamp("last_attempt_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("effect_outbox_next_run_at_idx").on(table.next_run_at),
+    index("effect_outbox_status_idx").on(table.status),
+    index("effect_outbox_idempotency_key_idx").on(table.idempotency_key),
+    // Partial index for pending items only (most common query)
+    index("effect_outbox_pending_run_idx").on(table.next_run_at, table.status),
+  ]
+);

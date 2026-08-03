@@ -27,7 +27,7 @@ import { invalidateKnowledgeSearchSettingsCache } from '@/server/services/knowle
 import { ContentFilterService } from '@/server/services/content-filter-service';
 import { FeatureFlagService } from '@/server/services/feature-flag-service';
 import { logger } from '@/lib/logger';
-import { getServiceRoleClient } from '@/storage/database/supabase-client';
+import { getServiceClient } from '@/storage/database/supabase-client';
 
 const ADMIN_ONLY = ['admin'];
 
@@ -72,7 +72,7 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   // ── Persist ────────────────────────────────────────────────────────────────
-  const client = getServiceRoleClient();
+  const client = getServiceClient();
   const repo = new SettingsRepository(client);
 
   try {

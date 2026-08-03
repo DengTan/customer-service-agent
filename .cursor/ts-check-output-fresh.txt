@@ -1,0 +1,66 @@
+
+> projects@0.1.0 ts-check D:\customer_service_agent-main
+> tsc -p tsconfig.json
+
+src/components/settings/llm-provider-manager.tsx(388,21): error TS2352: Conversion of type '{ id: string; model_id: string; display_name: string; description: string; priority: string; supports_vision: boolean; supports_streaming: boolean; supports_function_calling: boolean; is_enabled: boolean; tempId: string; }' to type 'LlmModel' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'provider_id' is missing in type '{ id: string; model_id: string; display_name: string; description: string; priority: string; supports_vision: boolean; supports_streaming: boolean; supports_function_calling: boolean; is_enabled: boolean; tempId: string; }' but required in type 'LlmModel'.
+src/components/settings/settings-page.tsx(426,17): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: AutoReplySettingsProps, context?: any): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | ... 4 more ... | undefined', gave the following error.
+    Type '{}' is missing the following properties from type 'AutoReplySettingsProps': rules, onRulesChange
+  Overload 2 of 2, '(props: AutoReplySettingsProps): string | number | bigint | boolean | ReactElement<unknown, string | JSXElementConstructor<any>> | ... 4 more ... | undefined', gave the following error.
+    Type '{}' is missing the following properties from type 'AutoReplySettingsProps': rules, onRulesChange
+src/components/workspace/workspace-page.tsx(580,12): error TS2739: Type '{ selectedConversation: AgentQueueItem | null; onTransfer: () => void; onResolve: (queueId: string) => Promise<void>; }' is missing the following properties from type 'CustomerInfoPanelProps': customerInfo, isLoading
+src/lib/ticket-audit-trail.test.ts(45,7): error TS2353: Object literal may only specify known properties, and 'table' does not exist in type 'AuditContext'.
+src/lib/ticket-audit-trail.test.ts(58,14): error TS2353: Object literal may only specify known properties, and 'table' does not exist in type 'AuditContext'.
+src/lib/ticket-audit-trail.test.ts(66,14): error TS2353: Object literal may only specify known properties, and 'table' does not exist in type 'AuditContext'.
+src/server/repositories/analytics-repository.test.ts(180,40): error TS2554: Expected 0 arguments, but got 1.
+src/server/repositories/analytics-repository.test.ts(199,40): error TS2554: Expected 0 arguments, but got 1.
+src/server/repositories/analytics-repository.test.ts(210,40): error TS2554: Expected 0 arguments, but got 1.
+src/server/repositories/analytics-repository.test.ts(228,23): error TS2339: Property 'getUserMessageCount' does not exist on type 'AnalyticsRepository'.
+src/server/repositories/analytics-repository.test.ts(247,23): error TS2339: Property 'getUserMessageCount' does not exist on type 'AnalyticsRepository'.
+src/server/repositories/analytics-repository.test.ts(258,23): error TS2339: Property 'getUserMessageCount' does not exist on type 'AnalyticsRepository'.
+src/server/services/customer-service.test.ts(10,15): error TS2305: Module '"@/server/repositories/customer-repository"' has no exported member 'ActorAccessContext'.
+src/server/services/customer-service.test.ts(93,32): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(108,32): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(123,32): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(139,13): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(142,19): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(161,28): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(166,13): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/customer-service.test.ts(185,71): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/server/services/customer-service.test.ts(186,14): error TS18046: 'result.customer' is of type 'unknown'.
+src/server/services/customer-service.test.ts(201,71): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/server/services/customer-service.test.ts(202,14): error TS18046: 'result.customer' is of type 'unknown'.
+src/server/services/customer-service.test.ts(217,58): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/server/services/customer-service.test.ts(238,53): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.
+src/server/services/customer-service.test.ts(258,61): error TS2554: Expected 1 arguments, but got 2.
+src/server/services/customer-service.test.ts(279,59): error TS2554: Expected 1 arguments, but got 2.
+src/server/services/customer-service.test.ts(300,11): error TS2339: Property 'getCustomerByConversationId' does not exist on type 'CustomerService'.
+src/server/services/marketing-service.test.ts(123,51): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/marketing-service.test.ts(135,51): error TS2554: Expected 0-1 arguments, but got 2.
+src/server/services/marketing-service.test.ts(167,5): error TS2554: Expected 0-1 arguments, but got 3.
+src/server/services/marketing-service.test.ts(170,7): error TS2339: Property 'invalidateAnalyticsCache' does not exist on type 'MarketingService'.
+src/server/services/marketing-service.test.ts(207,18): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "sent" | "failed"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(207,50): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "sent" | "failed"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(208,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "sent" | "failed"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(257,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "sent" | "failed"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(277,19): error TS2339: Property 'status' does not exist on type '{ campaignId: string; campaignName: string; totalTargeted: number; successCount: number; failCount: number; details: { customerId: string; customerName: string; status: "sent" | "failed"; error?: string | undefined; }[]; }'.
+src/server/services/marketing-service.test.ts(319,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(320,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(323,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(323,28): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(324,45): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(347,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(348,37): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(350,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(351,14): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(360,19): error TS2339: Property 'skipped' does not exist on type '{ processed: number; errors: string[]; }'.
+src/server/services/marketing-service.test.ts(417,56): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/marketing-service.test.ts(426,56): error TS2554: Expected 0 arguments, but got 1.
+src/server/services/sprint2-gorgias-hardening.test.ts(55,3): error TS2305: Module '"./retrieval-gating-service"' has no exported member 'ADVERSARIAL_REJECTION_MESSAGE'.
+src/server/services/sprint2-gorgias-hardening.test.ts(235,21): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(244,21): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(255,14): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(255,39): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+src/server/services/sprint2-gorgias-hardening.test.ts(256,14): error TS2339: Property 'rejectionMessage' does not exist on type 'RetrievalGateDecision'.
+鈥塃LIFECYCLE鈥?Command failed with exit code 2.

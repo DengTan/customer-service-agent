@@ -1,0 +1,11 @@
+?? .cursor/diff-chat.txt
+?? .cursor/diff-customer.txt
+?? .cursor/lint-alerts-aggregate.txt
+?? .cursor/lint-alerts-rpc.txt
+?? .cursor/lint-fresh.txt
+?? .cursor/status-v1.txt
+?? .cursor/test-run-output.txt
+?? .cursor/ts-check-output-fresh.txt
+?? .cursor/ts-check-output.txt
+?? .cursor/ts-check-poststash.txt
+?? .cursor/ts-check-prestash.txt

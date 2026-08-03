@@ -113,6 +113,10 @@ export interface LLMStreamOptions {
   /** P0-C: AbortSignal — when provided, post-stream DB operations are skipped if
    *  the client disconnected before the stream finished. */
   abortSignal?: AbortSignal;
+  /** P0-C: AbortController — when provided, cancel() calls abort() on this controller.
+   *  This propagates cancellation to post-stream effects. The caller creates this
+   *  controller and passes both it and its .signal to createStream. */
+  abortController?: AbortController;
   /** P0-B: Tool scoping — when a routed bot is active, its tool list restricts which
    *  tools the LLM may call during this stream. */
   routedBotTools?: string[];
@@ -981,8 +985,13 @@ if (claimVerificationResult !== null) {
         }
       },
       cancel() {
-        // Client disconnected — abort ongoing LLM stream
+        // Client disconnected — abort ongoing LLM stream (RC-5 fix).
+        // Setting isAborted stops token accumulation. Calling abortController.abort()
+        // propagates cancellation to handlePostStreamOperations so all post-stream
+        // effects (save message, quality check, etc.) are skipped when the client
+        // disconnects before the stream finishes.
         isAborted = true;
+        options.abortController?.abort();
       },
     });
 

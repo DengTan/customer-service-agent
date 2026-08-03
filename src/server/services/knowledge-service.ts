@@ -155,6 +155,21 @@ export class KnowledgeService {
     }
   }
 
+  async deleteCategory(input: { category: string }): Promise<{ count: number }> {
+    if (!input.category || !input.category.trim()) {
+      throw new ServiceError('分类不能为空', { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    try {
+      const { items } = await this.listItems({ category: input.category.trim(), limit: 1000 });
+      if (items.length === 0) {
+        return { count: 0 };
+      }
+      return await this.bulkDelete(items.map((item) => (item as { id: string }).id));
+    } catch (error) {
+      throw toServiceError(error, '删除分类失败', 'DB_ERROR');
+    }
+  }
+
   async bulkUpdateCategory(input: { ids: string[]; category: string; parent_category?: string | null }): Promise<{ count: number }> {
     if (!Array.isArray(input.ids) || input.ids.length === 0) {
       throw new ServiceError('请选择要修改的条目', { status: 400, code: 'VALIDATION_ERROR' });

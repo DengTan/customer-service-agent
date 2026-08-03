@@ -509,9 +509,10 @@ export const POST = withErrorHandler(async (
       llmProviderApiKey: llmProviderConfig.providerApiKey,
       llmProviderDefaultModel: llmProviderConfig.defaultModel,
       // [P0-B] Tool scoping: routed bot's tools restrict which tools the LLM may call.
-      // [P0-C] Pass abortSignal so post-stream DB ops are skipped when the client disconnects.
+      // [P0-C] Pass abortController so cancel() propagates abort to post-stream effects.
       routedBotTools,
       abortSignal: abortController.signal,
+      abortController,
     });
   } catch (streamInitError) {
     logger.api.error('Failed to create LLM stream', { error: streamInitError, conversationId });

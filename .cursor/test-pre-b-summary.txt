@@ -1,0 +1,34 @@
+
+ FAIL  src/server/services/knowledge-import-service.test.ts [ src/server/services/knowledge-import-service.test.ts ]
+ FAIL  src/lib/comment-mention-tx.test.ts > TicketService.addComment 鈥?T-7 transactional batch > notification-failure path: when a mention insert throws, runBatch rolls back the comment
+ FAIL  src/lib/comment-mention-tx.test.ts > TicketService.addComment 鈥?T-7 transactional batch > notification-failure path with multiple mentions: still rolls back only the comment
+ FAIL  src/server/services/alert-service.test.ts > AlertService.createAlert 鈥?M-4 unified idempotent dedup > collapses concurrent duplicates within the dedup window
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when LLM returns unknown claim ID
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when LLM returns unknown source ID
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when claim text is not a substring of the response
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > NEVER adds new sources 鈥?only removes
+ FAIL  src/server/services/llm-streaming-service.delegation.test.ts > LLMStreamingService.createStream 鈥?R-2 濮旀淳涓婁笅鏂囬€忎紶锛堟祦鍐呭娲撅級 > enableSubAgentDelegation=true 鏃讹紝delegateTask 搴旀敹鍒?productContext / sizeChartContext / llmProviderConfig
+ FAIL  src/server/services/llm-streaming-service.delegation.test.ts > LLMStreamingService.createStream 鈥?R-2 濮旀淳涓婁笅鏂囬€忎紶锛堟祦鍐呭娲撅級 > 涓嶄紶 productContext/sizeChartContext 鏃讹紝delegateTask 涔熷簲琚甯歌皟鐢紙鍙槸鍊间负 undefined锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?query gate > RETRIEVE on a substantive refund question 鈫?candidates exist but citations=0 (fail-closed without real reranker)
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?rerank provenance > RETRIEVE with hybrid metadata rerankDegraded=true 鈫?rerank fail-closed: citations MUST be empty
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?rerank provenance > RETRIEVE with missing rerankDegraded metadata remains fail-closed
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?citation provenance > citations are NEVER published without real reranker (fail-closed)
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > keeps product context for generation without publishing it as a citation
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > keeps size-chart context for generation without publishing it as a citation
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > fails closed when knowledge retrieval throws while preserving other channel isolation
+ FAIL  src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > returns BM25 results when vector RPC reports 42883
+ FAIL  src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > still propagates data errors (non-42883) without silent fallback
+ FAIL  src/server/services/settings-service.test.ts > SettingsService.validateSettings 鈥?allowlist + per-key type rules > accepts every key the real settings UI submits
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > listTickets > returns paginated ticket list
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > listTickets > filters tickets by status
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getTicket > returns ticket with details
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getSLAConfig > returns default SLA config
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > updateTicket validation > throws error for invalid status transition
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > createTicket > creates ticket with valid input
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > createTicket > rejects ticket without title
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getCategories > returns list of categories
+ FAIL  src/server/repositories/export-repository.test.ts > ExportRepository.getAnalyticsStats > counts ended conversations as completed (P0: schema enum is active|ended|handoff)
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾互鍚?productContext 鍜?sizeChartContext 鐨勫弬鏁拌皟鐢紙R-2锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾紶閫?llmProviderConfig锛圧-3 degraded 纭笂闄愮殑鏉ユ簮锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > 褰撴棤 productContext / sizeChartContext 鏃朵粛搴旇皟鐢?delegateTask锛堝熀绾垮洖褰掞級
+

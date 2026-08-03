@@ -1,0 +1,49 @@
+
+> projects@0.1.0 test:run D:\customer_service_agent-main
+> vitest run "src/lib/problem-json.test.ts" "src/lib/fetch-api.test.ts"
+
+
+ RUN  v4.1.9 D:/customer_service_agent-main
+
+ 鉂?src/lib/fetch-api.test.ts (3 tests | 1 failed) 26ms
+     脳 parses application/problem+json response into ApiProblemError 24ms
+ 鉂?src/lib/problem-json.test.ts (6 tests | 1 failed) 12ms
+     脳 problemResponse supports custom headers 5ms
+
+鈳幆鈳幆鈳幆鈳?Failed Tests 2 鈳幆鈳幆鈳幆鈳?
+ FAIL  src/lib/fetch-api.test.ts > RFC 7807 fetch-api error handling > parses application/problem+json response into ApiProblemError
+AssertionError: expected undefined to be '/problems/unauthorized' // Object.is equality
+
+- Expected:
+"/problems/unauthorized"
+
++ Received:
+undefined
+
+ 鉂?src/lib/fetch-api.test.ts:17:23
+     15|     expect(err).toBeInstanceOf(ApiProblemError);
+     16|     expect(err?.status).toBe(401);
+     17|     expect(err?.type).toBe('/problems/unauthorized');
+       |                       ^
+     18|     expect(err?.detail).toBe('login required');
+     19|   });
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[1/2]鈳?
+ FAIL  src/lib/problem-json.test.ts > RFC 7807 Problem Details > problemResponse supports custom headers
+TypeError: Response constructor: Invalid response status code 204
+ 鉂?new NextResponse node_modules/.pnpm/next@16.1.1_@babel+core@7.28.6_@playwright+test@1.62.1_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/src/server/web/spec-extension/response.ts:44:4
+ 鉂?problemResponse src/lib/api/problem-json.ts:87:10
+     85|     ...(options.headers ?? {}),
+     86|   };
+     87|   return new NextResponse(JSON.stringify(problem), { status, headers }鈥?       |          ^
+     88| }
+ 鉂?src/lib/problem-json.test.ts:41:17
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[2/2]鈳?
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 7 passed (9)
+   Start at  17:11:12
+   Duration  466ms (transform 142ms, setup 0ms, import 296ms, tests 38ms, environment 0ms)
+
+鈥塃LIFECYCLE鈥?Command failed with exit code 1.

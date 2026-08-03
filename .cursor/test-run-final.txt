@@ -1,0 +1,602 @@
+
+> projects@0.1.0 test:run D:\customer_service_agent-main
+> vitest run
+
+
+ RUN  v4.1.9 D:/customer_service_agent-main
+
+ 鉂?src/server/services/claim-support-verifier.test.ts (16 tests | 4 failed) 16ms
+     脳 fails closed when LLM returns unknown claim ID 7ms
+     脳 fails closed when LLM returns unknown source ID 1ms
+     脳 fails closed when claim text is not a substring of the response 1ms
+     脳 NEVER adds new sources 鈥?only removes 1ms
+stderr | src/server/services/knowledge-import-service.test.ts
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ 鉂?src/server/services/knowledge-import-service.test.ts (0 test)
+stdout | src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > returns BM25 results when vector RPC reports 42883
+2026-08-01T09:45:54.948Z [33mWARN [0m [Agent] [HybridSearch] Vector search RPC failed error={"code":"42883","message":"function match_knowledge_items does not exist"}
+
+stdout | src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > still propagates data errors (non-42883) without silent fallback
+2026-08-01T09:45:54.961Z [33mWARN [0m [Agent] [HybridSearch] Vector search RPC failed error={"code":"42501","message":"permission denied"}
+
+ 鉂?src/server/services/retrieval-sprint3-r1-unsupported.test.ts (6 tests | 2 failed) 221ms
+     脳 returns BM25 results when vector RPC reports 42883 209ms
+     脳 still propagates data errors (non-42883) without silent fallback 2ms
+ 鉂?src/server/services/settings-service.test.ts (7 tests | 1 failed) 24ms
+     脳 accepts every key the real settings UI submits 10ms
+ 鉂?src/server/repositories/export-repository.test.ts (2 tests | 1 failed) 19ms
+     脳 counts ended conversations as completed (P0: schema enum is active|ended|handoff) 14ms
+stderr | src/server/services/ticket-service.test.ts > TicketService > listTickets > returns paginated ticket list
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > listTickets > filters tickets by status
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > getTicket > returns ticket with details
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > getSLAConfig > returns default SLA config
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > updateTicket validation > throws error for invalid status transition
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > createTicket > creates ticket with valid input
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > createTicket > rejects ticket without title
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+stderr | src/server/services/ticket-service.test.ts > TicketService > getCategories > returns list of categories
+[vitest] The vi.fn() mock did not use 'function' or 'class' in its implementation, see https://vitest.dev/api/vi#vi-spyon for examples.
+
+ 鉂?src/server/services/ticket-service.test.ts (8 tests | 8 failed) 22ms
+       脳 returns paginated ticket list 11ms
+       脳 filters tickets by status 1ms
+       脳 returns ticket with details 1ms
+       脳 returns default SLA config 1ms
+       脳 throws error for invalid status transition 1ms
+       脳 creates ticket with valid input 1ms
+       脳 rejects ticket without title 1ms
+       脳 returns list of categories 1ms
+stdout | src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾互鍚?productContext 鍜?sizeChartContext 鐨勫弬鏁拌皟鐢紙R-2锛?2026-08-01T09:45:55.549Z [33mWARN [0m [API] Failed to load LLM provider config error={} providerId=undefined
+
+stdout | src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾紶閫?llmProviderConfig锛圧-3 degraded 纭笂闄愮殑鏉ユ簮锛?2026-08-01T09:45:55.565Z [33mWARN [0m [API] Failed to load LLM provider config error={} providerId=undefined
+
+stdout | src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > 褰撴棤 productContext / sizeChartContext 鏃朵粛搴旇皟鐢?delegateTask锛堝熀绾垮洖褰掞級
+2026-08-01T09:45:55.584Z [33mWARN [0m [API] Failed to load LLM provider config error={} providerId=undefined
+
+ 鉂?src/app/api/conversations/[id]/messages/route.delegation.test.ts (3 tests | 3 failed) 973ms
+     脳 delegateTask 搴斾互鍚?productContext 鍜?sizeChartContext 鐨勫弬鏁拌皟鐢紙R-2锛?950ms
+     脳 delegateTask 搴斾紶閫?llmProviderConfig锛圧-3 degraded 纭笂闄愮殑鏉ユ簮锛?4ms
+     脳 褰撴棤 productContext / sizeChartContext 鏃朵粛搴旇皟鐢?delegateTask锛堝熀绾垮洖褰掞級 18ms
+ 鉂?src/lib/comment-mention-tx.test.ts (5 tests | 2 failed) 151ms
+     脳 notification-failure path: when a mention insert throws, runBatch rolls back the comment 16ms
+     脳 notification-failure path with multiple mentions: still rolls back only the comment 5ms
+stdout | src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > fails closed when knowledge retrieval throws while preserving other channel isolation
+2026-08-01T09:45:55.893Z [33mWARN [0m [Agent] [RetrievalOrchestrator] Knowledge search failed error={}
+
+ 鉂?src/server/services/retrieval-orchestrator.test.ts (22 tests | 7 failed) 1291ms
+     脳 RETRIEVE on a substantive refund question 鈫?candidates exist but citations=0 (fail-closed without real reranker) 11ms
+     脳 RETRIEVE with hybrid metadata rerankDegraded=true 鈫?rerank fail-closed: citations MUST be empty 2ms
+     脳 RETRIEVE with missing rerankDegraded metadata remains fail-closed 4ms
+     脳 citations are NEVER published without real reranker (fail-closed) 2ms
+     脳 keeps product context for generation without publishing it as a citation 2ms
+     脳 keeps size-chart context for generation without publishing it as a citation 1ms
+     脳 fails closed when knowledge retrieval throws while preserving other channel isolation 3ms
+ 鉂?src/server/services/alert-service.test.ts (13 tests | 1 failed) 96ms
+     脳 collapses concurrent duplicates within the dedup window 11ms
+stdout | src/server/services/llm-streaming-service.delegation.test.ts > LLMStreamingService.createStream 鈥?R-2 濮旀淳涓婁笅鏂囬€忎紶锛堟祦鍐呭娲撅級 > enableSubAgentDelegation=true 鏃讹紝delegateTask 搴旀敹鍒?productContext / sizeChartContext / llmProviderConfig
+SSE events count: 61
+SSE event: {"content":"鍏?}
+SSE event: {"content":"浜?}
+SSE event: {"content":"灏?}
+SSE event: {"content":"鐮?}
+SSE event: {"content":"锛?}
+Last SSE event: {"done":true,"sources":[],"confidence":0.7,"confidence_breakdown":{"knowledge_score":0,"tool_score":0,"sub_agent_score":0,"handoff_intent":false,"no_support":false,"final":0.7},"botId":"parent-bot-1",
+detectIntentAndRouteSpy.callCount: 0
+delegateTaskSpy.callCount: 0
+insertMessageAndReturnMock.callCount: 0
+
+ 鉂?src/server/services/llm-streaming-service.delegation.test.ts (5 tests | 2 failed) 2363ms
+     脳 enableSubAgentDelegation=true 鏃讹紝delegateTask 搴旀敹鍒?productContext / sizeChartContext / llmProviderConfig 912ms
+     脳 涓嶄紶 productContext/sizeChartContext 鏃讹紝delegateTask 涔熷簲琚甯歌皟鐢紙鍙槸鍊间负 undefined锛?769ms
+
+鈳幆鈳幆鈳幆 Failed Suites 1 鈳幆鈳幆鈳幆鈳?
+ FAIL  src/server/services/knowledge-import-service.test.ts [ src/server/services/knowledge-import-service.test.ts ]
+TypeError: () => ({
+	create: vi.fn().mockResolvedValue({
+		id: "job-123",
+		status: "pending",
+		fil...<omitted>...}) is not a constructor
+ 鉂?new KnowledgeImportService src/server/services/knowledge-import-service.ts:51:26
+     49|
+     50|   constructor() {
+     51|     this.jobRepository = new KnowledgeImportJobRepository();
+       |                          ^
+     52|   }
+     53|
+ 鉂?src/server/services/knowledge-import-service.ts:499:39
+ 鉂?src/server/services/knowledge-import-service.test.ts:72:1
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆1/32]鈳?
+
+鈳幆鈳幆鈳幆 Failed Tests 31 鈳幆鈳幆鈳幆鈳?
+ FAIL  src/lib/comment-mention-tx.test.ts > TicketService.addComment 鈥?T-7 transactional batch > notification-failure path: when a mention insert throws, runBatch rolls back the comment
+AssertionError: promise resolved "{ comment: { id: 'cmt-1', 鈥?5) }, 鈥?2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "author_avatar": null,
++   "author_name": "agent-X",
++   "comment": {
++     "author_id": "u-1",
++     "content": "hi @寮犱笁",
++     "created_at": "2026-08-01T09:45:55.771Z",
++     "id": "cmt-1",
++     "is_internal": false,
++     "ticket_id": "t-3",
++   },
+  }
+
+ 鉂?src/lib/comment-mention-tx.test.ts:164:5
+    162|         is_internal: false,
+    163|       }),
+    164|     ).rejects.toThrow();
+       |     ^
+    165|
+    166|     // Comment must have been rolled back. deleteComment must have been
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆2/32]鈳?
+ FAIL  src/lib/comment-mention-tx.test.ts > TicketService.addComment 鈥?T-7 transactional batch > notification-failure path with multiple mentions: still rolls back only the comment
+AssertionError: promise resolved "{ comment: { id: 'cmt-1', 鈥?5) }, 鈥?2) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "author_avatar": null,
++   "author_name": "agent-X",
++   "comment": {
++     "author_id": "u-1",
++     "content": "hi @寮犱笁 @鏉庡洓 @鐜嬩簲",
++     "created_at": "2026-08-01T09:45:55.786Z",
++     "id": "cmt-1",
++     "is_internal": false,
++     "ticket_id": "t-4",
++   },
+  }
+
+ 鉂?src/lib/comment-mention-tx.test.ts:189:5
+    187|         is_internal: false,
+    188|       }),
+    189|     ).rejects.toThrow();
+       |     ^
+    190|
+    191|     expect(ticketRepo.deletedCommentIds).toContain('cmt-1');
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆3/32]鈳?
+ FAIL  src/server/repositories/export-repository.test.ts > ExportRepository.getAnalyticsStats > counts ended conversations as completed (P0: schema enum is active|ended|handoff)
+AssertionError: expected { total_conversations: 6, 鈥?6) } to deeply equal { total_conversations: 6, 鈥?6) }
+
+- Expected
++ Received
+
+  {
+    "active_conversations": 2,
+-   "avg_rating": "4.25",
+-   "completed_conversations": 3,
++   "avg_rating": "3.40",
++   "completed_conversations": 0,
+    "queued_items": 2,
+    "total_alerts": 4,
+    "total_conversations": 6,
+    "total_messages": 120,
+  }
+
+ 鉂?src/server/repositories/export-repository.test.ts:45:19
+     43|     const stats = await repo.getAnalyticsStats();
+     44|
+     45|     expect(stats).toEqual({
+       |                   ^
+     46|       total_conversations: 6,
+     47|       active_conversations: 2,
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆4/32]鈳?
+ FAIL  src/server/services/alert-service.test.ts > AlertService.createAlert 鈥?M-4 unified idempotent dedup > collapses concurrent duplicates within the dedup window
+AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times
+ 鉂?src/server/services/alert-service.test.ts:151:25
+    149|     const [a, b] = await Promise.all([first, second]);
+    150|
+    151|     expect(repo.create).toHaveBeenCalledTimes(1);
+       |                         ^
+    152|     // Exactly one row was inserted.
+    153|     expect(repo.rows).toHaveLength(1);
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆5/32]鈳?
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when LLM returns unknown claim ID
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ 鉂?src/server/services/claim-support-verifier.test.ts:289:23
+    287|
+    288|     // fail-closed: unknown claim ID in support 鈫?whole verification f鈥?    289|     expect(result.ok).toBe(false);
+       |                       ^
+    290|     if (!result.ok) {
+    291|       expect(result.code).toBe('invalid_response');
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆6/32]鈳?
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when LLM returns unknown source ID
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ 鉂?src/server/services/claim-support-verifier.test.ts:311:23
+    309|     const result = await verifier.verify(RESPONSE, USER_QUESTION, [CIT鈥?    310|
+    311|     expect(result.ok).toBe(false);
+       |                       ^
+    312|     if (!result.ok) {
+    313|       expect(result.code).toBe('invalid_response');
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆7/32]鈳?
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > fails closed when claim text is not a substring of the response
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ 鉂?src/server/services/claim-support-verifier.test.ts:335:23
+    333|     const result = await verifier.verify(RESPONSE, USER_QUESTION, [CIT鈥?    334|
+    335|     expect(result.ok).toBe(false);
+       |                       ^
+    336|     if (!result.ok) {
+    337|       expect(result.code).toBe('invalid_response');
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆8/32]鈳?
+ FAIL  src/server/services/claim-support-verifier.test.ts > ClaimSupportVerifier.verify > NEVER adds new sources 鈥?only removes
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ 鉂?src/server/services/claim-support-verifier.test.ts:436:23
+    434|
+    435|     // fail-closed: C2's claim text is not in the response 鈫?whole ver鈥?    436|     expect(result.ok).toBe(false);
+       |                       ^
+    437|   });
+    438|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳痆9/32]鈳?
+ FAIL  src/server/services/llm-streaming-service.delegation.test.ts > LLMStreamingService.createStream 鈥?R-2 濮旀淳涓婁笅鏂囬€忎紶锛堟祦鍐呭娲撅級 > enableSubAgentDelegation=true 鏃讹紝delegateTask 搴旀敹鍒?productContext / sizeChartContext / llmProviderConfig
+Error: The property "detectIntentAndRoute" is not defined on the object.
+ 鉂?src/server/services/llm-streaming-service.delegation.test.ts:297:26
+    295|     // Use spyOn to track if detectIntentAndRoute was called even if m鈥?    296|     const { SubAgentService } = await import('./sub-agent-service');
+    297|     const detectSpy = vi.spyOn(SubAgentService.prototype as any, 'dete鈥?       |                          ^
+    298|     // eslint-disable-next-line no-console
+    299|     console.log('spyOn detectIntentAndRoute count:', detectSpy.mock.ca鈥?
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[10/32]鈳?
+ FAIL  src/server/services/llm-streaming-service.delegation.test.ts > LLMStreamingService.createStream 鈥?R-2 濮旀淳涓婁笅鏂囬€忎紶锛堟祦鍐呭娲撅級 > 涓嶄紶 productContext/sizeChartContext 鏃讹紝delegateTask 涔熷簲琚甯歌皟鐢紙鍙槸鍊间负 undefined锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ 鉂?src/server/services/llm-streaming-service.delegation.test.ts:342:29
+    340|     await drainStream(stream);
+    341|
+    342|     expect(delegateTaskSpy).toHaveBeenCalledTimes(1);
+       |                             ^
+    343|     const delegateCall = delegateTaskSpy.mock.calls[0][0];
+    344|     expect(delegateCall.productContext).toBeUndefined();
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[11/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?query gate > RETRIEVE on a substantive refund question 鈫?candidates exist but citations=0 (fail-closed without real reranker)
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:159:46
+    157|     // Candidates exist internally for LLM context but MUST NOT appear鈥?    158|     expect(result.evidence.candidates.length).toBeGreaterThan(0); // i鈥?    159|     expect(result.evidence.citations.length).toBe(0); // PUBLIC blocke鈥?       |                                              ^
+    160|     expect(result.evidence.trace.rerankDegraded).toBe(true);
+    161|     expect(result.evidence.trace.rerankBackend).toBe('mock');
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[12/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?rerank provenance > RETRIEVE with hybrid metadata rerankDegraded=true 鈫?rerank fail-closed: citations MUST be empty
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:277:46
+    275|     expect(result.evidence.trace.degradationReasons).toContain('rerank鈥?    276|     expect(result.evidence.candidates.length).toBeGreaterThan(0); // i鈥?    277|     expect(result.evidence.citations.length).toBe(0); // PUBLIC source鈥?       |                                              ^
+    278|   });
+    279|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[13/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?rerank provenance > RETRIEVE with missing rerankDegraded metadata remains fail-closed
+AssertionError: expected [ { type: 'knowledge', 鈥?9) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "category": "c",
++     "chunk_id": null,
++     "chunk_index": 0,
++     "content": "text",
++     "content_hash": null,
++     "knowledge_item_id": "k1",
++     "name": "n",
++     "provenanceVersion": 2,
++     "score": 0.9,
++     "type": "knowledge",
++   },
++ ]
+
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:300:39
+    298|
+    299|     expect(result.evidence.trace.rerankDegraded).toBe(true);
+    300|     expect(result.evidence.citations).toEqual([]);
+       |                                       ^
+    301|   });
+    302|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[14/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?citation provenance > citations are NEVER published without real reranker (fail-closed)
+AssertionError: expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:378:46
+    376|     // Candidates exist (LLM context), but citations MUST be empty wit鈥?    377|     expect(result.evidence.candidates.length).toBeGreaterThan(0);
+    378|     expect(result.evidence.citations.length).toBe(0);
+       |                                              ^
+    379|     expect(result.evidence.trace.rerankDegraded).toBe(true);
+    380|   });
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[15/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > keeps product context for generation without publishing it as a citation
+AssertionError: expected [ 'reranker_fallback', 鈥?1) ] to include 'product_citation_unverified'
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:412:54
+    410|     expect(result.evidence.citations).toEqual([]);
+    411|     expect(result.evidence.trace.citationCount).toBe(0);
+    412|     expect(result.evidence.trace.degradationReasons).toContain('produc鈥?       |                                                      ^
+    413|   });
+    414|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[16/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > keeps size-chart context for generation without publishing it as a citation
+AssertionError: expected [ 'reranker_fallback', 鈥?1) ] to include 'size_chart_citation_unverified'
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:423:54
+    421|     expect(result.evidence.citations).toEqual([]);
+    422|     expect(result.evidence.trace.citationCount).toBe(0);
+    423|     expect(result.evidence.trace.degradationReasons).toContain('size_c鈥?       |                                                      ^
+    424|   });
+    425|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[17/32]鈳?
+ FAIL  src/server/services/retrieval-orchestrator.test.ts > RetrievalOrchestrator 鈥?structured context citation safety > fails closed when knowledge retrieval throws while preserving other channel isolation
+AssertionError: expected [ 'product_no_citations' ] to include 'product_citation_unverified'
+ 鉂?src/server/services/retrieval-orchestrator.test.ts:436:54
+    434|     expect(result.evidence.citations).toEqual([]);
+    435|     expect(result.evidence.trace.rerankDegraded).toBe(true);
+    436|     expect(result.evidence.trace.degradationReasons).toContain('produc鈥?       |                                                      ^
+    437|   });
+    438|
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[18/32]鈳?
+ FAIL  src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > returns BM25 results when vector RPC reports 42883
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ 鉂?src/server/services/retrieval-sprint3-r1-unsupported.test.ts:99:35
+     97|     // Vector fell back to empty (no throw), BM25 returned its mock da鈥?     98|     // hybrid must surface that, not throw.
+     99|     expect(result.results.length).toBe(1);
+       |                                   ^
+    100|     expect(result.results[0].id).toBe('bm25-1');
+    101|     expect(rpcMock).toHaveBeenCalledTimes(1);
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[19/32]鈳?
+ FAIL  src/server/services/retrieval-sprint3-r1-unsupported.test.ts > R-1: hybrid-search vector 42883 fallback > still propagates data errors (non-42883) without silent fallback
+AssertionError: expected +0 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ 鉂?src/server/services/retrieval-sprint3-r1-unsupported.test.ts:136:35
+    134|     // as a feature gap, and the orchestrator consumer still gets a st鈥?    135|     // error envelope to react to.
+    136|     expect(result.results.length).toBe(1); // BM25 still ran
+       |                                   ^
+    137|     expect(rpcMock).toHaveBeenCalledTimes(1);
+    138|   });
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[20/32]鈳?
+ FAIL  src/server/services/settings-service.test.ts > SettingsService.validateSettings 鈥?allowlist + per-key type rules > accepts every key the real settings UI submits
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ 鉂?src/server/services/settings-service.test.ts:133:26
+    131|     };
+    132|     const result = SettingsService.validateSettings(realPayload);
+    133|     expect(result.valid).toBe(true);
+       |                          ^
+    134|     expect(result.invalidKeys).toEqual([]);
+    135|     expect(result.invalidValues).toEqual([]);
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[21/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > listTickets > returns paginated ticket list
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:53:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[22/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > listTickets > filters tickets by status
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:71:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[23/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getTicket > returns ticket with details
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:94:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[24/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getSLAConfig > returns default SLA config
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:113:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[25/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > updateTicket validation > throws error for invalid status transition
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:133:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[26/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > createTicket > creates ticket with valid input
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:152:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[27/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > createTicket > rejects ticket without title
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:170:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[28/32]鈳?
+ FAIL  src/server/services/ticket-service.test.ts > TicketService > getCategories > returns list of categories
+TypeError: () => ({ create: vi.fn() }) is not a constructor
+ 鉂?new TicketService src/server/services/ticket-service.ts:96:32
+     94|
+     95| export class TicketService {
+     96|   private readonly alertRepo = new AlertRepository();
+       |                                ^
+     97|   private readonly settingsRepo = new SettingsRepository();
+     98|
+ 鉂?src/server/services/ticket-service.test.ts:181:23
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[29/32]鈳?
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾互鍚?productContext 鍜?sizeChartContext 鐨勫弬鏁拌皟鐢紙R-2锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ 鉂?src/app/api/conversations/[id]/messages/route.delegation.test.ts:216:33
+    214|
+    215|         expect(res.status).toBe(200);
+    216|         expect(delegateTaskSpy).toHaveBeenCalledTimes(1);
+       |                                 ^
+    217|
+    218|         const callArgs = delegateTaskSpy.mock.calls[0][0];
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[30/32]鈳?
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > delegateTask 搴斾紶閫?llmProviderConfig锛圧-3 degraded 纭笂闄愮殑鏉ユ簮锛?AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ 鉂?src/app/api/conversations/[id]/messages/route.delegation.test.ts:251:33
+    249|
+    250|         expect(res.status).toBe(200);
+    251|         expect(delegateTaskSpy).toHaveBeenCalledTimes(1);
+       |                                 ^
+    252|         const callArgs = delegateTaskSpy.mock.calls[0][0];
+    253|         // llmProviderConfig 瀛樺湪鏃?degraded 鐢卞瓙 Agent 鐨?generateSubAgentR鈥?
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[31/32]鈳?
+ FAIL  src/app/api/conversations/[id]/messages/route.delegation.test.ts > messages route 鈥?娴佸唴濮旀淳涓婁笅鏂囬€忎紶鍥炲綊 (R-2 / R-3) > 褰撴棤 productContext / sizeChartContext 鏃朵粛搴旇皟鐢?delegateTask锛堝熀绾垮洖褰掞級
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ 鉂?src/app/api/conversations/[id]/messages/route.delegation.test.ts:284:33
+    282|
+    283|         expect(res.status).toBe(200);
+    284|         expect(delegateTaskSpy).toHaveBeenCalledTimes(1);
+       |                                 ^
+    285|         // 鏃犱笂涓嬫枃鏃?productContext/sizeChartContext 搴斾负绌哄瓧绗︿覆
+    286|         const callArgs = delegateTaskSpy.mock.calls[0][0];
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[32/32]鈳?
+
+ Test Files  11 failed | 65 passed | 1 skipped (77)
+      Tests  31 failed | 743 passed | 3 skipped (777)
+   Start at  17:45:53
+   Duration  5.86s (transform 12.75s, setup 0ms, import 25.74s, tests 10.22s, environment 15ms)
+
+鈥塃LIFECYCLE鈥?Command failed with exit code 1.

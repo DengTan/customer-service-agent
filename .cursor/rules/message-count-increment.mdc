@@ -1,0 +1,48 @@
+---
+description: 任何路径插入 assistant 消息后都必须 fire-and-forget 更新 message_count（事故沉淀）
+alwaysApply: true
+---
+
+# message_count 更新规则
+
+## 背景
+
+`conversations.message_count` 用于分页、轮次限制、转人工判定。历史上出现过三种漏更新事故：
+
+1. **LLM 流式回复**：`saveAssistantMessage` 只插 row，没 `+1`
+2. **Gorgias 批量同步**：`syncMessages` 一次插 N 条只 `+1`
+3. **自动回复匹配 / 子 Agent 回复**：直接 `insertMessage`，没调用 `incrementMessageCount`
+
+任一路径漏掉都会让对话在第 2 轮就显示"达到 max_turns 上限"或被错误转人工。
+
+## 强制规则
+
+**任何插入 assistant 消息的代码路径，必须紧跟一次 `conversationService.incrementMessageCount(conversationId)`。**
+
+```typescript
+// ✅ GOOD：流式回复路径（fire-and-forget，不阻塞 SSE）
+this.conversationService.incrementMessageCount(conversationId).catch((err) => {
+  logger.agent.warn('Failed to increment message count', { error: err, conversationId });
+});
+
+// ✅ GOOD：Gorgias 批量同步路径（按实际条数累加）
+await rpc('increment_message_count_by', { conv_id, delta: newMessages.length });
+
+// ✅ GOOD：自动回复匹配路径
+await conversationService.incrementMessageCount(conversationId);
+```
+
+```typescript
+// ❌ BAD：只插消息不更新计数
+await messageRepository.insert({ conversationId, role: 'assistant', content });
+return NextResponse.json({ ok: true });
+```
+
+## 检查清单
+
+新增消息写入路径时，确认：
+
+- [ ] user 消息插入后是否 `+1`（通常在 step 3 自动完成）
+- [ ] assistant 消息插入后是否 `+1`（**常被遗漏**）
+- [ ] 批量 Gorgias 同步是否按 `delta` 而非 `+1` 累加
+- [ ] 客户端中断（abortSignal）时是否跳过 fire-and-forget 写 DB

@@ -9,16 +9,16 @@ import { PRIORITY_LABELS, SOURCE_PLATFORM_LABELS } from '@/lib/types';
 
 interface CustomerInfoPanelProps {
   selectedConversation: AgentQueueItem | null;
-  customerInfo: Customer | null;
-  isLoading: boolean;
+  customerInfo?: Customer | null;
+  isLoading?: boolean;
   onTransfer: () => void;
   onResolve: (queueId: string) => void;
 }
 
 export function CustomerInfoPanel({
   selectedConversation,
-  customerInfo,
-  isLoading,
+  customerInfo = null,
+  isLoading = false,
   onTransfer,
   onResolve,
 }: CustomerInfoPanelProps) {

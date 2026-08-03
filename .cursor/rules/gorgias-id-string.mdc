@@ -1,0 +1,44 @@
+---
+description: Gorgias 集成的 ID 必须 String() 后存储并用 ->> 查询（事故沉淀）
+alwaysApply: true
+---
+
+# Gorgias ID 强制 String()
+
+## 背景
+
+Gorgias API 返回的 `ticket.id` / `message.id` / `customer.id` 在 JavaScript 里是 **number**，但 PostgreSQL `bigint` 接收 JS number 时超过 2^53 会被转成科学计数法（`6.8790392e+07`），导致：
+
+- 唯一索引失效
+- `findByGorgiasTicketId` 查询不匹配
+- Webhook 反复创建重复对话
+
+## 强制规则
+
+**任何写入 metadata 的 Gorgias ID 必须先 `String()`，任何查询必须用 `->>`（返回 text）。**
+
+```typescript
+// ✅ GOOD：写入
+metadata: {
+  gorgias_ticket_id: String(ticket.id),
+  gorgias_message_id: String(msg.id),
+}
+
+// ✅ GOOD：查询
+.eq('metadata->>gorgias_ticket_id', String(id))
+.eq('metadata->>gorgias_message_id', String(id))
+```
+
+```typescript
+// ❌ BAD：直接写 number（科学计数法风险）
+metadata: {
+  gorgias_ticket_id: ticket.id,  // number 类型
+}
+
+// ❌ BAD：用 -> 而非 ->>（返回 jsonb，类型不匹配）
+.eq('metadata->gorgias_ticket_id', String(id))
+```
+
+## 查询结果多行处理
+
+`metadata->>gorgias_ticket_id` 在历史脏数据上可能匹配多行（如重复对话残留）。**禁止**用 `.maybeSingle()`，必须用 `.limit(1)` + `order('message_count', { ascending: false })` 取消息最多的那一条。

@@ -1,0 +1,17 @@
+
+> projects@0.1.0 lint D:\customer_service_agent-main
+> eslint "--quiet"
+
+
+Oops! Something went wrong! :(
+
+ESLint: 9.39.2
+
+A configuration object specifies rule "import/no-cycle", but could not find plugin "import".
+
+Common causes of this problem include:
+
+1. The "import" plugin is not defined in your configuration file.
+2. The "import" plugin is not defined within the same configuration object in which the "import/no-cycle" rule is applied.
+
+鈥塃LIFECYCLE鈥?Command failed with exit code 2.

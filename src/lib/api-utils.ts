@@ -16,6 +16,7 @@ import { logger as loggerCollection } from '@/lib/logger';
 import { getIPFromRequest } from '@/lib/auth/ip-utils';
 import type { PermissionResource, PermissionAction, UserRole } from '@/lib/types';
 import { PermissionService } from '@/server/services/permission-service';
+import { PROBLEM_JSON_CONTENT_TYPE } from '@/lib/api/problem-json';
 const apiLogger = loggerCollection.api;
 const securityLogger = loggerCollection.security;
 
@@ -66,8 +67,15 @@ export function apiSuccess<T>(data: T, status: number = HttpStatus.OK): NextResp
 
 /**
  * Standard error response.
- * In production (NODE_ENV === 'production'), internal error details are hidden.
- * The `internalMessage` is always logged server-side (with sensitive fields redacted).
+ *
+ * Stage A / A5c: `apiError` now returns RFC 7807 Problem Details
+ * (`application/problem+json`). The legacy `{ success, error }` envelope
+ * is preserved for legacy callers as a top-level `error` extension field
+ * so existing clients keep working until they migrate.
+ *
+ * In production (NODE_ENV === 'production'), internal error details are
+ * hidden. The `internalMessage` is always logged server-side (with
+ * sensitive fields redacted).
  */
 export function apiError(
   userMessage: string,
@@ -83,22 +91,35 @@ export function apiError(
     meta?: Record<string, unknown>;
   } = {},
 ): NextResponse {
-  // Always log the internal details server-side for debugging (redacted)
   if (internalMessage) {
     apiLogger.error(`[API Error] ${code ? `[${code}] ` : ''}${redactSensitiveFields(internalMessage)}`);
   }
 
   const isProd = process.env.NODE_ENV === 'production';
+  const detail = isProd ? userMessage : (internalMessage ?? userMessage);
 
-  return NextResponse.json(
-    {
-      success: false,
-      error: isProd ? userMessage : (internalMessage ?? userMessage),
-      ...(code ? { code } : {}),
-      ...(meta ? { meta } : {}),
-    },
-    { status },
-  );
+  const extensions: Record<string, unknown> = { code };
+  if (meta) extensions.meta = meta;
+  if (!isProd && internalMessage) extensions.debug = internalMessage;
+
+  // Legacy compatibility: keep `success: false` and `error` keys so existing
+  // frontends keep working during the migration to RFC 7807.
+  extensions.success = false;
+  extensions.error = detail;
+
+  const headers: Record<string, string> = {
+    'Content-Type': PROBLEM_JSON_CONTENT_TYPE,
+  };
+
+  const body = {
+    type: '/problems/internal-error',
+    title: 'Error',
+    status,
+    detail,
+    ...extensions,
+  };
+
+  return new NextResponse(JSON.stringify(body), { status, headers });
 }
 
 /**

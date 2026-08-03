@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Workflow owners (阶段 A 验收清单): GitHub @maintainers group
+# Update with `CODEOWNERS` or via Settings → Code security → Code owners if a tighter
+# ownership model is desired.
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -138,3 +142,23 @@ jobs:
           npm install -g pnpm@9 tsx 2>/dev/null || true
           pnpm install --frozen-lockfile
           pnpm tsx scripts/check-rls-state.ts
+
+      - name: Policy snapshot check (B1)
+        run: |
+          echo "Running policy inventory check..."
+          pnpm policies:inventory --reporter=default
+
+      - name: Policy snapshot drift check (B1)
+        run: |
+          echo "Checking policy snapshot drift..."
+          pnpm policies:snapshot:check
+
+      - name: DDL guard (B2)
+        run: |
+          echo "Running DDL guard..."
+          pnpm ddls:guard
+
+      - name: Contract tests (B5)
+        run: |
+          echo "Running contract tests..."
+          pnpm test:run -- tests/contracts --reporter=default

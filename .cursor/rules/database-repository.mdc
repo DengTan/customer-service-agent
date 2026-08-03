@@ -1,0 +1,57 @@
+---
+description: Repository 与查询层规范（避免 N+1、Supabase 客户端选型、转义）
+alwaysApply: true
+---
+
+# Repository 规范
+
+## 文件与导出
+
+位置：`src/server/repositories/`
+- 文件名：`{entity-name}-repository.ts`（如 `conversation-repository.ts`）
+- 类名：`XxxRepository`（如 `ConversationRepository`）
+- 导出：**具名导出**，不写默认导出
+
+## Supabase 客户端
+
+应用层**统一**调用 `getSupabaseClient()`，不要在 Service 层或 Route handler 内重新 `createClient`。
+
+```typescript
+// ✅ GOOD
+import { getSupabaseClient } from '@/lib/storage/database/supabase-client';
+
+// ❌ BAD：在业务代码里重新建客户端
+import { createClient } from '@supabase/supabase-js';
+const client = createClient(url, key);
+```
+
+## N+1 查询
+
+**禁止**循环内逐条查询。批量 `in()` 一次拉完。
+
+```typescript
+// ❌ BAD：N+1
+for (const id of ids) {
+  const { data } = await client.from('shops').select('*').eq('id', id).single();
+  results.push(data);
+}
+
+// ✅ GOOD：批量 in
+const { data } = await client.from('shops').select('*').in('id', ids);
+```
+
+聚合统计（求和、计数、GROUP BY）走 RPC，不在应用层拉全表后 JS 聚合。
+
+## 模糊查询转义
+
+所有 `ilike` / `like` 查询必须用 `escapeLikePattern()` 转义，防止 `%` `_` 通配符注入：
+
+```typescript
+// ✅ GOOD
+const safe = `%${escapeLikePattern(userInput)}%`;
+await client.from('users').ilike('name', safe);
+```
+
+## Demo 模式内存上限
+
+`isDemoMode()` 返回的内存数组必须 `trimDemoArray(arr, DEMO_ARRAY_MAX_SIZE)`（200 条），避免长会话内存泄漏。

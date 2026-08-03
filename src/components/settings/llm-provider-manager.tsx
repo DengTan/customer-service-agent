@@ -385,7 +385,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
   const handleEditPendingModel = (index: number) => {
     const model = pendingModels[index];
     setModelProviderId('pending');
-    setEditingModel({ ...model, id: model.tempId } as LlmModel);
+    setEditingModel({ ...model, id: model.tempId } as unknown as LlmModel);
     setModelFormData({
       model_id: model.model_id,
       display_name: model.display_name,

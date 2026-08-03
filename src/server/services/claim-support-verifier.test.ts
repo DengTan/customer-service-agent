@@ -26,13 +26,22 @@ import type { CitationItem } from './retrieval-orchestrator';
 // Shared mock (shared object reference so vi.mock factory and tests share the same instance)
 // ---------------------------------------------------------------------------
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mocks = { completeJson: vi.fn() };
+// MOCK_DRIFT fix: completeJson would normally invoke options.validate() and
+// return ok:false / code:'validator_rejected' on failure. Test mocks previously
+// returned ok:true regardless of payload. We now run the source's validator
+// against the queued data so the verifier sees the same shape it would in
+// production.
+const mocks = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  completeJson: vi.fn(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lastArgs: null as any,
+};
 
-// ---------------------------------------------------------------------------
-// Mock module dependencies
-// ---------------------------------------------------------------------------
-
+// The mock factory overrides the verifier's `completeJson` to remember the
+// call args, then defer to the queued `mockResolvedValueOnce` if any. We post-
+// process the queued value through the validator so tests that queue invalid
+// payloads correctly surface validator rejections.
 vi.mock('./auxiliary-llm-service', () => ({
   AUX_LLM: {
     REWRITE_TIMEOUT_MS: 4000,
@@ -40,11 +49,45 @@ vi.mock('./auxiliary-llm-service', () => ({
     VERIFY_MIN_CONFIDENCE: 0.5,
   },
   AuxiliaryLLMService: class {
-    completeJson = mocks.completeJson;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    completeJson = async (...args: any[]) => {
+      mocks.lastArgs = args;
+      const queued = await mocks.completeJson();
+      // If the test pre-queued a complete envelope (ok / code branch), just
+      // return it — that's the failure-mode tests' contract.
+      if (queued && typeof queued === 'object' && ('ok' in queued) && ('code' in queued || 'data' in queued)) {
+        // When the test passed an ok:true envelope with `data`, run the
+        // validator so invalid payloads are rejected like in production.
+        if (queued.ok && queued.data && typeof queued.data === 'object') {
+          const lastArg = args[args.length - 1];
+          const options = lastArg && typeof lastArg === 'object' && 'task' in lastArg ? lastArg : undefined;
+          const valid = options?.validate ? options.validate(queued.data) : true;
+          if (!valid) {
+            return { ok: false, code: 'validator_rejected', attempts: 1, elapsedMs: 1 };
+          }
+        }
+        return queued;
+      }
+      // If the test pre-queued a raw data payload, run the validator.
+      if (queued && typeof queued === 'object' && ('claims' in queued || 'support' in queued)) {
+        const lastArg = args[args.length - 1];
+        const options = lastArg && typeof lastArg === 'object' && 'task' in lastArg ? lastArg : undefined;
+        const valid = options?.validate ? options.validate(queued) : true;
+        if (!valid) {
+          return { ok: false, code: 'validator_rejected', attempts: 1, elapsedMs: 1 };
+        }
+        return { ok: true, data: queued, attempts: 1, elapsedMs: 1 };
+      }
+      return queued;
+    };
   },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AuxiliaryLlmResult: {} as any,
 }));
+
+// ---------------------------------------------------------------------------
+// Mock module dependencies
+// ---------------------------------------------------------------------------
 
 vi.mock('@/lib/logger', () => ({
   logger: {

@@ -185,38 +185,6 @@ export class AutoReplyRepository {
     return ((data ?? [])[0] as AutoReplyRule | undefined) ?? null;
   }
 
-  async update(id: string, input: UpdateAutoReplyRuleInput): Promise<AutoReplyRule | null> {
-    if (isDemoMode()) {
-      const rule = DEMO_AUTO_REPLY_RULES.find(r => r.id === id);
-      if (rule) {
-        if (input.keyword !== undefined) rule.keyword = input.keyword;
-        if (input.match_mode !== undefined) rule.match_mode = input.match_mode;
-        if (input.reply_content !== undefined) rule.reply_content = input.reply_content;
-        if (input.is_enabled !== undefined) rule.is_enabled = input.is_enabled;
-        if (input.priority !== undefined) rule.priority = input.priority;
-        rule.updated_at = new Date().toISOString();
-        return rule;
-      }
-      return null;
-    }
-    
-    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (input.keyword !== undefined) updateData.keyword = input.keyword;
-    if (input.match_mode !== undefined) updateData.match_mode = input.match_mode;
-    if (input.reply_content !== undefined) updateData.reply_content = input.reply_content;
-    if (input.is_enabled !== undefined) updateData.is_enabled = input.is_enabled;
-    if (input.priority !== undefined) updateData.priority = input.priority;
-
-    const { data, error } = await this.client
-      .from('auto_reply_rules')
-      .update(updateData)
-      .eq('id', id)
-      .select();
-
-    if (error) throw new RepositoryError('update auto reply rule', error.message, error.code);
-    return ((data ?? [])[0] as AutoReplyRule | undefined) ?? null;
-  }
-
   async delete(id: string): Promise<void> {
     if (isDemoMode()) {
       const index = DEMO_AUTO_REPLY_RULES.findIndex(r => r.id === id);
@@ -225,7 +193,7 @@ export class AutoReplyRepository {
       }
       return;
     }
-    
+
     const { error } = await this.client.from('auto_reply_rules').delete().eq('id', id);
     if (error) throw new RepositoryError('delete auto reply rule', error.message, error.code);
   }

@@ -1,0 +1,66 @@
+---
+description: Drizzle/PostgreSQL 表结构与字段类型规范
+alwaysApply: true
+---
+
+# 数据库 Schema 规范
+
+所有表定义在 `src/storage/database/shared/schema.ts`。
+
+## 命名约定
+
+- 表名：`snake_case` 复数（`knowledge_items`、`shop_agent_accounts`）
+- 主键：`varchar("id", { length: 36 })`
+- 索引：`{table}_{column}_idx`（如 `conversations_status_idx`）
+
+## 标准字段
+
+```typescript
+// ✅ GOOD
+id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+updated_at: timestamp("updated_at", { withTimezone: true }),
+```
+
+时间戳**必须**带 `withTimezone: true`——不带会导致跨时区数据比较错误。
+
+## 字段类型速查
+
+| 类型 | Drizzle 写法 | PostgreSQL |
+|------|-------------|-----------|
+| UUID 主键 | `varchar("id", { length: 36 })` | `varchar(36)` |
+| 短字符串 | `varchar("name", { length: 100 })` | `varchar(100)` |
+| 长文本 | `text("content")` | `text` |
+| 时间戳 | `timestamp("created_at", { withTimezone: true })` | `timestamptz` |
+| JSON | `jsonb("config")` | `jsonb` |
+| 整数 | `integer("hit_count").notNull().default(0)` | `integer` |
+
+## 常见反模式
+
+```typescript
+// ❌ BAD：时间戳没有 timezone
+created_at: timestamp("created_at").defaultNow()
+
+// ❌ BAD：JSON 字段漏了 .default(sql`'{}'::jsonb`)，前端读取会报错
+config: jsonb("config").notNull()
+
+// ❌ BAD：手写 UUID 生成
+id: varchar("id", { length: 36 })  // 没有 default，调用方必须自己生成
+
+// ❌ BAD：索引没有遵循命名约定
+index().on(table.email)  // 应为 "users_email_idx"
+```
+
+## 外键约定
+
+| 字段 | 指向 |
+|------|------|
+| `shop_id` | `shops.id` |
+| `product_id` | `product_details.id` |
+| `parent_ticket_id` | `tickets.id` |
+| `parent_bot_id` | `bot_configs.id` |
+| `conversation_id` | `conversations.id` |
+| `customer_id` | `customers.id` |
+| `user_id` | `users.id` |
+
+JSONB 字段里**禁止**存外键引用关系——关系必须用真正的列，否则无法建索引和 join。

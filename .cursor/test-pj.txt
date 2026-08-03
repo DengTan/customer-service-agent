@@ -1,0 +1,29 @@
+
+> projects@0.1.0 test:run D:\customer_service_agent-main
+> vitest run "src/lib/problem-json.test.ts"
+
+
+ RUN  v4.1.9 D:/customer_service_agent-main
+
+ 鉂?src/lib/problem-json.test.ts (6 tests | 1 failed) 14ms
+     脳 problemResponse supports custom headers 4ms
+
+鈳幆鈳幆鈳幆鈳?Failed Tests 1 鈳幆鈳幆鈳幆鈳?
+ FAIL  src/lib/problem-json.test.ts > RFC 7807 Problem Details > problemResponse supports custom headers
+TypeError: Response constructor: Invalid response status code 204
+ 鉂?new NextResponse node_modules/.pnpm/next@16.1.1_@babel+core@7.28.6_@playwright+test@1.62.1_react-dom@19.2.3_react@19.2.3__react@19.2.3/node_modules/next/src/server/web/spec-extension/response.ts:44:4
+ 鉂?problemResponse src/lib/api/problem-json.ts:87:10
+     85|     ...(options.headers ?? {}),
+     86|   };
+     87|   return new NextResponse(JSON.stringify(problem), { status, headers }鈥?       |          ^
+     88| }
+ 鉂?src/lib/problem-json.test.ts:41:17
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[1/1]鈳?
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  17:12:14
+   Duration  364ms (transform 30ms, setup 0ms, import 129ms, tests 14ms, environment 0ms)
+
+鈥塃LIFECYCLE鈥?Command failed with exit code 1.

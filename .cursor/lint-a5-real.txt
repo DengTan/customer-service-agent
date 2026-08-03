@@ -1,0 +1,4 @@
+
+> projects@0.1.0 lint D:\customer_service_agent-main
+> eslint "--quiet"
+

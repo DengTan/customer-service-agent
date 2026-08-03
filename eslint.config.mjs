@@ -1,5 +1,6 @@
 import nextTs from 'eslint-config-next/typescript';
 import nextVitals from 'eslint-config-next/core-web-vitals';
+import importPlugin from 'eslint-plugin-import';
 import { defineConfig, globalIgnores } from 'eslint/config';
 
 const syntaxRules = [
@@ -23,8 +24,12 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    plugins: {
+      import: importPlugin,
+    },
     rules: {
       'import/no-cycle': ['error', { ignoreExternal: true }],
+      'import/no-unresolved': 'error',
       '@typescript-eslint/no-explicit-any': 'warn',
       'react-hooks/set-state-in-effect': 'off',
       'no-restricted-syntax': ['error', ...syntaxRules],
@@ -48,6 +53,19 @@ const eslintConfig = defineConfig([
     'dist/**',
     // Script files (CommonJS):
     'scripts/**/*.js',
+    // Tests are excluded from lint (run separately via test:run)
+    '**/__tests__/**',
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    'tests/**',
+    // Build scripts are out of lint scope
+    'scripts/**',
+    // One-off root-level maintenance scripts (require()-style CommonJS)
+    'final_test.js',
+    'find_unused.js',
+    'fix-cleanup.js',
+    'fix-qr-lazy.js',
+    'fix-qr-lazy2.js',
   ]),
 ]);
 

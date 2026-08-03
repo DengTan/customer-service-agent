@@ -21,21 +21,21 @@ vi.mock('@/server/services/embedding-service', () => ({
 }));
 
 vi.mock('@/server/repositories/knowledge-import-job-repository', () => ({
-  KnowledgeImportJobRepository: vi.fn().mockImplementation(() => ({
-    create: vi.fn().mockResolvedValue({
+  KnowledgeImportJobRepository: class {
+    create = vi.fn().mockResolvedValue({
       id: 'job-123',
       status: 'pending',
       file_name: 'test.txt',
       file_size: 1024,
       file_type: 'text/plain',
       category: '未分类',
-    }),
-    findById: vi.fn(),
-    update: vi.fn(),
-    updateProgress: vi.fn(),
-    complete: vi.fn(),
-    fail: vi.fn(),
-  })),
+    });
+    findById = vi.fn();
+    update = vi.fn();
+    updateProgress = vi.fn();
+    complete = vi.fn();
+    fail = vi.fn();
+  },
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -44,6 +44,8 @@ vi.mock('@/lib/logger', () => ({
     error: vi.fn(),
     warn: vi.fn(),
     debug: vi.fn(),
+    // knowledge-import-service uses logger.api.error in processJobAsync error path
+    api: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
   },
 }));
 
@@ -80,24 +82,25 @@ describe('KnowledgeImportService', () => {
   });
 
   describe('file validation', () => {
-    it('rejects unsupported file formats', () => {
+    it('rejects unsupported file formats', async () => {
       const mockFile = {
         name: 'test.exe',
         size: 1024,
       } as unknown as File;
 
-      expect(() => service.createJob({ file: mockFile })).toThrow(
+      // createJob is async; validation throws synchronously inside the promise.
+      await expect(service.createJob({ file: mockFile })).rejects.toThrow(
         /不支持的文件格式/
       );
     });
 
-    it('rejects files exceeding max size', () => {
+    it('rejects files exceeding max size', async () => {
       const mockFile = {
         name: 'test.txt',
         size: 25 * 1024 * 1024, // 25MB > 20MB limit
       } as unknown as File;
 
-      expect(() => service.createJob({ file: mockFile })).toThrow(
+      await expect(service.createJob({ file: mockFile })).rejects.toThrow(
         /文件大小超过限制/
       );
     });
@@ -167,25 +170,46 @@ describe('KnowledgeImportService', () => {
 
   describe('getJobStatus', () => {
     it('returns job status from repository', async () => {
+      // getJobStatus returns a normalized shape (id/status/progress/currentStage/...).
       const mockJob = {
         id: 'job-456',
         status: 'completed',
         file_name: 'test.txt',
         progress: 100,
+        stage: 'completed',
+        chunks_preview: null,
+        total_chunks: 0,
+        description: null,
+        error_message: null,
+        knowledge_item_id: null,
+        created_at: '2026-08-01T00:00:00Z',
+        created_by: null,
       };
 
-      // Access private property for testing
-      const repo = (service as unknown as { jobRepository: { findById: () => typeof mockJob } }).jobRepository;
-      repo.findById = vi.fn().mockResolvedValue(mockJob);
+      // Override the mock's findById so we return a deterministic row.
+      const repo = (service as unknown as { jobRepository: { findById: ReturnType<typeof vi.fn> } }).jobRepository;
+      repo.findById.mockResolvedValue(mockJob);
 
       const result = await service.getJobStatus('job-456');
 
-      expect(result).toEqual(mockJob);
+      expect(result).toEqual({
+        id: 'job-456',
+        status: 'completed',
+        progress: 100,
+        currentStage: 'completed',
+        chunkPreview: null,
+        totalChunks: 0,
+        rawTextPreview: null,
+        errorMessage: null,
+        knowledgeItemId: null,
+        createdAt: '2026-08-01T00:00:00Z',
+        isOwner: true,
+      });
     });
 
     it('returns null for non-existent job', async () => {
-      const repo = (service as unknown as { jobRepository: { findById: () => null } }).jobRepository;
-      repo.findById = vi.fn().mockResolvedValue(null);
+      const repo = (service as unknown as { jobRepository: { findById: ReturnType<typeof vi.fn> } }).jobRepository;
+      repo.findById.mockResolvedValue(null);
 
       const result = await service.getJobStatus('non-existent');
 

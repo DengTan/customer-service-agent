@@ -6,14 +6,13 @@
  * - Unauthenticated users accessing protected routes are redirected to /login
  * - Authenticated users accessing /login are redirected to /
  *
- * SECURITY NOTE:
- * Edge Runtime bundles environment variables at BUILD time, not runtime.
- * This means JWT_SECRET/SUPABASE_SERVICE_ROLE_KEY from the platform
- * may not be available in middleware during preview.
- *
- * SOLUTION: Middleware does lightweight existence check only.
- * Full token verification is done in API routes via requireRole().
- * This ensures auth works correctly regardless of build-time env vars.
+ * SECURITY MODEL (阶段 A / A4):
+ * - L1 Edge (this file): verifies the JWT signature using the Edge secret
+ *   injected at build time (EDGE_JWT_SECRET). No "decode without verification"
+ *   fallback, no hostname-based bypass, no `x-user-role` header injection.
+ * - L2 API Gateway: `src/lib/api/with-api.ts` reads the JWT again (full
+ *   verification with the runtime secret) and enforces auth/perm/rateLimit.
+ * - L3 Route: business logic only.
  */
 
 import { NextResponse } from 'next/server';
@@ -44,6 +43,23 @@ const AUTH_ROUTES = ['/login'];
 // hard-code the cookie name here. If you change one, change the other.
 // The two production writers (login/logout routes) read the constant.
 const AUTH_COOKIE_NAME = 'auth_token';
+
+/**
+ * Edge secret used to verify the JWT signature in the Edge Runtime.
+ *
+ * The Edge bundle is sealed at build time, so it cannot read runtime env
+ * vars unless they are inlined via `process.env.EDGE_JWT_SECRET` in this
+ * file. Platforms that need a different secret per preview/deploy must
+ * set EDGE_JWT_SECRET before `next build`.
+ *
+ * When this secret is missing we DO NOT silently fall back to "decode
+ * without verification" — the request is treated as unauthenticated and
+ * the L2 API Gateway re-verifies the token. This is the strict-fail
+ * behaviour required by RC-1 (阶段 A / A4).
+ */
+function getEdgeJwtSecret(): string | null {
+  return process.env.EDGE_JWT_SECRET || null;
+}
 
 /**
  * Extract auth_token value from Cookie header string.
@@ -77,45 +93,27 @@ function textEncode(text: string): Uint8Array {
 }
 
 /**
- * Decode JWT payload without verification.
- * Used in managed environments where Edge Runtime can't access runtime env vars.
- */
-function decodePayloadWithoutVerification(token: string): { role: string | null; expired: boolean } {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return { role: null, expired: false };
-
-    const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = payloadB64 + '='.repeat((4 - (payloadB64.length % 4)) % 4);
-    const payload = JSON.parse(atob(padded)) as Record<string, unknown>;
-
-    // Check expiration
-    let expired = false;
-    if (typeof payload.exp === 'number') {
-      expired = Math.floor(Date.now() / 1000) >= Number(payload.exp);
-    }
-
-    return {
-      role: typeof payload.role === 'string' ? payload.role : null,
-      expired,
-    };
-  } catch {
-    return { role: null, expired: false };
-  }
-}
-
-/**
  * Verify JWT signature using Web Crypto API (Edge-compatible).
- * Only used in local development where env vars are available at runtime.
+ *
+ * Returns true ONLY when the secret is available AND the signature is
+ * valid AND the token has not expired. When the secret is missing the
+ * function returns false so the request falls through to the L2 API
+ * Gateway which has the full runtime secret.
  */
 async function verifyTokenSignature(token: string): Promise<boolean> {
   try {
+    const secret = getEdgeJwtSecret();
+    if (!secret) {
+      // No Edge secret configured — refuse to authenticate here.
+      // The L2 API Gateway will re-verify with the runtime secret.
+      return false;
+    }
+
     const parts = token.split('.');
     if (parts.length !== 3) return false;
 
     const [headerB64, payloadB64, signatureB64] = parts;
 
-    // Decode payload to check expiration
     const padded = payloadB64.replace(/-/g, '+').replace(/_/g, '/');
     const paddedCount = (4 - (padded.length % 4)) % 4;
     const payload = JSON.parse(atob(padded + '='.repeat(paddedCount))) as Record<string, unknown>;
@@ -124,8 +122,6 @@ async function verifyTokenSignature(token: string): Promise<boolean> {
       if (Math.floor(Date.now() / 1000) >= Number(payload.exp)) return false;
     }
 
-    // Verify HS256 signature
-    const secret = process.env.JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'dev-secret-change-in-production';
     const keyData = textEncode(secret);
     const signingInput = textEncode(`${headerB64}.${payloadB64}`);
     const signatureBytes = base64UrlDecode(signatureB64);
@@ -152,18 +148,6 @@ async function verifyTokenSignature(token: string): Promise<boolean> {
   }
 }
 
-/**
- * Check if running in a managed environment (preview/deploy).
- *
- * Detection: If we're not on localhost, we're likely in a managed environment
- * where env vars are injected at runtime, not build time.
- */
-function isManagedEnvironment(request: NextRequest): boolean {
-  const hostname = request.headers.get('host') || '';
-  // Managed platforms typically have non-localhost hostnames
-  return !hostname.includes('localhost') && !hostname.includes('127.0.0.1');
-}
-
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -171,15 +155,10 @@ export default async function middleware(request: NextRequest) {
   const cookieHeader = request.headers.get('cookie');
   const rawToken = extractAuthCookie(cookieHeader);
 
-  // Detect if we're in a managed environment
-  const isManaged = isManagedEnvironment(request);
-
-  // Check if accessing a protected route
   const isProtectedRoute = PROTECTED_ROUTES.some(route =>
     pathname === route || pathname.startsWith(route + '/')
   );
 
-  // Check if accessing an auth route (login page)
   const isAuthRoute = AUTH_ROUTES.some(route => pathname.startsWith(route));
 
   // If no token, redirect to login for protected routes
@@ -193,34 +172,15 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // We have a token - check if it's valid
-  let isAuthenticated = false;
-  let userRole: string | null = null;
+  // We have a token - verify the signature with the Edge secret.
+  // Per RC-1 (阶段 A): we NEVER bypass verification based on hostname
+  // and we NEVER inject the role back into the response headers.
+  const isAuthenticated = await verifyTokenSignature(rawToken);
 
-  if (isManaged) {
-    // In managed environments, decode without signature verification
-    const { role, expired } = decodePayloadWithoutVerification(rawToken);
-    if (!expired) {
-      isAuthenticated = true;
-      userRole = role;
-    }
-  } else {
-    // In local development, we can do full signature verification
-    const isValid = await verifyTokenSignature(rawToken);
-    if (isValid) {
-      const { role } = decodePayloadWithoutVerification(rawToken);
-      isAuthenticated = true;
-      userRole = role;
-    }
-  }
-
-  // If user has a valid token (or appears to in managed env), allow through
+  // If user has a valid token, allow through
   if (isAuthenticated) {
     const response = NextResponse.next();
     response.headers.set('x-authenticated', 'true');
-    if (userRole) {
-      response.headers.set('x-user-role', userRole);
-    }
 
     // Redirect authenticated users from login page to home
     if (isAuthRoute) {

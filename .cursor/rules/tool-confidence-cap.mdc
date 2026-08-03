@@ -1,0 +1,59 @@
+---
+description: Tool Provider 的 Mock 置信度封顶值（避免 mock 数据被误当真实答案）
+alwaysApply: true
+---
+
+# Tool Provider 置信度封顶
+
+## 背景
+
+LLM 通过 Function Call 调用 tool provider 时，provider 必须给出 `confidence` 字段供后续置信度评分融合。如果 mock 数据置信度与真实 API 一样高，会出现：
+
+- 用户问订单状态，AI 返回写死的 mock 订单数据，且置信度显示"高"
+- mock 退款按钮被误认为真实可执行操作
+
+## 当前封顶值
+
+| Provider | Base (real) | Base (mock) | 失败 | 未找到 |
+|----------|-------------|-------------|------|--------|
+| `order` | 0.85 | **0.6** | 0.3 | — |
+| `logistics` | 0.85 | **0.6** | 0.3 | — |
+| `refund` | 0.85 | 0.5（含 mock 路径 -0.1 惩罚） | 0.3 | — |
+| `product` | 0.85 | 0.6 | 0.3 | 0.4 |
+| `size_chart` | 0.85 | 0.6 | 0.3 | 0.4 |
+
+基线定义在 `src/server/services/tool-providers/types.ts` 的 `BaseToolProvider.getBaseConfidence()`：
+
+```typescript
+protected getBaseConfidence(): number {
+  return this.isRealApi ? 0.85 : 0.6;
+}
+```
+
+## 强制规则
+
+新增 tool provider 时：
+
+1. **继承 `BaseToolProvider`**，复用 `getBaseConfidence()` / `adjustConfidence()`
+2. **mock 路径必须设置 `isMockData: true`**，便于前端区分真假数据
+3. **失败路径返回 `confidence: 0.3`**，不能"为了用户体验"返回 0.6
+4. **未找到场景**（如商品/尺码）返回 `0.4`，留出"低置信"信号让上层触发转人工
+
+## 反模式
+
+```typescript
+// ❌ BAD：新增 provider 时硬编码 0.85
+async execute(params) {
+  return { confidence: 0.85, isMockData: false };  // mock 数据也按真值算
+}
+
+// ❌ BAD：失败时为了"用户友好"返回较高置信度
+} catch (e) {
+  return { confidence: 0.6, message: '查询失败，请稍后重试' };
+}
+
+// ✅ GOOD
+} catch (e) {
+  return { confidence: 0.3, message: '查询失败', isMockData: false, failed: true };
+}
+```

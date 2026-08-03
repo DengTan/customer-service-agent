@@ -739,6 +739,7 @@ Gorgias 使用 HTTP Basic Authentication：
 - `requireRole` 从 JWT Cookie 读取用户角色（替代旧的 `x-user-role` header）
 - 权限校验实现在 `src/lib/api-utils.ts` 的 `requireRole()` 函数
 - 新增 `getAuthenticatedUserId()` 函数获取当前登录用户 ID
+- ✅ **2026-08-03 阶段 A**：新增 `src/lib/api/with-api.ts` 统一 API Gateway（鉴权 + 权限 + 限流 + 审计）。**20 个路由**已迁移到 `withApi`：见上文"项目概览 / API 接口"段。`requireRole` 仍保留作为底层 API，`withApi` 调用 `requireRole` 内部统一鉴权。两层并存：底层组件（`requireRole`）保持稳定；高层网关（`withApi`）逐步覆盖所有路由。
 
 ### 工具执行鉴权
 - `ToolExecutionService.verifyToolAuthorization()` 已实现真实的会话归属校验
@@ -1006,7 +1007,9 @@ POST /api/knowledge/import-jobs
 ## 常见问题和预防
 
 - **TS 预存错误**: 仓库层（conversation-repository, auto-reply-repository, quality-repository, analytics-repository）存在已知类型不匹配，属于 Demo 数据与正式类型定义的差异，不影响运行时
+- ✅ **2026-08-03 阶段 A 已修复**：生产文件 `pnpm ts-check` 0 错误。`auto-reply-repository` 重复 `update` 方法 + `KnowledgeService.deleteCategory` 孤儿方法均已处理。剩余 31 个测试失败为 mock drift / RPC 缺失 / spec drift（非 TS 错误），归阶段 B backlog。
 - **requireRole 当前基于 header**: 生产环境需替换为 JWT/Session 解析，当前 `x-user-role` 仅用于开发阶段
+- ✅ **2026-08-03 阶段 A 已修复**：`requireRole` 与 `withApi` 统一从 JWT Cookie 解析；`src/proxy.ts` 不再注入 `x-user-role`；`src/lib/api-utils.ts` 在生产路径拒绝伪造 `x-user-role` header（dev-mode 仍允许本地测试）。详见 `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.0。
 
 ### 已修复问题（2026-06-19）
 
@@ -2049,4 +2052,12 @@ export const KNOWLEDGE_IMAGE_SEARCH_LIMIT = 3
 | 运行时 | Node.js 24 |
 | 包管理器 | pnpm |
 | 可预览 | enabled |
+
+---
+
+## 文档更新日志
+
+| 日期 | 变更 | 关联 |
+|------|------|------|
+| 2026-08-03 | 阶段 A 同步：API 权限校验体系升级为 `withApi` + `requireRole` 双层；`x-user-role` header 注入彻底移除；`getServiceClient` 替代 `getServiceRoleClient`；生产 TS 错误归零；详见 `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.0。 | 阶段 A |
 

@@ -17,7 +17,7 @@
 import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, requireRole, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { logger } from '@/lib/logger';
-import { getServiceRoleClient, isDemoMode } from '@/storage/database/supabase-client';
+import { getServiceClient, isDemoMode } from '@/storage/database/supabase-client';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import {
   FASTGPT_OBJECT_ID_REGEX,
@@ -86,7 +86,7 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   // Read the saved API Key from settings.
-  const client = getServiceRoleClient();
+  const client = getServiceClient();
   const repo = new SettingsRepository(client);
   const allSettings = await repo.list();
   const apiKey = allSettings.find((row) => row.key === EXTERNAL_KB_API_KEY)?.value ?? '';

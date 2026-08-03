@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getServiceRoleClient, isDemoMode } from '@/storage/database/supabase-client';
+import { getServiceClient, isDemoMode } from '@/storage/database/supabase-client';
 import { requireRole, apiError, HttpStatus, getOrCreateRequestId, REQUEST_ID_HEADER } from '@/lib/api-utils';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { logger } from '@/lib/logger';
@@ -178,7 +178,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const client = getServiceRoleClient();
+    const client = getServiceClient();
     const repo = new SettingsRepository(client);
     const settings = await buildSettings(repo, {});
 
@@ -251,7 +251,7 @@ export async function PUT(request: NextRequest) {
       });
     }
 
-    const client = getServiceRoleClient();
+    const client = getServiceClient();
     const repo = new SettingsRepository(client);
 
     // Build hybrid config subset

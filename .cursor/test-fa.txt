@@ -1,0 +1,36 @@
+
+> projects@0.1.0 test:run D:\customer_service_agent-main
+> vitest run "src/lib/fetch-api.test.ts"
+
+
+ RUN  v4.1.9 D:/customer_service_agent-main
+
+ 鉂?src/lib/fetch-api.test.ts (3 tests | 1 failed) 22ms
+     脳 parses application/problem+json response into ApiProblemError 20ms
+
+鈳幆鈳幆鈳幆鈳?Failed Tests 1 鈳幆鈳幆鈳幆鈳?
+ FAIL  src/lib/fetch-api.test.ts > RFC 7807 fetch-api error handling > parses application/problem+json response into ApiProblemError
+AssertionError: expected undefined to be '/problems/unauthorized' // Object.is equality
+
+- Expected:
+"/problems/unauthorized"
+
++ Received:
+undefined
+
+ 鉂?src/lib/fetch-api.test.ts:17:23
+     15|     expect(err).toBeInstanceOf(ApiProblemError);
+     16|     expect(err?.status).toBe(401);
+     17|     expect(err?.type).toBe('/problems/unauthorized');
+       |                       ^
+     18|     expect(err?.detail).toBe('login required');
+     19|   });
+
+鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆鈳幆[1/1]鈳?
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  17:12:59
+   Duration  314ms (transform 49ms, setup 0ms, import 71ms, tests 22ms, environment 0ms)
+
+鈥塃LIFECYCLE鈥?Command failed with exit code 1.

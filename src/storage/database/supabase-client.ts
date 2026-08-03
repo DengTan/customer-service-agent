@@ -38,6 +38,8 @@ function getSupabaseServiceRoleKey(): string | undefined {
 // Cache Supabase client instances to avoid creating new ones on every request
 let cachedClient: SupabaseClient | null = null;
 let cachedClientKey: string | null = null;
+let cachedServiceClient: SupabaseClient | null = null;
+let cachedServiceClientKey: string | null = null;
 
 function getSupabaseClient(token?: string): SupabaseClient {
   // Demo mode: return a mock client that returns empty data
@@ -90,9 +92,48 @@ function getSupabaseClient(token?: string): SupabaseClient {
 
 export { getSupabaseCredentials, getSupabaseServiceRoleKey, getSupabaseClient, isDemoMode };
 
-// ─── Service Role Client ─────────────────────────────────────
+// ─── Service Client ───────────────────────────────────────────
 
-/** Returns a Supabase client with service-role key (bypasses RLS). */
-export function getServiceRoleClient(): SupabaseClient {
-  return getSupabaseClient();
+/**
+ * Returns a Supabase client authenticated with the service role key.
+ *
+ * This client MUST be used whenever an API path needs to bypass RLS for
+ * legitimate reasons (admin actions, cross-tenant migrations, system tasks).
+ * The service role key is required; when it is missing the function throws
+ * instead of silently falling back to the anon key — that fallback was the
+ * root cause of RC-7 (`getServiceRoleClient` being a literal alias for the
+ * anon client in production).
+ */
+export function getServiceClient(): SupabaseClient {
+  if (isDemoMode()) {
+    // Allow demo mode for unit tests / local UI walkthroughs.
+    return getSupabaseClient();
+  }
+
+  const serviceRoleKey = getSupabaseServiceRoleKey();
+  if (!serviceRoleKey) {
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY is required for getServiceClient(). ' +
+        'Set the env var or call this function only from admin/system paths.',
+    );
+  }
+
+  if (cachedServiceClient && cachedServiceClientKey === serviceRoleKey) {
+    return cachedServiceClient;
+  }
+
+  const { url } = getSupabaseCredentials();
+
+  const client = createClient(url, serviceRoleKey, {
+    db: { timeout: 60000 },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  cachedServiceClient = client;
+  cachedServiceClientKey = serviceRoleKey;
+
+  return client;
 }
