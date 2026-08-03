@@ -90,11 +90,17 @@ export class ExportRepository {
     const total = conversations?.length || 0;
     const active =
       conversations?.filter((c: Record<string, unknown>) => c.status === 'active').length || 0;
+    // P0: schema enum 是 active|ended|handoff（见 src/storage/database/shared/schema.ts:207）。
+    // 业务语义上"ended ≡ completed"——统计已完成会话应按 status === 'ended' 计算。
     const completed =
-      conversations?.filter((c: Record<string, unknown>) => c.status === 'completed').length || 0;
+      conversations?.filter((c: Record<string, unknown>) => c.status === 'ended').length || 0;
+    // P0: rating 业务约束为 1-5（见 conversations.rating 注释），rating=0/越界值应排除
     const ratings =
       conversations
-        ?.filter((c: Record<string, unknown>) => c.rating != null)
+        ?.filter((c: Record<string, unknown>) => {
+          const r = c.rating;
+          return typeof r === 'number' && r >= 1 && r <= 5;
+        })
         .map((c: Record<string, unknown>) => Number(c.rating)) || [];
     const avgRating =
       ratings.length > 0 ? (ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(2) : '0';
