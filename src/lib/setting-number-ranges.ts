@@ -42,7 +42,8 @@ export const INTEGER_RANGE_KEYS: Record<string, { min: number; max: number }> = 
   // window beyond the operational day.
   alert_dedup_window_minutes: { min: 1, max: 1_440 },
   ai_max_tokens: { min: 1, max: 32_000 },
-  ai_max_concurrent: { min: 1, max: 20 },
+  // 0 表示不限制并发（AGENTS.md 已接入语义）
+  ai_max_concurrent: { min: 0, max: 20 },
   knowledge_search_limit: { min: 1, max: 50 },
   knowledge_image_search_limit: { min: 0, max: 20 },
   knowledge_chunk_size: { min: 50, max: 4_000 },
