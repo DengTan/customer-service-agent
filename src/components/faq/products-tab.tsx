@@ -25,6 +25,7 @@ import { ProductFormModal } from './product-form-modal';
 import { ProductItem } from './types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 const STATUS_INFO: Record<string, { label: string; styles: string; dot: string }> = {
   on_sale: {
@@ -185,7 +186,7 @@ export function ProductsTab() {
     const newStatus = product.status === 'on_sale' ? 'off_sale' : 'on_sale';
     setConfirmToggleProduct(null);
     try {
-      const res = await fetch('/api/knowledge/products', {
+      const res = await apiFetch('/api/knowledge/products', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: product.id, status: newStatus }),
@@ -206,7 +207,7 @@ export function ProductsTab() {
       if (productFilterCat) params.set('category', productFilterCat);
       if (productFilterStatus) params.set('status', productFilterStatus);
 
-      const res = await fetch(`/api/knowledge/products?${params}`);
+      const res = await apiFetch(`/api/knowledge/products?${params}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setProductList(data.items || []);
@@ -233,7 +234,7 @@ export function ProductsTab() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/knowledge/products?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/knowledge/products?id=${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '删除失败');
       toast.success('商品已删除');

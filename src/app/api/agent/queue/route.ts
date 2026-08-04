@@ -1,17 +1,17 @@
 import { NextRequest } from 'next/server';
 import { AgentService } from '@/server/services/agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, getAuthenticatedUserId } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
+import { GET, POST, PATCH } from '@/lib/api/with-api';
 
 const service = new AgentService();
 
 // GET /api/agent/queue - 获取排队与服务中列表
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  // Verify authentication
-  const currentUserId = getAuthenticatedUserId(request);
-  if (!currentUserId) {
-    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
-  }
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status') ?? undefined;
   const agent_id = searchParams.get('agent_id') ?? undefined;
@@ -25,12 +25,19 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     offset: offset ?? undefined,
   });
   return apiSuccess({ items: result.items, total: result.total });
-});
+},
+);
+
+export { GETHandler as GET };
 
 // POST /api/agent/queue - 坐席接单
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // Verify authentication
-  const currentUserId = getAuthenticatedUserId(request);
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request, user }) => {
+  const currentUserId = user?.sub;
   if (!currentUserId) {
     return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
   }
@@ -52,16 +59,18 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.acceptQueueItem(queue_id, agent_id);
   return apiSuccess(result);
-});
+},
+);
+
+export { POSTHandler as POST };
 
 // PATCH /api/agent/queue - 更新排队项状态 (resolve/transfer)
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  // Verify authentication
-  const currentUserId = getAuthenticatedUserId(request);
-  if (!currentUserId) {
-    return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
-  }
-
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -86,4 +95,7 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   return apiSuccess(result);
-});
+},
+);
+
+export { PATCHHandler as PATCH };

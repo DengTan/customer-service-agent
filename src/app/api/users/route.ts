@@ -1,4 +1,4 @@
-import { apiSuccess, apiError, HttpStatus, parseJsonBody } from '@/lib/api-utils';
+import { apiSuccess, apiError, HttpStatus, parseJsonBody, requireRole } from '@/lib/api-utils';
 import { GET, POST, PATCH, DELETE } from '@/lib/api/with-api';
 import { UserService } from '@/server/services/user-service';
 import type { UpdateUserInput } from '@/server/repositories/user-repository';
@@ -8,9 +8,13 @@ const userService = new UserService();
 export const GETHandler = GET(
   {
     auth: 'required',
-    perm: { resource: 'team', action: 'read' },
+    perm: { resource: 'conversations', action: 'read' },
   },
   async ({ request }) => {
+    // Additional role check: only admin can list users
+    const forbidden = requireRole(request, ['admin']);
+    if (forbidden) return forbidden;
+
     const { searchParams } = new URL(request.url);
     const filters = {
       role: searchParams.get('role') ?? undefined,

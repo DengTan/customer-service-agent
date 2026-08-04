@@ -5,6 +5,7 @@ import { X, Bot, User, Loader2, CheckCircle2, XCircle, AlertTriangle, ChevronDow
 import { BotConfig } from './bot-selector';
 import { SourceItem, parseSSEStream } from '@/lib/sse-parser';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 export interface ABResult {
   botId: string;
@@ -64,7 +65,7 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
 
   const fetchBotNames = async () => {
     try {
-      const res = await fetch('/api/bot-configs?include_sub_agents=false');
+      const res = await apiFetch('/api/bot-configs?include_sub_agents=false', { credentials: 'include' });
       if (!res.ok) return;
       const data = await res.json();
       const botList: BotConfig[] = Array.isArray(data.bots) ? data.bots : [];
@@ -127,8 +128,9 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
     }));
 
     try {
-      const res = await fetch('/api/simulations', {
+      const res = await apiFetch('/api/simulations', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scenario_id: 'ab_test',
@@ -143,8 +145,9 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
       const convId = convData.conversation?.id;
       if (!convId) throw new Error('无法获取会话ID');
 
-      const msgRes = await fetch(`/api/simulations/${convId}/messages`, {
+      const msgRes = await apiFetch(`/api/simulations/${convId}/messages`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: script, bot_id: botId }),
         signal: controller.signal,
@@ -180,7 +183,7 @@ export function ABComparisonView({ botIds, scripts, onComplete, onClose }: ABCom
 
       // P0-2: Handle cleanup with error handling
       try {
-        const deleteRes = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+        const deleteRes = await apiFetch(`/api/simulations/${convId}`, { method: 'DELETE', credentials: 'include' });
         if (!deleteRes.ok) {
           logger.warn('[ABComparisonView] Failed to cleanup test conversation', { convId, status: deleteRes.status });
         }

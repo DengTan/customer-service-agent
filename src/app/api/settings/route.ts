@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { apiSuccess, parseJsonBody, withErrorHandlerSimple, requireRole } from '@/lib/api-utils';
+import { GET, PUT } from '@/lib/api/with-api';
 import { SettingsService } from '@/server/services/settings-service';
 import {
   invalidateKnowledgeSearchSettingsCache,
@@ -9,7 +10,6 @@ import { ContentFilterService } from '@/server/services/content-filter-service';
 import { logger } from '@/lib/logger';
 
 const settingsService = new SettingsService();
-const ADMIN_ONLY = ['admin'];
 
 /**
  * GET /api/settings
@@ -20,13 +20,18 @@ const ADMIN_ONLY = ['admin'];
  * never returns 200 with secrets for non-admin callers — non-admin
  * callers who shouldn't see settings at all get 403 instead.
  */
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'read' },
+  },
+  async () => {
   const settings = await settingsService.getSettingsMap(true);
   return apiSuccess({ settings });
-});
+},
+);
+
+export { GETHandler as GET };
 
 /**
  * PUT /api/settings
@@ -35,10 +40,12 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
  * webhook secrets, etc.) are NOT accepted through this endpoint; they
  * must be updated via their dedicated API routes.
  */
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -96,4 +103,7 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   return apiSuccess({});
-});
+},
+);
+
+export { PUTHandler as PUT };

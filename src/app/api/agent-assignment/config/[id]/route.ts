@@ -1,61 +1,73 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireRole } from '@/lib/api-utils';
+/**
+ * Agent Assignment Config API
+ */
+import { withApi } from '@/lib/api/with-api';
 import { AgentAssignmentService } from '@/server/services/agent-assignment-service';
 import { logger } from '@/lib/logger';
 
-// PUT /api/agent-assignment/config?id=xxx - Update config
-export async function PUT(request: NextRequest) {
-  try {
-    const authError = await requireRole(request, ['admin']);
-    if (authError) return authError;
+export const PUT = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
+      if (!id) {
+        return new Response(JSON.stringify({ error: 'Missing config id' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
 
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    if (!id) {
-      return NextResponse.json({ error: 'Missing config id' }, { status: 400 });
+      const body = await request.json();
+      const service = new AgentAssignmentService();
+      const config = await service.updateConfig({
+        id,
+        strategy: body.strategy,
+        name: body.name,
+        is_enabled: body.is_enabled,
+        condition_config: body.condition_config,
+      });
+
+      return new Response(JSON.stringify({ config }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      logger.agent.error('PUT config failed', { error });
+      return new Response(JSON.stringify({ error: 'Failed to update config' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
+  },
+);
 
-    const body = await request.json();
-    const service = new AgentAssignmentService();
-    const config = await service.updateConfig({
-      id,
-      strategy: body.strategy,
-      name: body.name,
-      is_enabled: body.is_enabled,
-      condition_config: body.condition_config,
-    });
+export const DELETE = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    try {
+      const { searchParams } = new URL(request.url);
+      const id = searchParams.get('id');
+      if (!id) {
+        return new Response(JSON.stringify({ error: 'Missing config id' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
 
-    return NextResponse.json({ config });
-  } catch (error) {
-    logger.agent.error('PUT config failed', { error });
-    return NextResponse.json(
-      { error: 'Failed to update config' },
-      { status: 500 }
-    );
-  }
-}
+      const service = new AgentAssignmentService();
+      await service.deleteConfig(id);
 
-// DELETE /api/agent-assignment/config?id=xxx - Delete config
-export async function DELETE(request: NextRequest) {
-  try {
-    const authError = await requireRole(request, ['admin']);
-    if (authError) return authError;
-
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
-    if (!id) {
-      return NextResponse.json({ error: 'Missing config id' }, { status: 400 });
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      logger.agent.error('DELETE config failed', { error });
+      return new Response(JSON.stringify({ error: 'Failed to delete config' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
-
-    const service = new AgentAssignmentService();
-    await service.deleteConfig(id);
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    logger.agent.error('DELETE config failed', { error });
-    return NextResponse.json(
-      { error: 'Failed to delete config' },
-      { status: 500 }
-    );
-  }
-}
+  },
+);

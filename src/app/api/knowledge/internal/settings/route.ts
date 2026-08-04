@@ -4,10 +4,11 @@
  * PUT /api/knowledge/internal/settings - Update internal KB settings
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
+import { withApi } from '@/lib/api/with-api';
 import { getServiceClient, isDemoMode } from '@/storage/database/supabase-client';
-import { requireRole, apiError, HttpStatus, getOrCreateRequestId, REQUEST_ID_HEADER } from '@/lib/api-utils';
+import { apiError, HttpStatus, getOrCreateRequestId, REQUEST_ID_HEADER } from '@/lib/api-utils';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { logger } from '@/lib/logger';
 import {
@@ -165,164 +166,165 @@ async function buildSettings(
  * GET /api/knowledge/internal/settings
  * Returns current internal KB settings (passwords masked).
  */
-export async function GET(request: NextRequest) {
-  const requestId = getOrCreateRequestId(request);
+export const GET = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'read' } },
+  async ({ request }) => {
+    const requestId = getOrCreateRequestId(request);
 
-  try {
-    const authError = await requireRole(request, ['admin']);
-    if (authError) return authError;
+    try {
+      if (isDemoMode()) {
+        return new Response(JSON.stringify(DEFAULT_SETTINGS), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', [REQUEST_ID_HEADER]: requestId },
+        });
+      }
 
-    if (isDemoMode()) {
-      return NextResponse.json(DEFAULT_SETTINGS, {
-        headers: { [REQUEST_ID_HEADER]: requestId },
+      const client = getServiceClient();
+      const repo = new SettingsRepository(client);
+      const settings = await buildSettings(repo, {});
+
+      return new Response(JSON.stringify(settings), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', [REQUEST_ID_HEADER]: requestId },
+      });
+    } catch (err) {
+      logger.error('[InternalKnowledgeSettings] GET failed', {
+        requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return apiError('加载设置失败', {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        code: 'FETCH_FAILED',
       });
     }
-
-    const client = getServiceClient();
-    const repo = new SettingsRepository(client);
-    const settings = await buildSettings(repo, {});
-
-    return NextResponse.json(settings, { headers: { [REQUEST_ID_HEADER]: requestId } });
-  } catch (err) {
-    logger.error('[InternalKnowledgeSettings] GET failed', {
-      requestId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return apiError('加载设置失败', {
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: 'FETCH_FAILED',
-    });
-  }
-}
+  },
+);
 
 /**
  * PUT /api/knowledge/internal/settings
  * Updates internal KB settings. Persists hybrid config as JSON + individual
  * threshold settings.
  */
-export async function PUT(request: NextRequest) {
-  const requestId = getOrCreateRequestId(request);
+export const PUT = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const requestId = getOrCreateRequestId(request);
 
-  try {
-    const authError = await requireRole(request, ['admin']);
-    if (authError) return authError;
-
-    let body: unknown;
     try {
-      body = await request.json();
-    } catch {
-      return apiError('请求体 JSON 格式无效', {
-        status: HttpStatus.BAD_REQUEST,
-        code: 'INVALID_JSON',
-      });
-    }
-
-    const parsed = PutRequestSchema.safeParse(body);
-    if (!parsed.success) {
-      const firstIssue = parsed.error.issues[0];
-      return apiError(firstIssue.message || '请求参数无效', {
-        status: HttpStatus.BAD_REQUEST,
-        code: 'VALIDATION_ERROR',
-        meta: { errors: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })) },
-      });
-    }
-
-    const input: InternalKnowledgeSettingsInput = parsed.data;
-
-    if (input.rerankModel && !ALLOWED_RERANK_MODELS.includes(input.rerankModel as typeof ALLOWED_RERANK_MODELS[number])) {
-      return apiError('不支持的重排序模型', {
-        status: HttpStatus.BAD_REQUEST,
-        code: 'INVALID_RERANK_MODEL',
-      });
-    }
-
-    if (input.vectorWeight !== undefined && input.bm25Weight !== undefined) {
-      if (Math.abs(input.vectorWeight + input.bm25Weight - 1) > 0.01) {
-        return apiError('向量权重和 BM25 权重之和必须等于 1', {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return apiError('请求体 JSON 格式无效', {
           status: HttpStatus.BAD_REQUEST,
-          code: 'INVALID_WEIGHT_SUM',
+          code: 'INVALID_JSON',
         });
       }
-    }
 
-    if (isDemoMode()) {
-      return NextResponse.json({ success: true, demo: true }, {
-        headers: { [REQUEST_ID_HEADER]: requestId },
+      const parsed = PutRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        const firstIssue = parsed.error.issues[0];
+        return apiError(firstIssue.message || '请求参数无效', {
+          status: HttpStatus.BAD_REQUEST,
+          code: 'VALIDATION_ERROR',
+          meta: { errors: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })) },
+        });
+      }
+
+      const input: InternalKnowledgeSettingsInput = parsed.data;
+
+      if (input.rerankModel && !ALLOWED_RERANK_MODELS.includes(input.rerankModel as typeof ALLOWED_RERANK_MODELS[number])) {
+        return apiError('不支持的重排序模型', {
+          status: HttpStatus.BAD_REQUEST,
+          code: 'INVALID_RERANK_MODEL',
+        });
+      }
+
+      if (input.vectorWeight !== undefined && input.bm25Weight !== undefined) {
+        if (Math.abs(input.vectorWeight + input.bm25Weight - 1) > 0.01) {
+          return apiError('向量权重和 BM25 权重之和必须等于 1', {
+            status: HttpStatus.BAD_REQUEST,
+            code: 'INVALID_WEIGHT_SUM',
+          });
+        }
+      }
+
+      if (isDemoMode()) {
+        return new Response(JSON.stringify({ success: true, demo: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', [REQUEST_ID_HEADER]: requestId },
+        });
+      }
+
+      const client = getServiceClient();
+      const repo = new SettingsRepository(client);
+
+      const hybridInput: Partial<InternalKnowledgeSettings> = {};
+      if (input.searchMode !== undefined) hybridInput.searchMode = input.searchMode;
+      if (input.vectorWeight !== undefined) hybridInput.vectorWeight = input.vectorWeight;
+      if (input.bm25Weight !== undefined) hybridInput.bm25Weight = input.bm25Weight;
+      if (input.rerankEnabled !== undefined) hybridInput.rerankEnabled = input.rerankEnabled;
+      if (input.rerankTopN !== undefined) hybridInput.rerankTopN = input.rerankTopN;
+      if (input.rerankModel !== undefined) hybridInput.rerankModel = input.rerankModel;
+      if (input.vectorTopK !== undefined) hybridInput.vectorTopK = input.vectorTopK;
+      if (input.bm25TopK !== undefined) hybridInput.bm25TopK = input.bm25TopK;
+      if (input.rrfK !== undefined) hybridInput.rrfK = input.rrfK;
+
+      const existingStr = await repo.get(HYBRID_CONFIG_KEY);
+      let existing: Record<string, unknown> = {};
+      if (existingStr) {
+        try { existing = JSON.parse(existingStr); } catch { /* ignore */ }
+      }
+      const mergedHybrid = { ...existing, ...hybridInput };
+
+      const updates: Record<string, string> = {
+        [HYBRID_CONFIG_KEY]: JSON.stringify(mergedHybrid),
+      };
+
+      if (input.minScoreThreshold !== undefined) {
+        updates['knowledge_min_score'] = String(input.minScoreThreshold);
+      }
+      if (input.searchLimit !== undefined) {
+        updates['knowledge_search_limit'] = String(input.searchLimit);
+      }
+      if (input.imageSearchLimit !== undefined) {
+        updates['knowledge_image_search_limit'] = String(input.imageSearchLimit);
+      }
+      if (input.imageMaxCitations !== undefined) {
+        updates['knowledge_image_max_citations'] = String(input.imageMaxCitations);
+      }
+      if (input.searchMode !== undefined) {
+        updates['retrieval_search_mode'] = input.searchMode;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await repo.upsertMany(updates);
+      }
+
+      invalidateKnowledgeSearchSettingsCache();
+      invalidateSearchModeCache();
+      try {
+        const hybridService = await getHybridSearchService();
+        if (hybridService && typeof hybridService.loadConfig === 'function') {
+          await hybridService.loadConfig();
+        }
+      } catch {
+        // Non-fatal: HybridSearchService may not be initialized yet
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', [REQUEST_ID_HEADER]: requestId },
+      });
+    } catch (err) {
+      logger.error('[InternalKnowledgeSettings] PUT failed', {
+        requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return apiError('保存设置失败', {
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        code: 'SAVE_FAILED',
       });
     }
-
-    const client = getServiceClient();
-    const repo = new SettingsRepository(client);
-
-    // Build hybrid config subset
-    const hybridInput: Partial<InternalKnowledgeSettings> = {};
-    if (input.searchMode !== undefined) hybridInput.searchMode = input.searchMode;
-    if (input.vectorWeight !== undefined) hybridInput.vectorWeight = input.vectorWeight;
-    if (input.bm25Weight !== undefined) hybridInput.bm25Weight = input.bm25Weight;
-    if (input.rerankEnabled !== undefined) hybridInput.rerankEnabled = input.rerankEnabled;
-    if (input.rerankTopN !== undefined) hybridInput.rerankTopN = input.rerankTopN;
-    if (input.rerankModel !== undefined) hybridInput.rerankModel = input.rerankModel;
-    if (input.vectorTopK !== undefined) hybridInput.vectorTopK = input.vectorTopK;
-    if (input.bm25TopK !== undefined) hybridInput.bm25TopK = input.bm25TopK;
-    if (input.rrfK !== undefined) hybridInput.rrfK = input.rrfK;
-
-    // Merge with existing hybrid config
-    const existingStr = await repo.get(HYBRID_CONFIG_KEY);
-    let existing: Record<string, unknown> = {};
-    if (existingStr) {
-      try { existing = JSON.parse(existingStr); } catch { /* ignore */ }
-    }
-    const mergedHybrid = { ...existing, ...hybridInput };
-
-    const updates: Record<string, string> = {
-      [HYBRID_CONFIG_KEY]: JSON.stringify(mergedHybrid),
-    };
-
-    // Individual threshold settings
-    if (input.minScoreThreshold !== undefined) {
-      updates['knowledge_min_score'] = String(input.minScoreThreshold);
-    }
-    if (input.searchLimit !== undefined) {
-      updates['knowledge_search_limit'] = String(input.searchLimit);
-    }
-    if (input.imageSearchLimit !== undefined) {
-      updates['knowledge_image_search_limit'] = String(input.imageSearchLimit);
-    }
-    if (input.imageMaxCitations !== undefined) {
-      updates['knowledge_image_max_citations'] = String(input.imageMaxCitations);
-    }
-
-    // Search mode stored as separate key for RetrievalOrchestrator to read
-    if (input.searchMode !== undefined) {
-      updates['retrieval_search_mode'] = input.searchMode;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await repo.upsertMany(updates);
-    }
-
-    // Invalidate caches so new values take effect immediately
-    invalidateKnowledgeSearchSettingsCache();
-    // Invalidate search mode cache so RetrievalOrchestrator picks up the new value
-    invalidateSearchModeCache();
-    try {
-      const hybridService = await getHybridSearchService();
-      if (hybridService && typeof hybridService.loadConfig === 'function') {
-        await hybridService.loadConfig();
-      }
-    } catch {
-      // Non-fatal: HybridSearchService may not be initialized yet
-    }
-
-    return NextResponse.json({ success: true }, { headers: { [REQUEST_ID_HEADER]: requestId } });
-  } catch (err) {
-    logger.error('[InternalKnowledgeSettings] PUT failed', {
-      requestId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return apiError('保存设置失败', {
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: 'SAVE_FAILED',
-    });
-  }
-}
+  },
+);

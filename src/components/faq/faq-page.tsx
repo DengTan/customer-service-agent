@@ -6,6 +6,7 @@ import { ErrorBoundary } from '@/components/common/error-boundary';
 import { TabType } from './types';
 import { BookOpen, GraduationCap, Package, Ruler, TestTube2, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 // Lazy load tab components for code splitting
 const KnowledgeTab = lazy(() => import('./knowledge-tab').then(m => ({ default: m.KnowledgeTab })));

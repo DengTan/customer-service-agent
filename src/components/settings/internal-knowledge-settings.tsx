@@ -6,6 +6,7 @@ import { Loader2, Sparkles, RotateCcw, Database, Zap, AlertCircle } from 'lucide
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export function InternalKnowledgeSettings() {
 
   // Load settings
   useEffect(() => {
-    fetch('/api/knowledge/internal/settings')
+    apiFetch('/api/knowledge/internal/settings')
       .then((r) => r.json())
       .then((data) => {
         setSettings(data);
@@ -137,7 +138,7 @@ export function InternalKnowledgeSettings() {
     if (fieldName) setSavingField(fieldName);
     else setSaving(true);
     try {
-      const res = await fetch('/api/knowledge/internal/settings', {
+      const res = await apiFetch('/api/knowledge/internal/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -233,7 +234,7 @@ export function InternalKnowledgeSettings() {
             onClick={() => {
               setLoading(true);
               setLoadError(null);
-              fetch('/api/knowledge/internal/settings')
+              apiFetch('/api/knowledge/internal/settings')
                 .then((r) => r.json())
                 .then((data) => {
                   setSettings(data);

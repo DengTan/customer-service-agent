@@ -9,75 +9,60 @@
  */
 
 import { NextRequest } from 'next/server';
-import {
-  apiSuccess,
-  apiError,
-  parseJsonBody,
-  withErrorHandlerSimple,
-  requireRole,
-  HttpStatus,
-} from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { EvalCalibrationRepository } from '@/server/repositories/eval-calibration-repository';
 import { logger } from '@/lib/logger';
 
-const ADMIN_ONLY = ['admin'];
+export const POST = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const body = await request.json().catch(() => ({}));
+    const { id } = body as { id?: string };
 
-// Sprint 7 scope-creep triage: this route was added outside the Sprint 6 plan and has not been Standards-axis reviewed. See Sprint 7 review notes.
+    if (!id || typeof id !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 id', code: 'MISSING_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // --- Admin-only gate ---
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+    const repo = new EvalCalibrationRepository();
+    const calibration = await repo.getById(id);
 
-  // --- Parse body ---
-  const { data: body, error: parseError } = await parseJsonBody<{ id?: string }>(request);
-  if (parseError) return parseError;
+    if (!calibration) {
+      return new Response(JSON.stringify({ error: '未找到指定的校准记录', code: 'NOT_FOUND' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { id } = body ?? {};
-
-  if (!id || typeof id !== 'string') {
-    return apiError('缺少或无效的 id', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_ID',
-    });
-  }
-
-  const repo = new EvalCalibrationRepository();
-  const calibration = await repo.getById(id);
-
-  if (!calibration) {
-    return apiError('未找到指定的校准记录', {
-      status: HttpStatus.NOT_FOUND,
-      code: 'NOT_FOUND',
-    });
-  }
-
-  if (calibration.status !== 'canary') {
-    return apiError(
-      `只能回滚状态为 canary 的校准记录，当前状态为 '${calibration.status}'`,
-      {
-        status: HttpStatus.CONFLICT,
+    if (calibration.status !== 'canary') {
+      return new Response(JSON.stringify({
+        error: `只能回滚状态为 canary 的校准记录，当前状态为 '${calibration.status}'`,
         code: 'INVALID_STATUS',
-      },
-    );
-  }
+      }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  logger.info('[Eval/Calibration/Rollback] Rolling back canary calibration', { id });
+    logger.info('[Eval/Calibration/Rollback] Rolling back canary calibration', { id });
 
-  // Archive the canary — also clears is_canary via updateStatus then set is_canary=false
-  const archived = await repo.archive(id);
+    const archived = await repo.archive(id);
 
-  logger.info('[Eval/Calibration/Rollback] Canary calibration rolled back', {
-    id,
-    previousStatus: 'canary',
-    newStatus: archived.status,
-  });
+    logger.info('[Eval/Calibration/Rollback] Canary calibration rolled back', {
+      id,
+      previousStatus: 'canary',
+      newStatus: archived.status,
+    });
 
-  return apiSuccess(
-    {
+    return new Response(JSON.stringify({
+      ok: true,
       calibration: archived,
       message: '回滚成功。previous baseline 未自动重新激活，如有需要请手动操作。',
-    },
-    HttpStatus.OK,
-  );
-});
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

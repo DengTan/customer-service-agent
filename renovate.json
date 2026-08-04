@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Asia/Shanghai",
+  "schedule": [
+    "before 9am on Monday"
+  ],
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "assignees": ["@dengdan"],
+  "reviewers": ["@dengdan"],
+
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["^@types/", "^types"],
+      "groupName": "type definitions"
+    },
+    {
+      "matchPackagePatterns": ["^@supabase/"],
+      "groupName": "supabase packages"
+    },
+    {
+      "matchPackagePatterns": ["^next@"],
+      "groupName": "next.js",
+      "schedule": ["every weekend"]
+    },
+    {
+      "matchPackageNames": ["pdf-parse"],
+      "labels": ["security", "deprecated"]
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "labels": ["devDependencies"]
+    }
+  ],
+
+  "major": {
+    "schedule": ["every month on the first monday"]
+  },
+
+  "minor": {
+    "automerge": true,
+    "automergeType": "pr",
+    "automergeStrategy": "squash"
+  },
+
+  "patch": {
+    "automerge": true,
+    "automergeType": "pr",
+    "automergeStrategy": "squash"
+  },
+
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "assignees": ["@dengdan"],
+    "reviewers": ["@dengdan"]
+  },
+
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 3
+}

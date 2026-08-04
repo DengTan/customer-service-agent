@@ -12,6 +12,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { LearningItem, LearningStats, LEARNING_CATEGORIES } from './types';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 export function LearningTab() {
   const [learningItems, setLearningItems] = useState<LearningItem[]>([]);
@@ -57,7 +58,7 @@ export function LearningTab() {
       params.set('page', String(learningPage));
       params.set('pageSize', String(learningPageSize));
 
-      const res = await fetch(`/api/knowledge-learning?${params}`);
+      const res = await apiFetch(`/api/knowledge-learning?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.items) {
@@ -75,7 +76,7 @@ export function LearningTab() {
 
   const fetchLearningStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/knowledge-learning?pageSize=1');
+      const res = await apiFetch('/api/knowledge-learning?pageSize=1');
       if (!res.ok) return;
       const data = await res.json();
       if (data.stats) {
@@ -97,7 +98,7 @@ export function LearningTab() {
   const handleScan = async () => {
     setScanning(true);
     try {
-      const res = await fetch('/api/knowledge-learning', { method: 'POST' });
+      const res = await apiFetch('/api/knowledge-learning', { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setLastScanTime(new Date().toLocaleString('zh-CN'));
@@ -115,7 +116,7 @@ export function LearningTab() {
 
   const handleApprove = async (id: string) => {
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [id], action: 'approve' }),
@@ -135,7 +136,7 @@ export function LearningTab() {
 
   const handleReject = async (id: string) => {
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [id], action: 'reject' }),
@@ -155,7 +156,7 @@ export function LearningTab() {
   const handleBatchApprove = async () => {
     if (selectedLearningIds.size === 0) return;
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedLearningIds), action: 'approve' }),
@@ -176,7 +177,7 @@ export function LearningTab() {
   const handleBatchReject = async () => {
     if (selectedLearningIds.size === 0) return;
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedLearningIds), action: 'reject' }),
@@ -201,7 +202,7 @@ export function LearningTab() {
     }
     try {
       const promises = Array.from(selectedLearningIds).map(id =>
-        fetch('/api/knowledge-learning', {
+        apiFetch('/api/knowledge-learning', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, category: learningBatchCategory }),
@@ -238,7 +239,7 @@ export function LearningTab() {
     if (!editModal.item) return;
     setSaving(true);
     try {
-      const updateRes = await fetch('/api/knowledge-learning', {
+      const updateRes = await apiFetch('/api/knowledge-learning', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,7 +253,7 @@ export function LearningTab() {
         toast.error('更新内容失败');
         return;
       }
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

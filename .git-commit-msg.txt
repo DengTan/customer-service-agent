@@ -1,30 +1,40 @@
-fix: security & correctness improvements across AI conversation pipeline
+feat(phase-b): RLS policy-as-code, Drizzle migration workflow, Zod parse, EffectBus, outbox replay
 
-P0 Security:
-- Routing: propagate tools/knowledge_ids to routed bot pipeline
-- Claim verifier: move before stripInternalMarkers to catch injection
-- Tool auth: verify conversation ownership for all tools (not just SENSITIVE_TOOLS)
-- Tool rollback: hide "executed" UI state after rollback
+Phase B 全部交付物（2026-08-03，v2.1）：
 
-P0 Correctness:
-- SSE abort: guard post-stream side effects (incrementMessageCount, qualityCheck,
-  knowledgeGap) with abortSignal check
-- Simulation path: add ai_max_concurrent limit check to prevent bypass
+[B1] RLS Policy-as-Code
+- 62 个表级策略文件（supabase/policies/*.sql）
+- .snapshot.sql 快照 + .inventory.json 清单
+- pnpm policies:snapshot:check / pnpm policies:inventory CI 门禁
+- scripts/policies/generate-policies.js 从 schema.ts 重建策略
 
-Core Improvements:
-- claim-support-verifier: structured evidence types, threshold normalization, test coverage
-- llm-client-adapter: structured outputs mode with JSON schema validation
-- llm-streaming-service: streaming confidence breakdown, source citations, abort guard
-- retrieval-orchestrator: unified routing with product context, relevance thresholds
-- auto-reply-repository: full CRUD support
+[B2] Drizzle Migration Workflow
+- drizzle.config.ts（postgresql 方言，输出到 supabase/migrations/drizzle/）
+- schema.ts 补齐 5 个工单扩展表（ticketCategories/CustomFields/FieldValues/Relations/AuditLog）
+- scripts/check-ddl.ts DDL guard（历史迁移豁免 + special-DDL 白名单）
+- pnpm ddls:guard CI 门禁
 
-UI & UX:
-- Auto-reply settings: searchable table with inline CRUD
-- FAQ pages: product/size-chart forms with image upload, association handling
-- Chat: source citation panel, richer message cards, rollback state
-- Backlog doc: complete fix tracking with notes
+[B3] Unified Zod Parse Entry
+- src/lib/api/parse.ts（parseBody/parseQuery/parseParams，Zod v4 兼容，RFC 7807 错误）
+- scripts/check-routes.ts 基线覆盖率工具（warn-only）
+- src/lib/api/parse.test.ts 15 个聚焦测试
 
-Schema & Migrations:
-- size_chart_versions table
-- product_details_sku_unique constraint
-- size_charts.drop product_id (junction table migration)
+[B4a] EffectBus + RC-5 Fix
+- src/lib/effects/bus.ts（critical/best-effort 模式、AbortSignal 传播、幂等键）
+- RC-5：llmStreamingService.cancel() 调用 abortController.abort()
+- messages/route.ts 创建并传入 AbortController
+- src/lib/effects/bus.test.ts 14 个测试
+
+[B4b] Outbox Pattern
+- effect_outbox Drizzle 表（含 next_run_at/status/idempotency_key 索引）
+- src/lib/effects/outbox-replay.ts（CAS 抢锁、指数退避上限 5 分钟、幂等去重、30s 硬超时）
+- scripts/replay-outbox.ts CLI wrapper
+- effect_outbox.sql 服务专属 RLS 策略
+
+[B5] Contract Tests + CI Must-Pass
+- tests/contracts/service-contracts.test.ts 17 个契约测试
+- CI 新增 contract / policy-snapshot / ddl-guard 三道门禁
+
+实测基线：pnpm ts-check 0 / lint 0 / test:run 820 passed 0 failed / ddls:guard 90 migrations clean
+
+关联文档：docs/ROOT_CAUSE_REMEDIATION_PLAN.md v2.1

@@ -7,6 +7,7 @@ import type { MainBot, SubAgent, Shop, SkillGroup, BotSettingsPreference } from 
 import { AVAILABLE_TOOLS as DEFAULT_TOOLS, type Tool } from './types';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface BotSettingsProps {
   shops: Shop[];
@@ -100,7 +101,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
   const loadMainBots = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/sub-agents?main_bots=true');
+      const res = await apiFetch('/api/sub-agents?main_bots=true');
       const data = await res.json();
       setMainBots(data.bots || []);
     } catch (err) {
@@ -112,7 +113,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
 
   const loadTools = useCallback(async () => {
     try {
-      const res = await fetch('/api/settings');
+      const res = await apiFetch('/api/settings');
       if (!res.ok) return;
       const data = await res.json();
       const raw = data?.settings?.custom_tools;
@@ -134,7 +135,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
   const loadSubAgents = useCallback(async (parentBotId: string) => {
     setLoadingSubAgents(prev => ({ ...prev, [parentBotId]: true }));
     try {
-      const res = await fetch(`/api/sub-agents?parent_bot_id=${parentBotId}`);
+      const res = await apiFetch(`/api/sub-agents?parent_bot_id=${parentBotId}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const items = Array.isArray(data.subAgents) ? data.subAgents : [];
@@ -170,7 +171,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     if (!botForm.name.trim()) return;
     try {
       if (editingBot) {
-        const res = await fetch('/api/bot-configs', {
+        const res = await apiFetch('/api/bot-configs', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -194,7 +195,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
         }
         return;
       }
-      const res = await fetch('/api/bot-configs', {
+      const res = await apiFetch('/api/bot-configs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -232,7 +233,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/bot-configs?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/bot-configs?id=${id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) {
         loadMainBots();
         toast.success('Bot已删除');
@@ -252,7 +253,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
             allow_collaborate_with: subAgentForm.collaboration_config.allow_collaborate_with,
           }
         : {};
-      const res = await fetch('/api/sub-agents', {
+      const res = await apiFetch('/api/sub-agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -294,7 +295,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
             allow_collaborate_with: subAgentForm.collaboration_config.allow_collaborate_with,
           }
         : {};
-      const res = await fetch('/api/sub-agents', {
+      const res = await apiFetch('/api/sub-agents', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -335,7 +336,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/sub-agents?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/sub-agents?id=${id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) {
         loadSubAgents(parentBotId);
         loadMainBots();
@@ -349,7 +350,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
 
   const handleToggleSubAgentStatus = async (agent: SubAgent, parentBotId: string) => {
     try {
-      const res = await fetch('/api/sub-agents', {
+      const res = await apiFetch('/api/sub-agents', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: agent.id, status: agent.status === 'active' ? 'disabled' : 'active' }),
@@ -426,7 +427,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     if (!skillGroupForm.name.trim()) return;
     setSkillGroupSaving(true);
     try {
-      const res = await fetch('/api/skill-groups', {
+      const res = await apiFetch('/api/skill-groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(skillGroupForm),
@@ -454,7 +455,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     if (!editingSkillGroup || !skillGroupForm.name.trim()) return;
     setSkillGroupSaving(true);
     try {
-      const res = await fetch('/api/skill-groups', {
+      const res = await apiFetch('/api/skill-groups', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: editingSkillGroup.id, ...skillGroupForm }),
@@ -488,7 +489,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/skill-groups?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/skill-groups?id=${id}`, { method: 'DELETE', credentials: 'include' });
       if (res.ok) {
         toast.success('技能组已删除');
         setSkillGroupSearch('');
@@ -505,7 +506,7 @@ export function BotSettings({ shops, skillGroups, settings, onDataRefresh }: Bot
   const persistTools = async (nextTools: Tool[]) => {
     const customOnly = nextTools.filter((t) => !t.builtin);
     try {
-      const res = await fetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: { custom_tools: JSON.stringify(customOnly) } }),

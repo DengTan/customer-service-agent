@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   StickyNote,
   BookOpen,
@@ -80,7 +81,7 @@ export function ChatInputBar({
         formData.append('file', file);
         formData.append('purpose', 'chat');
 
-        const res = await fetch('/api/upload', {
+        const res = await apiFetch('/api/upload', {
           method: 'POST',
           body: formData,
         });

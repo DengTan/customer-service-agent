@@ -18,6 +18,7 @@ import { DashboardSkeleton } from './dashboard-skeleton';
 
 import type { PushRecord, PushEventLog } from '@/lib/types';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 /** Push event type definitions for dashboard */
 const PUSH_EVENT_TYPES: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -123,9 +124,9 @@ function DashboardPageInner() {
     try {
       // 使用 Promise.allSettled 确保部分 API 失败不影响整体加载
       const results = await Promise.allSettled([
-        fetch('/api/analytics?include_tickets=true'),
-        fetch('/api/push/records'),
-        fetch('/api/push/events'),
+        apiFetch('/api/analytics?include_tickets=true'),
+        apiFetch('/api/push/records'),
+        apiFetch('/api/push/events'),
       ]);
 
       // 处理 analytics 数据（核心数据，失败时抛出错误）
@@ -178,7 +179,7 @@ function DashboardPageInner() {
   const refreshAlerts = useCallback(async () => {
     setAlertsLoading(true);
     try {
-      const res = await fetch('/api/analytics');
+      const res = await apiFetch('/api/analytics');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setAlerts(data.recentAlerts || []);
@@ -617,8 +618,9 @@ function DashboardPageInner() {
                           return next;
                         });
                         try {
-                          const res = await fetch(`/api/alerts?id=${alert.id}`, {
+                          const res = await apiFetch(`/api/alerts?id=${alert.id}`, {
                             method: 'PATCH',
+                            credentials: 'include',
                             headers: { 'content-type': 'application/json' },
                             body: JSON.stringify({ action: 'resolve' }),
                           });

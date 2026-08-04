@@ -1,14 +1,16 @@
 import { NextRequest } from 'next/server';
 import { MarketingService } from '@/server/services/marketing-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
+import { GET, POST, PATCH, DELETE } from '@/lib/api/with-api';
 
 const service = new MarketingService();
 
-// GET /api/marketing - List marketing campaigns with stats
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'marketing', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status') ?? undefined;
   const type = searchParams.get('type') ?? undefined;
@@ -18,13 +20,16 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     type: type ?? null,
   });
   return apiSuccess(result);
-});
+}, );
 
-// POST /api/marketing - Create a new marketing campaign
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'marketing', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -41,13 +46,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   });
 
   return apiSuccess(result, HttpStatus.CREATED);
-});
+}, );
 
-// PATCH /api/marketing - Update campaign (all fields)
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'marketing', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -72,13 +80,16 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
   });
 
   return apiSuccess(result);
-});
+}, );
 
-// DELETE /api/marketing?id=xxx - Delete a marketing campaign
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'marketing', 'delete');
-  if (denied) return denied;
+export { PATCHHandler as PATCH };
 
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -88,4 +99,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
 
   await service.deleteCampaign(id);
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };

@@ -8,6 +8,7 @@ import {
   ChevronLeft, ChevronRight, Search, MessageSquare,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface KnowledgeGap {
   id: string;
@@ -82,7 +83,7 @@ export function KnowledgeGapTab() {
 
   const loadStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/knowledge/gaps/stats', {
+      const res = await apiFetch('/api/knowledge/gaps/stats', {
         headers: { 'x-user-role': 'admin' },
       });
       const json = await res.json();
@@ -99,7 +100,7 @@ export function KnowledgeGapTab() {
     
     setLoadingMessages(conversationId);
     try {
-      const res = await fetch(`/api/conversations/${conversationId}?limit=50`, {
+      const res = await apiFetch(`/api/conversations/${conversationId}?limit=50`, {
         headers: { 'x-user-role': 'admin' },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -129,7 +130,7 @@ export function KnowledgeGapTab() {
       params.set('limit', String(pageSize));
       params.set('offset', String((page - 1) * pageSize));
       if (search.trim()) params.set('search', search.trim());
-      const res = await fetch(`/api/knowledge/gaps?${params.toString()}`, {
+      const res = await apiFetch(`/api/knowledge/gaps?${params.toString()}`, {
         headers: { 'x-user-role': 'admin' },
       });
       const json = await res.json();
@@ -154,7 +155,7 @@ export function KnowledgeGapTab() {
   const handleScan = async () => {
     setScanning(true);
     try {
-      const res = await fetch('/api/knowledge/gaps/scan', {
+      const res = await apiFetch('/api/knowledge/gaps/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin' },
         body: JSON.stringify({ windowDays: 7 }),
@@ -179,7 +180,7 @@ export function KnowledgeGapTab() {
     );
     if (category === null) return;
     try {
-      const res = await fetch(`/api/knowledge/gaps/${gap.id}/promote`, {
+      const res = await apiFetch(`/api/knowledge/gaps/${gap.id}/promote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin' },
         body: JSON.stringify({ category }),
@@ -203,7 +204,7 @@ export function KnowledgeGapTab() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/knowledge/gaps/${gap.id}/dismiss`, {
+      const res = await apiFetch(`/api/knowledge/gaps/${gap.id}/dismiss`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin' },
         body: JSON.stringify({ notes: '人工忽略' }),
@@ -224,7 +225,7 @@ export function KnowledgeGapTab() {
     );
     if (itemId === null) return;
     try {
-      const res = await fetch(`/api/knowledge/gaps/${gap.id}/resolve`, {
+      const res = await apiFetch(`/api/knowledge/gaps/${gap.id}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-user-role': 'admin' },
         body: JSON.stringify({ linked_knowledge_item_id: itemId || undefined, notes: '人工标记已解决' }),

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Bot, Check, Loader2, AlertCircle } from 'lucide-react';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 export interface BotConfig {
   id: string;
@@ -32,7 +33,7 @@ export function BotSelector({ selectedBotIds, onChange, maxSelection = 2 }: BotS
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/bot-configs?include_sub_agents=false');
+      const res = await apiFetch('/api/bot-configs?include_sub_agents=false', { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const botList = Array.isArray(data.bots) ? data.bots : [];

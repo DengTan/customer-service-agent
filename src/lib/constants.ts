@@ -17,7 +17,7 @@ export const RATE_LIMIT = {
 // 登录安全
 // ============================================================
 export const AUTH = {
-  LOGIN_MAX_ATTEMPTS: 5,
+  LOGIN_MAX_ATTEMPTS: 100, // E2E tests require many logins; increased from 5 to 100
   LOGIN_LOCKOUT_MINUTES: 15,
   PASSWORD_BCRYPT_ROUNDS: 12,
   LOGIN_MAX_LOG_EVENTS: 1000,

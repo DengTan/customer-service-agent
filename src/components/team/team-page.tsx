@@ -19,6 +19,7 @@ import type { User, UserRole, RolePermission, PermissionResource, PermissionActi
 import { ROLE_LABELS, PERMISSION_RESOURCES, PERMISSION_ACTIONS } from '@/lib/types';
 import { useAuth } from '@/lib/auth';
 import { DEFAULT_PERMISSIONS } from '@/config/default-permissions';
+import { apiFetch } from '@/lib/api-fetch';
 
 const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-primary/10 text-primary',
@@ -64,7 +65,7 @@ export default function TeamPage() {
       if (roleFilter !== 'all') params.set('role', roleFilter);
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (searchQuery) params.set('search', searchQuery);
-      const res = await fetch(`/api/users?${params.toString()}`);
+      const res = await apiFetch(`/api/users?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.users) setUsers(data.users);
@@ -78,7 +79,7 @@ export default function TeamPage() {
   // Fetch permissions
   const fetchPermissions = useCallback(async () => {
     try {
-      const res = await fetch('/api/permissions');
+      const res = await apiFetch('/api/permissions');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.permissions) setPermissions(data.permissions);
@@ -104,7 +105,7 @@ export default function TeamPage() {
       return;
     }
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newUser),
@@ -144,7 +145,7 @@ export default function TeamPage() {
       return;
     }
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: editingUser.id, name: editName.trim(), role: editingUser.role }),
@@ -179,7 +180,7 @@ export default function TeamPage() {
     if (!userToDelete) return;
     setDeletingUserId(userToDelete.id);
     try {
-      const res = await fetch(`/api/users?id=${userToDelete.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/users?id=${userToDelete.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('成员已删除');
@@ -207,7 +208,7 @@ export default function TeamPage() {
   const handleToggleStatus = async (user: User) => {
     const newStatus = user.status === 'active' ? 'disabled' : 'active';
     try {
-      const res = await fetch('/api/users', {
+      const res = await apiFetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: user.id, status: newStatus }),
@@ -272,7 +273,7 @@ export default function TeamPage() {
           setBatchActionLoading(false);
           return;
         }
-        const res = await fetch(`/api/users?ids=${idsToDelete.join(',')}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/users?ids=${idsToDelete.join(',')}`, { method: 'DELETE' });
         const data = await res.json();
         success = res.ok && data.success;
         affectedCount = data.deleted ?? idsToDelete.length;
@@ -286,7 +287,7 @@ export default function TeamPage() {
         }
       } else {
         const newStatus = batchConfirmAction === 'enable' ? 'active' : 'disabled';
-        const res = await fetch('/api/users', {
+        const res = await apiFetch('/api/users', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids: Array.from(selectedUsers), status: newStatus }),
@@ -330,7 +331,7 @@ export default function TeamPage() {
     });
 
     try {
-      const res = await fetch('/api/permissions', {
+      const res = await apiFetch('/api/permissions', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

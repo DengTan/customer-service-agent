@@ -17,6 +17,7 @@ import {
   TICKET_STATUS_COLORS, TICKET_PRIORITY_COLORS, TICKET_CATEGORY_COLORS,
 } from '@/lib/types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface TicketWithExtras extends TicketType {
   assignee_name?: string | null;
@@ -53,7 +54,7 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
 
   useEffect(() => {
     setIsLoading(true);
-    fetch(`/api/tickets/${ticketId}/relations`)
+    apiFetch(`/api/tickets/${ticketId}/relations`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) {
@@ -70,13 +71,13 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
     if (!targetTicketNumber.trim()) return;
     try {
       // Find ticket by number first
-      const searchRes = await fetch(`/api/tickets?search=${encodeURIComponent(targetTicketNumber.trim())}`);
+      const searchRes = await apiFetch(`/api/tickets?search=${encodeURIComponent(targetTicketNumber.trim())}`);
       if (!searchRes.ok) { toast.error('查找工单失败'); return; }
       const searchData = await searchRes.json();
       const found = searchData.tickets?.find((t: { ticket_number: string }) => t.ticket_number === targetTicketNumber.trim());
       if (!found) { toast.error('未找到该工单编号'); return; }
 
-      const res = await fetch(`/api/tickets/${ticketId}/relations`, {
+      const res = await apiFetch(`/api/tickets/${ticketId}/relations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_ticket_id: found.id, relation_type: relationType }),
@@ -86,7 +87,7 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
         setTargetTicketNumber('');
         setShowAddRelation(false);
         // Reload
-        const data = await (await fetch(`/api/tickets/${ticketId}/relations`)).json();
+        const data = await (await apiFetch(`/api/tickets/${ticketId}/relations`)).json();
         setRelations(data.relations || []);
       } else {
         const err = await res.json();
@@ -99,7 +100,7 @@ function TicketRelationsPanel({ ticketId }: { ticketId: string }) {
 
   const handleRemoveRelation = async (relationId: string) => {
     try {
-      const res = await fetch(`/api/tickets/${ticketId}/relations?relation_id=${relationId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/tickets/${ticketId}/relations?relation_id=${relationId}`, { method: 'DELETE' });
       if (res.ok) {
         setRelations(prev => prev.filter(r => r.id !== relationId));
         toast.success('已取消关联');
@@ -236,9 +237,9 @@ export default function TicketsPage() {
   const loadCategoriesAndFields = useCallback(async () => {
     try {
       const [catRes, fieldRes, usersRes] = await Promise.all([
-        fetch('/api/tickets/categories'),
-        fetch('/api/tickets/custom-fields'),
-        fetch('/api/users'),
+        apiFetch('/api/tickets/categories'),
+        apiFetch('/api/tickets/custom-fields'),
+        apiFetch('/api/users'),
       ]);
       if (catRes.ok) {
         const catData = await catRes.json();
@@ -271,7 +272,7 @@ export default function TicketsPage() {
       params.set('page', String(currentPage));
       params.set('page_size', String(pageSize));
 
-      const res = await fetch(`/api/tickets?${params.toString()}`);
+      const res = await apiFetch(`/api/tickets?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.tickets) {
@@ -302,7 +303,7 @@ export default function TicketsPage() {
   const loadTicketDetail = useCallback(async (ticketId: string) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/tickets/${ticketId}`);
+      const res = await apiFetch(`/api/tickets/${ticketId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.ticket) {
@@ -317,7 +318,7 @@ export default function TicketsPage() {
 
   const handleStatusChange = useCallback(async (ticketId: string, newStatus: TicketStatus) => {
     try {
-      const res = await fetch(`/api/tickets/${ticketId}`, {
+      const res = await apiFetch(`/api/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -337,7 +338,7 @@ export default function TicketsPage() {
 
   const handleDeleteTicket = useCallback(async (ticketId: string) => {
     try {
-      const res = await fetch(`/api/tickets/${ticketId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/tickets/${ticketId}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok) {
         toast.success('工单已删除');
@@ -365,7 +366,7 @@ export default function TicketsPage() {
 
   const handleAutoAssign = useCallback(async (ticketId: string) => {
     try {
-      const res = await fetch(`/api/tickets/${ticketId}`, {
+      const res = await apiFetch(`/api/tickets/${ticketId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auto_assign: true }),
@@ -409,7 +410,7 @@ export default function TicketsPage() {
     else if (batchAction === 'category') updates.category = batchCategory;
 
     try {
-      const res = await fetch('/api/tickets', {
+      const res = await apiFetch('/api/tickets', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -435,7 +436,7 @@ export default function TicketsPage() {
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/tickets', {
+      const res = await apiFetch('/api/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -476,7 +477,7 @@ export default function TicketsPage() {
     if (!selectedTicket || !commentText.trim()) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/tickets/${selectedTicket.ticket.id}/comments`, {
+      const res = await apiFetch(`/api/tickets/${selectedTicket.ticket.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

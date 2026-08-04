@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ function Step1Knowledge({ knowledgeIds, setKnowledgeIds }: Step1Props) {
   useEffect(() => {
     const params = new URLSearchParams();
     if (search.trim()) params.set('query', search.trim());
-    fetch(`/api/knowledge/items?${params}`)
+    apiFetch(`/api/knowledge/items?${params}`)
       .then(r => r.json())
       .then(json => {
         if (json.success && json.data?.items) {
@@ -528,9 +529,9 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
   useEffect(() => {
     if (open && step === 3) {
       Promise.all([
-        fetch('/api/quick-replies'),
-        fetch('/api/quick-replies?scope=ai'),
-        fetch('/api/quick-replies?scope=agent'),
+        apiFetch('/api/quick-replies'),
+        apiFetch('/api/quick-replies?scope=ai'),
+        apiFetch('/api/quick-replies?scope=agent'),
       ])
         .then(([r1, r2, r3]) => Promise.all([r1.json(), r2.json(), r3.json()]))
         .then(([all, ai, agent]) => {
@@ -616,7 +617,7 @@ export default function ShopCreateWizard({ open, onClose, onSuccess }: ShopCreat
         agentAccounts: validAccounts,
       };
 
-      const res = await fetch('/api/shops', {
+      const res = await apiFetch('/api/shops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

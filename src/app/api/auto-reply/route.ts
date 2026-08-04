@@ -1,100 +1,128 @@
-import { NextRequest } from 'next/server';
-import { apiSuccess, apiError, parseJsonBody, withErrorHandlerSimple, requirePermission, HttpStatus } from '@/lib/api-utils';
+/**
+ * 自动回复规则 API
+ */
+import { withApi } from '@/lib/api/with-api';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import type { CreateAutoReplyRuleInput } from '@/server/repositories/auto-reply-repository';
 
 const autoReplyService = new AutoReplyService();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'auto_reply', 'read');
-  if (denied) return denied;
+export const GET = withApi(
+  { auth: 'required', perm: { resource: 'auto_reply', action: 'write' } },
+  async ({ request }) => {
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+    const offset = (page - 1) * limit;
+    const rawSearch = searchParams.get('search') || '';
+    const search = rawSearch.length > 200 ? rawSearch.slice(0, 200) : rawSearch || undefined;
+    const filterMode = (searchParams.get('filter') || 'all') as 'all' | 'enabled' | 'disabled';
 
-  const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') || '1');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100); // Max 100
-  const offset = (page - 1) * limit;
-  
-  // Validate search parameter length to prevent performance issues
-  const rawSearch = searchParams.get('search') || '';
-  const search = rawSearch.length > 200 ? rawSearch.slice(0, 200) : rawSearch || undefined;
-  const filterMode = (searchParams.get('filter') || 'all') as 'all' | 'enabled' | 'disabled';
+    const { rules, total } = await autoReplyService.listRulesPaginated({ page, limit, offset, search, filterMode });
+    return new Response(JSON.stringify({ ok: true, data: { rules, total, page, limit } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);
 
-  const { rules, total } = await autoReplyService.listRulesPaginated({ page, limit, offset, search, filterMode });
-  return apiSuccess({ rules, total, page, limit });
-});
+export const DELETE = withApi(
+  { auth: 'required', perm: { resource: 'auto_reply', action: 'write' } },
+  async ({ request }) => {
+    const { searchParams } = new URL(request.url);
+    await autoReplyService.deleteRule(searchParams.get('id'));
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);
 
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'auto_reply', 'write');
-  if (denied) return denied;
+export const POST = withApi(
+  { auth: 'required', perm: { resource: 'auto_reply', action: 'write' } },
+  async ({ request }) => {
+    let body: Record<string, unknown> = {};
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: '请求体无效' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { searchParams } = new URL(request.url);
-  await autoReplyService.deleteRule(searchParams.get('id'));
-  return apiSuccess({});
-});
+    const rule = await autoReplyService.createRule(body as unknown as CreateAutoReplyRuleInput);
+    return new Response(JSON.stringify({ ok: true, rule }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'auto_reply', 'write');
-  if (denied) return denied;
+export const PUT = withApi(
+  { auth: 'required', perm: { resource: 'auto_reply', action: 'write' } },
+  async ({ request }) => {
+    let body: Record<string, unknown> = {};
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: '请求体无效' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { data: body, error: parseError } = await parseJsonBody(request);
-  if (parseError) return parseError;
+    if (!body?.id) {
+      return new Response(JSON.stringify({ ok: false, error: 'Rule id is required', code: 'VALIDATION_ERROR' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const rule = await autoReplyService.createRule((body ?? {}) as unknown as CreateAutoReplyRuleInput);
-  return apiSuccess({ rule });
-});
+    const rule = await autoReplyService.updateRule(body.id as string, {
+      keyword: body.keyword as string | undefined,
+      match_mode: body.match_mode as 'exact' | 'fuzzy' | undefined,
+      reply_content: body.reply_content as string | undefined,
+      is_enabled: body.is_enabled as boolean | undefined,
+      priority: body.priority as number | undefined,
+    });
+    return new Response(JSON.stringify({ ok: true, rule }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);
 
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'auto_reply', 'write');
-  if (denied) return denied;
+export const PATCH = withApi(
+  { auth: 'required', perm: { resource: 'auto_reply', action: 'write' } },
+  async ({ request }) => {
+    let body: Record<string, unknown> = {};
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: '请求体无效' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { data: body, error: parseError } = await parseJsonBody<{
-    id?: string;
-    keyword?: string;
-    match_mode?: 'exact' | 'fuzzy';
-    reply_content?: string;
-    is_enabled?: boolean;
-    priority?: number;
-  }>(request);
-  if (parseError) return parseError;
+    if (!body?.id) {
+      return new Response(JSON.stringify({ ok: false, error: 'Rule id is required', code: 'VALIDATION_ERROR' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (!body?.id) {
-    return apiError('Rule id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
-
-  const rule = await autoReplyService.updateRule(body.id, {
-    keyword: body.keyword,
-    match_mode: body.match_mode,
-    reply_content: body.reply_content,
-    is_enabled: body.is_enabled,
-    priority: body.priority,
-  });
-  return apiSuccess({ rule });
-});
-
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'auto_reply', 'write');
-  if (denied) return denied;
-
-  const { data: body, error: parseError } = await parseJsonBody<{
-    id?: string;
-    is_enabled?: boolean;
-    priority?: number;
-    keyword?: string;
-    match_mode?: 'exact' | 'fuzzy';
-    reply_content?: string;
-  }>(request);
-  if (parseError) return parseError;
-
-  if (!body?.id) {
-    return apiError('Rule id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
-
-  const rule = await autoReplyService.updateRulePartial(body.id, {
-    is_enabled: body.is_enabled,
-    priority: body.priority,
-    keyword: body.keyword,
-    match_mode: body.match_mode,
-    reply_content: body.reply_content,
-  });
-  return apiSuccess({ rule });
-});
+    const rule = await autoReplyService.updateRulePartial(body.id as string, {
+      is_enabled: body.is_enabled as boolean | undefined,
+      priority: body.priority as number | undefined,
+      keyword: body.keyword as string | undefined,
+      match_mode: body.match_mode as 'exact' | 'fuzzy' | undefined,
+      reply_content: body.reply_content as string | undefined,
+    });
+    return new Response(JSON.stringify({ ok: true, rule }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

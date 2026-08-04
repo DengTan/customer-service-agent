@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Upload, X, Loader2, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ImageUploadInputProps {
   /** Current image URL value (controlled) */
@@ -65,7 +66,7 @@ export function ImageUploadInput({
       formData.append('file', file);
       formData.append('purpose', purpose);
 
-      const res = await fetch('/api/upload', {
+      const res = await apiFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });

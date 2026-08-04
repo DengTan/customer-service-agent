@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, CheckCircle, AlertCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ChunkPreview {
   index: number;
@@ -48,7 +49,7 @@ export function ImportProgress({ jobId, onComplete, onClose }: ImportProgressPro
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/knowledge/import-jobs/${jobId}`);
+      const res = await apiFetch(`/api/knowledge/import-jobs/${jobId}`);
       const data = await res.json();
 
       // 支持 apiSuccess 格式: { success: true, ...jobData }

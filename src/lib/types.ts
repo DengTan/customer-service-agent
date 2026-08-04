@@ -489,6 +489,7 @@ export interface BotConfig {
   knowledge_ids: string[];
   skill_group_id: string | null;
   is_default: boolean;
+  platform_connection_id: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -619,10 +620,11 @@ export interface Ticket {
   status: TicketStatus;
   assignee_id: string | null;
   creator_id: string | null;
-  created_at: string;
-  updated_at: string | null;
+  custom_fields?: Record<string, unknown>;
   resolved_at: string | null;
   closed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
   // joined
   assignee_name?: string | null;
   creator_name?: string | null;
@@ -726,6 +728,25 @@ export interface ChunkDiffEntry {
 }
 
 // ===== Simulation Testing =====
+
+/**
+ * DB row type for simulation_conversations.
+ * Schema defines id as varchar(50) to accommodate sim-{timestamp}-{random} format.
+ * TypeScript uses string — maxLength is enforced by the DB constraint, not TS.
+ */
+export interface SimulationConversationRow {
+  id: string; // maxLength: 50, format: sim-{timestamp}-{random}
+  title: string;
+  scenario_id?: string | null;
+  scenario_name: string;
+  bot_id?: string | null;
+  bot_name?: string | null;
+  status: string;
+  message_count: number;
+  created_by?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+}
 
 export interface SimulationConversation {
   id: string;

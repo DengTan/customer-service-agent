@@ -16,6 +16,10 @@ import { AUTH } from '@/lib/constants';
 
 const securityLogger = loggerCollection.security;
 
+// Rate limiting bypass: disable login security via env var
+// Set LOGIN_SECURITY_ENABLED=false to completely disable rate limiting
+const isLoginSecurityEnabled = process.env.LOGIN_SECURITY_ENABLED !== 'false';
+
 // ─── Helpers ────────────────────────────────────────────────
 
 /**
@@ -75,6 +79,11 @@ export class LoginSecurityService {
    * Check if an email is currently locked out due to too many failed attempts
    */
   static isLockedOut(email: string): { locked: boolean; remainingSeconds: number; attemptsLeft: number } {
+    // Bypass lockout checks when login security is disabled
+    if (!isLoginSecurityEnabled) {
+      return { locked: false, remainingSeconds: 0, attemptsLeft: AUTH.LOGIN_MAX_ATTEMPTS };
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
     const attempt = loginAttempts.get(normalizedEmail);
 
@@ -131,6 +140,11 @@ export class LoginSecurityService {
    * Returns true if the user should be locked out after this attempt
    */
   static recordFailure(email: string, reason: string, request: Request): void {
+    // Skip recording when login security is disabled
+    if (!isLoginSecurityEnabled) {
+      return;
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
 
     // Enforce size limit to prevent memory exhaustion

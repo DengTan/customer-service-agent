@@ -1,69 +1,81 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandler, requireRole } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { KnowledgeGapService } from '@/server/services/knowledge-gap-service';
 
-const ADMIN_ONLY = ['admin'];
 const gapService = new KnowledgeGapService();
 
 interface PromoteBody {
   category?: string;
 }
 
-/**
- * Convert a knowledge gap into a candidate in knowledge_learning_queue.
- * The admin/agent can then review it like any other learning candidate.
- */
-export const POST = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+export const POST = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+  },
+  async ({ request, params }) => {
+    const { id } = params as { id: string };
+    if (!id) {
+      return new Response(JSON.stringify({ ok: false, error: 'id is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { id } = await params;
-  if (!id) return apiSuccess({ success: false, error: 'id is required' });
+    const body = await request.json().catch(() => ({})) as PromoteBody;
+    const gap = await gapService.getGap(id);
+    if (!gap) {
+      return new Response(JSON.stringify({ ok: false, error: 'gap not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { data: body } = await parseJsonBody<PromoteBody>(request);
-  const gap = await gapService.getGap(id);
-  if (!gap) {
-    return apiSuccess({ success: false, error: 'gap not found' });
-  }
+    if (gap.status === 'in_progress') {
+      return new Response(JSON.stringify({ ok: false, error: '缺口已在处理中' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (gap.status === 'resolved') {
+      return new Response(JSON.stringify({ ok: false, error: '缺口已解决，不能转入学习队列' }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // Prevent duplicate promote for already in_progress or resolved gaps
-  if (gap.status === 'in_progress') {
-    return apiSuccess({ success: false, error: '缺口已在处理中' });
-  }
-  if (gap.status === 'resolved') {
-    return apiSuccess({ success: false, error: '缺口已解决，不能转入学习队列' });
-  }
+    const { getSupabaseClient } = await import('@/storage/database/supabase-client');
+    const client = getSupabaseClient();
 
-  const { getSupabaseClient } = await import('@/storage/database/supabase-client');
-  const client = getSupabaseClient();
+    const { data, error } = await client
+      .from('knowledge_learning_queue')
+      .insert({
+        question: gap.sample_question,
+        answer: '',
+        confidence: gap.last_top_score ?? 0,
+        conversation_id: gap.source_conversation_ids?.[0] ?? null,
+        conversation_title: '来自知识缺口',
+        source_context: {
+          from_gap_id: gap.id,
+          from_gap_hash: gap.question_hash,
+          from_gap_frequency: gap.frequency,
+        },
+        category: body?.category ?? gap.question_category ?? '待定',
+        status: 'pending',
+      })
+      .select('id')
+      .single();
+    if (error) {
+      return new Response(JSON.stringify({ ok: false, error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { data, error } = await client
-    .from('knowledge_learning_queue')
-    .insert({
-      question: gap.sample_question,
-      answer: '', // empty — agent must fill in
-      confidence: gap.last_top_score ?? 0,
-      conversation_id: gap.source_conversation_ids?.[0] ?? null,
-      conversation_title: '来自知识缺口',
-      source_context: {
-        from_gap_id: gap.id,
-        from_gap_hash: gap.question_hash,
-        from_gap_frequency: gap.frequency,
-      },
-      category: body?.category ?? gap.question_category ?? '待定',
-      status: 'pending',
-    })
-    .select('id')
-    .single();
-  if (error) {
-    return apiSuccess({ success: false, error: error.message });
-  }
-
-  // Mark the gap as in_progress and link to the new candidate
-  const updatedGap = await gapService.startProgress(gap.id);
-
-  return apiSuccess({ success: true, candidate_id: (data as { id: string })?.id, gap: updatedGap });
-});
+    const updatedGap = await gapService.startProgress(gap.id);
+    return new Response(JSON.stringify({ ok: true, candidate_id: (data as { id: string })?.id, gap: updatedGap }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

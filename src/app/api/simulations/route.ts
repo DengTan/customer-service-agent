@@ -1,44 +1,42 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, getAuthenticatedUserId, apiError, extractUserRole } from '@/lib/api-utils';
+import { apiSuccess, apiError, parseJsonBody, HttpStatus } from '@/lib/api-utils';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
 import { SettingsService } from '@/server/services/settings-service';
 import { logger } from '@/lib/logger';
+import { GET, POST } from '@/lib/api/with-api';
 
-// UUID format validation regex - accept any valid UUID format (8-4-4-4-12 hex)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isValidUUID(id: string): boolean {
   return UUID_REGEX.test(id);
 }
 
-// GET /api/simulations - List simulation conversations for current user
-// Admin can see all, others see only their own
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const userId = getAuthenticatedUserId(request);
-  const role = extractUserRole(request);
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1', 10);
   const limit = parseInt(searchParams.get('limit') || '10', 10);
   const offset = (page - 1) * limit;
 
-  // Admin sees all conversations, others see only their own
-  // Unauthenticated users see nothing
-  const filterUserId = role === 'admin' ? undefined : (userId ?? undefined);
-
   const [conversations, total] = await Promise.all([
-    simulationRepository.list(filterUserId, limit, offset),
-    simulationRepository.count(filterUserId),
+    simulationRepository.list(undefined, limit, offset),
+    simulationRepository.count(undefined),
   ]);
   return apiSuccess({ conversations, total, page, limit });
-});
+}, );
 
-// POST /api/simulations - Create a new simulation conversation
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const userId = getAuthenticatedUserId(request);
-  if (!userId) {
-    return apiError('未登录', { status: HttpStatus.UNAUTHORIZED });
-  }
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request, user }) => {
   const { data: body, error: parseError } = await parseJsonBody<{
     scenario_id?: string;
     scenario_name?: string;
@@ -48,10 +46,15 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   }>(request);
   if (parseError) return parseError;
 
+  // user.sub is the JWT 'sub' claim (user ID)
+  const userId = user?.sub;
+  if (!userId) {
+    return apiError('未登录', { status: HttpStatus.UNAUTHORIZED });
+  }
+
   const scenarioId = body?.scenario_id || 'order_inquiry';
   const scenarioName = body?.scenario_name || '订单查询';
 
-  // P3: Validate bot_id format if provided
   let botId = body?.bot_id || null;
   let botName = body?.bot_name || null;
   if (botId && !isValidUUID(botId)) {
@@ -72,7 +75,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     created_by: userId,
   });
 
-  // Insert welcome message if configured
   const settingsService = new SettingsService();
   const settings = await settingsService.getSettingsMap();
   const welcomeMessage = settings.welcome_message;
@@ -87,4 +89,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   return apiSuccess({ conversation: simulation }, HttpStatus.CREATED);
-});
+}, );
+
+export { POSTHandler as POST };

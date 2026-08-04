@@ -1,22 +1,12 @@
 import { NextRequest } from 'next/server';
 import { PushService } from '@/server/services/push-service';
-import { parseJsonBody, apiSuccess, withErrorHandlerSimple, requireRole } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess } from '@/lib/api-utils';
+import { GET, PATCH } from '@/lib/api/with-api';
 import { getSupabaseClient, isDemoMode } from '@/storage/database/supabase-client';
 import { logger } from '@/lib/logger';
 
 const pushService = new PushService();
 
-const ADMIN_ONLY = ['admin'];
-
-/**
- * Returns whether a webhook-secret preview can be shown to a caller.
- * The secret is NEVER returned in plaintext via this endpoint. To support
- * admins who legitimately need to copy/paste the secret into an external
- * system, we return only metadata:
- *   - configured:    whether a secret is stored
- *   - last4:         last 4 characters of the secret (safe to display)
- *   - updated_at:    timestamp of the last rotation
- */
 async function getWebhookSecretPreview(): Promise<{
   configured: boolean;
   last4: string | null;
@@ -52,10 +42,12 @@ async function getWebhookSecretPreview(): Promise<{
   }
 }
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'push', action: 'read' },
+  },
+  async () => {
   const [result, webhookSecretPreview] = await Promise.all([
     pushService.getEventLog(),
     getWebhookSecretPreview(),
@@ -65,15 +57,21 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     events: result.events,
     webhook_secret_preview: webhookSecretPreview,
   });
-});
+}, );
 
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+export { GETHandler as GET };
 
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'push', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody<{ id: string; status: string }>(request);
   if (parseError) return parseError;
 
   const result = await pushService.updateEventStatus(body!);
   return apiSuccess({ event: result.event });
-});
+}, );
+
+export { PATCHHandler as PATCH };

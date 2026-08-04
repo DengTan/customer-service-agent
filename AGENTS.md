@@ -1008,8 +1008,7 @@ POST /api/knowledge/import-jobs
 
 - **TS 预存错误**: 仓库层（conversation-repository, auto-reply-repository, quality-repository, analytics-repository）存在已知类型不匹配，属于 Demo 数据与正式类型定义的差异，不影响运行时
 - ✅ **2026-08-03 阶段 A 已修复**：生产文件 `pnpm ts-check` 0 错误。`auto-reply-repository` 重复 `update` 方法 + `KnowledgeService.deleteCategory` 孤儿方法均已处理。剩余 31 个测试失败为 mock drift / RPC 缺失 / spec drift（非 TS 错误），归阶段 B backlog。
-- **requireRole 当前基于 header**: 生产环境需替换为 JWT/Session 解析，当前 `x-user-role` 仅用于开发阶段
-- ✅ **2026-08-03 阶段 A 已修复**：`requireRole` 与 `withApi` 统一从 JWT Cookie 解析；`src/proxy.ts` 不再注入 `x-user-role`；`src/lib/api-utils.ts` 在生产路径拒绝伪造 `x-user-role` header（dev-mode 仍允许本地测试）。详见 `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.0。
+- ✅ **2026-08-03 阶段 A 已修复**（RC-1, updated 2026-08-04 v2.5）：`requireRole` 与 `withApi` 统一从 JWT Cookie 解析；`src/proxy.ts` 不再注入 `x-user-role`；`src/lib/api-utils.ts` 在生产路径拒绝伪造 `x-user-role` header（dev-mode 仍允许本地测试）。**171/171 routes** 现在使用 `src/lib/api/with-api.ts`（auth + perm + rate limit + audit + RFC 7807），`requireRole` 保留作为底层 API。详见 `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5 §RC-1 / §Phase A。
 
 ### 已修复问题（2026-06-19）
 

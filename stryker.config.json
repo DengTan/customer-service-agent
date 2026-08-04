@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/api/schema/stryker-config-schema.json",
+  "testRunner": "vitest",
+  "vitest": {
+    "configFile": "vitest.config.ts"
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "mutate": [
+    "src/server/services/**/*.ts",
+    "!src/server/services/**/*.test.ts",
+    "!src/server/services/**/*.spec.ts"
+  ],
+  "mutator": {
+    "excludedMutations": [
+      "arrow"
+    ]
+  },
+  "thresholds": {
+    "break": 40,
+    "high": 60,
+    "low": 50
+  },
+  "reporters": [
+    "progress",
+    "clear-text",
+    "html"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/index.html"
+  },
+  "ignoreStatic": false,
+  "ignorePatterns": [
+    ".cozeproj",
+    ".next",
+    "reports",
+    ".stryker-tmp"
+  ],
+  "tempDirName": ".stryker-tmp",
+  "timeoutMS": 5000,
+  "timeoutFactor": 1.5
+}

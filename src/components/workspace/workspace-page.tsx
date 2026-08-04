@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 import { useAuth } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
@@ -75,9 +76,9 @@ export function WorkspacePage() {
         const queuedLimit = Math.max(queuedItemsLengthRef.current, 10);
         const assignedLimit = Math.max(assignedItemsLengthRef.current, 10);
         const [queueRes, assignedRes, perfRes] = await Promise.all([
-          fetch(`/api/agent/queue?status=queued&limit=${queuedLimit}`),
-          fetch(`/api/agent/queue?status=assigned&agent_id=${user?.id || ''}&limit=${assignedLimit}`),
-          fetch('/api/agent/performance'),
+          apiFetch(`/api/agent/queue?status=queued&limit=${queuedLimit}`),
+          apiFetch(`/api/agent/queue?status=assigned&agent_id=${user?.id || ''}&limit=${assignedLimit}`),
+          apiFetch('/api/agent/performance'),
         ]);
 
         if (queueRes.ok) {
@@ -101,7 +102,7 @@ export function WorkspacePage() {
       } else if (mode === 'load-queued') {
         setIsLoadingMoreQueued(true);
         const offset = queuedItemsLengthRef.current;
-        const res = await fetch(`/api/agent/queue?status=queued&limit=10&offset=${offset}`);
+        const res = await apiFetch(`/api/agent/queue?status=queued&limit=10&offset=${offset}`);
         if (res.ok) {
           const data = await res.json();
           const newItems = data.items || [];
@@ -113,7 +114,7 @@ export function WorkspacePage() {
       } else if (mode === 'load-assigned') {
         setIsLoadingMoreAssigned(true);
         const offset = assignedItemsLengthRef.current;
-        const res = await fetch(`/api/agent/queue?status=assigned&agent_id=${user?.id || ''}&limit=10&offset=${offset}`);
+        const res = await apiFetch(`/api/agent/queue?status=assigned&agent_id=${user?.id || ''}&limit=10&offset=${offset}`);
         if (res.ok) {
           const data = await res.json();
           const newItems = data.items || [];
@@ -132,7 +133,7 @@ export function WorkspacePage() {
 
   const fetchAgents = useCallback(async () => {
     try {
-      const res = await fetch('/api/users?role=agent&status=active');
+      const res = await apiFetch('/api/users?role=agent&status=active');
       if (res.ok) {
         const data = await res.json();
         setAgents(
@@ -152,7 +153,7 @@ export function WorkspacePage() {
       // Small delay to allow skeleton to show
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      const res = await fetch(`/api/conversations/${conversationId}`);
+      const res = await apiFetch(`/api/conversations/${conversationId}`);
       if (res.ok) {
         const data = await res.json();
         const convMessages = (data.messages || []).map((m: { id: string; role: string; content: string; created_at: string; message_type?: string; author_name?: string; mentions?: string[] }) => ({
@@ -191,7 +192,7 @@ export function WorkspacePage() {
     if (!user?.id) return;
     const fetchStatus = async () => {
       try {
-        const res = await fetch('/api/agent/status');
+        const res = await apiFetch('/api/agent/status');
         if (res.ok) {
           const data = await res.json();
           if (data.status) {
@@ -252,7 +253,7 @@ export function WorkspacePage() {
 
   const handleStatusChange = async (status: AgentStatus) => {
     try {
-      const res = await fetch('/api/agent/status', {
+      const res = await apiFetch('/api/agent/status', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user?.id, status }),
@@ -270,7 +271,7 @@ export function WorkspacePage() {
   const handleClaim = async (queueId: string) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/agent/queue', {
+      const res = await apiFetch('/api/agent/queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queue_id: queueId, agent_id: user?.id }),
@@ -294,7 +295,7 @@ export function WorkspacePage() {
 
   const handleResolve = async (queueId: string) => {
     try {
-      const res = await fetch('/api/agent/queue', {
+      const res = await apiFetch('/api/agent/queue', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ queue_id: queueId, action: 'resolve' }),

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ChatTabBar, type OpenTab } from './chat-tab-bar';
@@ -60,7 +61,7 @@ function ChatPageInner() {
     const controller = new AbortController();
     listAbortRef.current = controller;
     try {
-      const res = await fetch('/api/conversations', { signal: controller.signal });
+      const res = await apiFetch('/api/conversations', { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.conversations) {
@@ -127,7 +128,7 @@ function ChatPageInner() {
   const loadMessages = useCallback(async (convId: string) => {
     updateTabState(convId, { isLoading: true });
     try {
-      const res = await fetch(`/api/conversations/${convId}`);
+      const res = await apiFetch(`/api/conversations/${convId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.messages) {
@@ -238,7 +239,7 @@ function ChatPageInner() {
         visitorId = `vs${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       }
 
-      const res = await fetch('/api/conversations', {
+      const res = await apiFetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: '新对话', source: 'web', visitor_id: visitorId }),
@@ -290,7 +291,7 @@ function ChatPageInner() {
           const blob = await blobResp.blob();
           const formData = new FormData();
           formData.append('file', blob, 'image.jpg');
-          const uploadResp = await fetch('/api/upload', {
+          const uploadResp = await apiFetch('/api/upload', {
             method: 'POST',
             body: formData,
           });
@@ -335,7 +336,7 @@ function ChatPageInner() {
       abortRefs.current[convId] = controller;
 
       try {
-        const res = await fetch(`/api/conversations/${convId}/messages`, {
+        const res = await apiFetch(`/api/conversations/${convId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, image_url: finalImageUrl || undefined }),
@@ -439,7 +440,7 @@ function ChatPageInner() {
                   // Auto-trigger handoff after stream ends
                   setTimeout(async () => {
                     try {
-                      const handoffRes = await fetch(`/api/conversations/${convId}/handoff`, {
+                      const handoffRes = await apiFetch(`/api/conversations/${convId}/handoff`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ reason: '多模态识别未开启，图片需人工处理' }),
@@ -590,7 +591,7 @@ function ChatPageInner() {
   const handleEndConversation = useCallback(
     async (convId: string) => {
       try {
-        await fetch(`/api/conversations/${convId}`, {
+        await apiFetch(`/api/conversations/${convId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'ended' }),
@@ -612,7 +613,7 @@ function ChatPageInner() {
   const handleHandoff = useCallback(
     async (convId: string, reason?: string) => {
       try {
-        const res = await fetch(`/api/conversations/${convId}/handoff`, {
+        const res = await apiFetch(`/api/conversations/${convId}/handoff`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason: reason || '用户请求转人工' }),

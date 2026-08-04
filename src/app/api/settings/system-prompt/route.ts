@@ -21,7 +21,8 @@
  * receives the same Next.js route-group treatment as /api/settings/reset.
  */
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandlerSimple, requireRole } from '@/lib/api-utils';
+import { apiSuccess, parseJsonBody, requireRole } from '@/lib/api-utils';
+import { PUT } from '@/lib/api/with-api';
 import { SettingsRepository } from '@/server/repositories/settings-repository';
 import { invalidateKnowledgeSearchSettingsCache } from '@/server/services/knowledge-search-service';
 import { ContentFilterService } from '@/server/services/content-filter-service';
@@ -29,23 +30,20 @@ import { FeatureFlagService } from '@/server/services/feature-flag-service';
 import { logger } from '@/lib/logger';
 import { getServiceClient } from '@/storage/database/supabase-client';
 
-const ADMIN_ONLY = ['admin'];
-
-// Maximum allowed length for system_prompt (4 000 chars — mirrors FREE_TEXT_KEYS cap in settings-service.ts)
+// Maximum allowed length for system_prompt (4 000 chars)
 const MAX_SYSTEM_PROMPT_LENGTH = 4_000;
 
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  // ── Auth gate ──────────────────────────────────────────────────────────────
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
-  // ── Parse body ────────────────────────────────────────────────────────────
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
   const rawPrompt = body?.system_prompt;
 
-  // ── Validation ─────────────────────────────────────────────────────────────
   if (rawPrompt === undefined) {
     return apiSuccess({
       success: false,
@@ -71,7 +69,6 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     }, 400);
   }
 
-  // ── Persist ────────────────────────────────────────────────────────────────
   const client = getServiceClient();
   const repo = new SettingsRepository(client);
 
@@ -90,7 +87,6 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     }, 500);
   }
 
-  // ── Invalidate downstream caches ────────────────────────────────────────────
   try {
     invalidateKnowledgeSearchSettingsCache();
   } catch { /* non-fatal */ }
@@ -104,4 +100,7 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   } catch { /* non-fatal */ }
 
   return apiSuccess({});
-});
+},
+);
+
+export { PUTHandler as PUT };

@@ -1,5 +1,17 @@
 # SmartAssist 问题修复计划
 
+> **Updated 2026-08-04 (v2.5)** — This plan documents 5 legacy issues (Phase 1–5 below) that were already completed on **2026-06-19**. The current state of the project is tracked by `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` (v2.5), which now covers the **7 root-cause (RC) issues** identified during the 2026-08 security/perf review. Cross-references:
+>
+> - **RC-1 (auth/JWT)** — *closed (2026-08-03, Phase A)*. `requireRole` now reads from JWT Cookie; `x-user-role` header injection removed from `src/proxy.ts`; new `src/lib/api/with-api.ts` API Gateway covers **171/171 routes**.
+> - **RC-2 (RLS)** — *closed (2026-08-03, Phase B1)*. 62 per-table policy files in `supabase/policies/`; CI `pg_policies` snapshot gate in place.
+> - **RC-3 (Schema/Migration drift)** — *in flight (Phase C1)*. `scripts/schema-drift-check.ts` baseline established.
+> - **RC-4 (input validation / secret handling)** — *in flight (Phase B3)*. `src/lib/api/parse.ts` unified Zod entry shipped; full Zod coverage 100% goal.
+> - **RC-5 (post-stream side effects / abort)** — *closed (2026-08-03, Phase B4a)*. `EffectBus` + `AbortController` propagation + `effect_outbox` table + `OutboxReplayWorker`.
+> - **RC-6 (deprecated API / Sprint backlog)** — *closed for 12 deprecated APIs (2026-08-03, Phase A Q7)*. 17 contract tests in place. Remaining 31 test failures (mock drift / spec drift) tracked in Phase B backlog.
+> - **RC-7 (deps / `getServiceRoleClient`)** — *closed (2026-08-03, Phase A3)*. Renamed to `getServiceClient`; `renovate.json` added.
+>
+> See `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` for the source of truth.
+
 ## 执行摘要
 
 本计划针对 SmartAssist 智能客服系统的 5 类问题制定详细的修复方案，按优先级排序。

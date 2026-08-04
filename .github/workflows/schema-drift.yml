@@ -1,0 +1,59 @@
+name: Schema Drift Check
+
+# Run on schedule and on-demand
+on:
+  schedule:
+    # Every 1st and 15th of the month at 00:00 UTC
+    - cron: '0 0 1,15 * *'
+  workflow_dispatch:
+    inputs:
+      report_only:
+        description: 'Exit 0 even if drift is found (report-only mode)'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Workflow owners: GitHub @maintainers group
+# Update with `CODEOWNERS` or via Settings → Code security → Code owners.
+
+concurrency:
+  group: schema-drift-${{ github.ref }}
+  cancel-in-progress: false  # Let drift checks complete even if cancelled elsewhere
+
+jobs:
+  drift-check:
+    name: Schema Drift Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Schema Drift Check
+        if: github.event.inputs.report_only != 'true'
+        run: pnpm schema:drift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run Schema Drift Check (report-only)
+        if: github.event.inputs.report_only == 'true'
+        run: pnpm schema:drift:report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

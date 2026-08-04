@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/command';
 import type { Customer, CustomerTag, CustomerSource } from '@/lib/types';
 import { MarkdownRenderer } from '@/components/chat/markdown-renderer';
+import { apiFetch } from '@/lib/api-fetch';
 import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { useDebounce } from '@/hooks/use-debounce';
@@ -150,7 +151,7 @@ export default function CustomersPage() {
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
 
-      const res = await fetch(`/api/customers?${params.toString()}`);
+      const res = await apiFetch(`/api/customers?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -167,7 +168,7 @@ export default function CustomersPage() {
   // Fetch tags
   const fetchTags = useCallback(async () => {
     try {
-      const res = await fetch('/api/customer-tags');
+      const res = await apiFetch('/api/customer-tags');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.tags) setTags(data.tags);
@@ -199,7 +200,7 @@ export default function CustomersPage() {
     setDrawerOpen(true);
     // Fetch customer detail with conversations
     try {
-      const res = await fetch(`/api/customers/${customer.id}`);
+      const res = await apiFetch(`/api/customers/${customer.id}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.conversations) {
@@ -218,7 +219,7 @@ export default function CustomersPage() {
   const saveCustomerNotes = async () => {
     if (!selectedCustomer) return;
     try {
-      const res = await fetch(`/api/customers/${selectedCustomer.id}`, {
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: customerNotes }),
@@ -242,7 +243,7 @@ export default function CustomersPage() {
       return;
     }
     try {
-      const res = await fetch(`/api/customers/${selectedCustomer.id}`, {
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -279,7 +280,7 @@ export default function CustomersPage() {
     if (!selectedCustomer) return;
     const newTags = [...new Set([...selectedCustomer.tags, tagName])];
     try {
-      const res = await fetch(`/api/customers/${selectedCustomer.id}`, {
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags: newTags }),
@@ -301,7 +302,7 @@ export default function CustomersPage() {
     if (!selectedCustomer) return;
     const newTags = selectedCustomer.tags.filter(t => t !== tagName);
     try {
-      const res = await fetch(`/api/customers/${selectedCustomer.id}`, {
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags: newTags }),
@@ -323,7 +324,7 @@ export default function CustomersPage() {
     if (!selectedCustomer) return;
     setConversationsLoading(true);
     try {
-      const res = await fetch(`/api/customers/${selectedCustomer.id}?offset=${conversationOffset}`);
+      const res = await apiFetch(`/api/customers/${selectedCustomer.id}?offset=${conversationOffset}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.conversations) {
@@ -358,7 +359,7 @@ export default function CustomersPage() {
     }
 
     try {
-      const res = await fetch('/api/customer-tags', {
+      const res = await apiFetch('/api/customer-tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTag),
@@ -399,7 +400,7 @@ export default function CustomersPage() {
     }
 
     try {
-      const res = await fetch('/api/customer-tags', {
+      const res = await apiFetch('/api/customer-tags', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -436,7 +437,7 @@ export default function CustomersPage() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/customer-tags?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/customer-tags?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) {
@@ -461,7 +462,7 @@ export default function CustomersPage() {
   const fetchTagCustomers = async (tagName: string) => {
     setTagCustomerLoading(true);
     try {
-      const res = await fetch(`/api/customers?tag=${encodeURIComponent(tagName)}`);
+      const res = await apiFetch(`/api/customers?tag=${encodeURIComponent(tagName)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setTagCustomers(data.customers || []);
@@ -517,7 +518,7 @@ export default function CustomersPage() {
     setDetailLoading(true);
 
     try {
-      const res = await fetch(`/api/conversations/${conv.id}?limit=50`);
+      const res = await apiFetch(`/api/conversations/${conv.id}?limit=50`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) {
@@ -536,7 +537,7 @@ export default function CustomersPage() {
     if (!detailConv || detailLoading) return;
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/conversations/${detailConv.id}/messages?limit=50&offset=${detailMessages.length}`);
+      const res = await apiFetch(`/api/conversations/${detailConv.id}/messages?limit=50&offset=${detailMessages.length}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) {
@@ -575,7 +576,7 @@ export default function CustomersPage() {
     
     setCreateCustomerLoading(true);
     try {
-      const res = await fetch('/api/customers', {
+      const res = await apiFetch('/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -615,7 +616,7 @@ export default function CustomersPage() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/customers?id=${selectedCustomer.id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/customers?id=${selectedCustomer.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
         // 有进行中对话时，提示用户先结束对话

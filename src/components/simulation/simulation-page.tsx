@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Play,
   Plus,
@@ -146,7 +147,7 @@ export function SimulationPage() {
   const reloadBots = useCallback(async () => {
     setBotsLoading(true);
     try {
-      const res = await fetch('/api/bot-configs?include_sub_agents=false');
+      const res = await apiFetch('/api/bot-configs?include_sub_agents=false');
       if (res.ok) {
         const data = await res.json();
         const botList = Array.isArray(data.bots) ? data.bots : [];
@@ -175,7 +176,7 @@ export function SimulationPage() {
 
   // Lazy-loaded conversation list
   const fetchFn = useCallback(async (page: number, pageSize: number) => {
-    const res = await fetch(`/api/simulations?page=${page}&limit=${pageSize}`);
+    const res = await apiFetch(`/api/simulations?page=${page}&limit=${pageSize}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return {
@@ -209,7 +210,7 @@ export function SimulationPage() {
     const loadBots = async () => {
       setBotsLoading(true);
       try {
-        const res = await fetch('/api/bot-configs?include_sub_agents=false');
+        const res = await apiFetch('/api/bot-configs?include_sub_agents=false');
         if (res.ok) {
           const data = await res.json();
           const botList = Array.isArray(data.bots) ? data.bots : [];
@@ -273,7 +274,7 @@ export function SimulationPage() {
   // after a timed-out stream where the user is still seeing the assistant bubble).
   const refreshConversationState = useCallback(async (convId: string, onlyCount = false) => {
     try {
-      const res = await fetch(`/api/simulations/${convId}`);
+      const res = await apiFetch(`/api/simulations/${convId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const messages = Array.isArray(data.messages) ? (data.messages as SimulationMessage[]) : [];
@@ -296,7 +297,7 @@ export function SimulationPage() {
   // and the inline new-conversation onClick).
   const fetchAndSeedMessages = useCallback(async (convId: string) => {
     try {
-      const msgRes = await fetch(`/api/simulations/${convId}`);
+      const msgRes = await apiFetch(`/api/simulations/${convId}`);
       if (msgRes.ok) {
         const msgData = await msgRes.json();
         if (Array.isArray(msgData.messages)) {
@@ -330,7 +331,7 @@ export function SimulationPage() {
     }
 
     try {
-      const res = await fetch(`/api/simulations/${convId}`);
+      const res = await apiFetch(`/api/simulations/${convId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (Array.isArray(data.messages)) {
@@ -348,7 +349,7 @@ export function SimulationPage() {
             // Check the ref to see if polling should stop (stale closure safety).
             if (!pollIntervalRef.current[convId]) return;
 
-            fetch(`/api/simulations/${convId}`)
+            apiFetch(`/api/simulations/${convId}`)
               .then(res => res.json())
               .then(data => {
                 // Guard: stop if polling was cancelled while this promise was in flight.
@@ -394,7 +395,7 @@ export function SimulationPage() {
         return;
       }
       try {
-        const res = await fetch('/api/simulations', {
+        const res = await apiFetch('/api/simulations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -470,7 +471,7 @@ export function SimulationPage() {
     let streamErrorMessage: string | null = null;
 
     try {
-      const res = await fetch(`/api/simulations/${actualConvId}/messages`, {
+      const res = await apiFetch(`/api/simulations/${actualConvId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -764,7 +765,7 @@ export function SimulationPage() {
   // Clear conversation
   const handleClearConversation = useCallback(async (convId: string) => {
     try {
-      const res = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/simulations/${convId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('清除失败');
       updateItems(prev => prev.filter(c => c.id !== convId));
       setTotal(n => Math.max(0, n - 1));
@@ -814,7 +815,7 @@ export function SimulationPage() {
 
     try {
       const deletePromises = Array.from(selectedConvIds).map(async (convId) => {
-        const res = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/simulations/${convId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error(`删除失败`);
         return convId;
       });
@@ -888,7 +889,7 @@ export function SimulationPage() {
   // Duplicate conversation
   const handleDuplicateConversation = useCallback(async (convId: string) => {
     try {
-      const res = await fetch(`/api/simulations/${convId}/duplicate`, { method: 'POST' });
+      const res = await apiFetch(`/api/simulations/${convId}/duplicate`, { method: 'POST' });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || '复制失败');
@@ -1099,7 +1100,11 @@ export function SimulationPage() {
           <button
             onClick={async () => {
               try {
-                const res = await fetch('/api/simulations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 
+                const res = await apiFetch('/api/simulations', { 
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' }, 
+                  body: JSON.stringify({ 
                   title: `${getConversationTitle()} - ${new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`,
                   scenario_id: selectedScenario?.id || null,
                   scenario_name: selectedScenario?.name || null,
@@ -1696,7 +1701,7 @@ export function SimulationPage() {
                   <SimulationEvaluationPanel
                     simulationId={activeConvId!}
                     onSubmit={async (data) => {
-                      const res = await fetch(`/api/simulations/${activeConvId}/evaluation`, {
+                      const res = await apiFetch(`/api/simulations/${activeConvId}/evaluation`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data),

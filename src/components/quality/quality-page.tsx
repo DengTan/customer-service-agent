@@ -17,6 +17,7 @@ import { QUALITY_RULE_TYPE_LABELS } from '@/lib/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 // Quality stats interface
 interface QualityStats {
@@ -213,7 +214,7 @@ export function QualityPage() {
 
   const fetchTags = useCallback(async () => {
     try {
-      const res = await fetch('/api/conversation-tags');
+      const res = await apiFetch('/api/conversation-tags');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setTags(data.tags || []);
@@ -222,7 +223,7 @@ export function QualityPage() {
 
   const fetchRules = useCallback(async () => {
     try {
-      const res = await fetch('/api/quality-checks?list=rules');
+      const res = await apiFetch('/api/quality-checks?list=rules');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setRules(data.rules || []);
@@ -231,7 +232,7 @@ export function QualityPage() {
 
   const fetchChecks = useCallback(async () => {
     try {
-      const res = await fetch('/api/quality-checks?type=records');
+      const res = await apiFetch('/api/quality-checks?type=records');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setChecks(data.records || []);
@@ -243,7 +244,7 @@ export function QualityPage() {
     try {
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - parseInt(days) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const res = await fetch(`/api/quality-checks/stats?start_date=${startDate}&end_date=${endDate}`);
+      const res = await apiFetch(`/api/quality-checks/stats?start_date=${startDate}&end_date=${endDate}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setStats(data.data || null);
@@ -279,7 +280,7 @@ export function QualityPage() {
 
   const handleSaveTag = async () => {
     try {
-      const res = await fetch('/api/conversation-tags', {
+      const res = await apiFetch('/api/conversation-tags', {
         method: editingTag ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -311,7 +312,7 @@ export function QualityPage() {
     if (!confirmed) return;
     setDeletingTagId(id);
     try {
-      const res = await fetch(`/api/conversation-tags?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/conversation-tags?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
         toast.error('删除标签失败');
         return;
@@ -352,7 +353,7 @@ export function QualityPage() {
 
   const handleSaveRule = async () => {
     try {
-      const res = await fetch('/api/quality-checks', {
+      const res = await apiFetch('/api/quality-checks', {
         method: editingRule ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -403,7 +404,7 @@ export function QualityPage() {
 
   const handleToggleRule = async (id: string, enabled: boolean) => {
     try {
-      const res = await fetch('/api/quality-checks', {
+      const res = await apiFetch('/api/quality-checks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, is_enabled: !enabled }),
@@ -427,7 +428,7 @@ export function QualityPage() {
     if (!confirmed) return;
     setDeletingRuleId(id);
     try {
-      const res = await fetch(`/api/quality-checks?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/quality-checks?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
         toast.error('删除规则失败');
         return;

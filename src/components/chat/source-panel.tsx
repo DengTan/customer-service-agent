@@ -4,6 +4,7 @@ import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight,
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface SourceItem {
   type?: string; // optional for backward compatibility, defaults handled in processing
@@ -192,7 +193,7 @@ export function SourcePanel({
     }
     setFeedbackStates((prev) => ({ ...prev, [index]: 'submitting' }));
     try {
-      const res = await fetch('/api/knowledge/feedback', {
+      const res = await apiFetch('/api/knowledge/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

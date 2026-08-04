@@ -1,24 +1,37 @@
 import { NextRequest } from 'next/server';
 import { AgentService } from '@/server/services/agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, getAuthenticatedUserId } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
+import { GET, PATCH } from '@/lib/api/with-api';
 
 const service = new AgentService();
 
 // GET /api/agent/status - 获取当前坐席状态
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const currentUserId = getAuthenticatedUserId(request);
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ user }) => {
+  const currentUserId = user?.sub;
   if (!currentUserId) {
     return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
   }
 
   const result = await service.getStatus(currentUserId);
   return apiSuccess(result);
-});
+},
+);
+
+export { GETHandler as GET };
 
 // PATCH /api/agent/status - 更新坐席状态
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  // Verify authentication
-  const currentUserId = getAuthenticatedUserId(request);
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request, user }) => {
+  const currentUserId = user?.sub;
   if (!currentUserId) {
     return apiError('未登录或登录已过期', { status: HttpStatus.UNAUTHORIZED, code: 'UNAUTHORIZED' });
   }
@@ -40,4 +53,7 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.updateStatus(user_id, status);
   return apiSuccess(result);
-});
+},
+);
+
+export { PATCHHandler as PATCH };

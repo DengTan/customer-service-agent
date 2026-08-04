@@ -3,6 +3,13 @@
 > 基于 2026-07-27 双轴代码审查 + meta-review 二次审查后重排
 > 只保留经代码抽样验证的成立 finding，删除误报项，合并重复项
 
+> **Updated 2026-08-04 (v2.5)** — This is the **operational backlog** for the AI conversation module (last delta: 2026-07-27, when all 7 P0/P1 items were closed). The two RC items it touches are tracked in `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5:
+>
+> - **RC-5 (post-stream side effects / abort)** — **Closed (2026-08-03, Phase B4a + B4b)**. The P1-A finding below (SSE abort → `incrementMessageCount` / `qualityCheck` / `knowledgeGap` triggered) was the trigger for the architecture shift to `EffectBus` + `AbortController` + `effect_outbox` table + `OutboxReplayWorker`. Implementation note: `messages/route.ts` now creates an `AbortController`, the signal is passed to `createStream()` and the `Response` constructor; `handlePostStreamOperations` checks `abortSignal?.aborted` at entry and early-returns. All four DB side effects (insertMessage, incrementMessageCount, runQualityCheck, analyzeKnowledgeGap) are now skipped on client disconnect. Files: `src/lib/effects/bus.ts`, `src/lib/effects/outbox-replay.ts`, `scripts/replay-outbox.ts`, `supabase/policies/effect_outbox.sql`.
+> - **RC-6 (deprecated API / Sprint backlog)** — **Closed for 12 deprecated APIs (2026-08-03, Phase A Q7)**. The 12 routes the Q7 grep flagged (`invalidateConversationsListCache`, `invalidateCustomersListCache`, etc.) are no longer referenced. 17 contract tests in `tests/contracts/service-contracts.test.ts` enforce service contracts in CI. The remaining **31 test failures (820 passed, 0 failed pre-C, 31 failed post-C due to mock drift / spec drift / missing RPCs)** are tracked in the Phase B backlog per `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` §11. Stryker mutation testing (Phase C3) infrastructure is staged (`stryker.config.json`); 5 core services in scope, target mutation score ≥60%.
+>
+> All 7 P0/P1 items in the original 2026-07-27 backlog below (P0-A revoked, P0-B/C/D/E ✅ done, P1-A ✅ done, P1-B/P1-C ❌ not成立, P2-A ✅ done) remain closed. Source of truth: `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5 §RC-5 / §RC-6 / §B4 / §B5.
+
 ---
 
 ## 1. 总览

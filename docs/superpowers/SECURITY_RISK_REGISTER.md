@@ -5,6 +5,17 @@
 **Document Version:** 2026-07-14
 **Review Cadence:** Monthly or after any migration application
 
+> **Updated 2026-08-04 (v2.5)** — This risk register is the **legacy (Phase 7) baseline**. Since 2026-08-03 the project runs against `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5, which supersedes this document for the four RC items below. Status changes:
+>
+> - **RC-1 (auth / JWT / `x-user-role` header)** — **Closed (2026-08-03, Phase A)**. `requireRole` now reads from JWT Cookie; `x-user-role` header injection removed from `src/proxy.ts`; 171/171 routes use `withApi`. The `SR-003` `JWT_SECRET` fallback is the only residual item (still mitigated by length check + dev warning).
+> - **RC-2 (RLS coverage)** — **Closed (2026-08-03, Phase B1)**. 62 per-table policy files committed in `supabase/policies/`; CI `pg_policies` snapshot gate. Resolves the historic concerns in `SR-001/002/006/007` — they remain informational/monitoring only.
+> - **RC-5 (SSE / post-stream side effects)** — **Closed (2026-08-03, Phase B4a)**. `EffectBus` + `AbortController` propagation in `src/lib/effects/bus.ts`; `effect_outbox` table + `OutboxReplayWorker` in `src/lib/effects/outbox-replay.ts`.
+> - **RC-7 (deps / `getServiceRoleClient`)** — **Closed (2026-08-03, Phase A3 + C4)**. Renamed to `getServiceClient`; `renovate.json` added for dependency automation.
+>
+> RC-3 (schema/migration drift) and RC-4 (input validation / secret handling) are **in flight** (Phase B3 / C1) and tracked in the master plan. RC-6 (deprecated API) is **closed for 12 deprecated APIs (2026-08-03)**; the remaining 31 test failures (mock drift / spec drift) are tracked in the Phase B backlog.
+>
+> Source of truth: `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5.
+
 ---
 
 ## Purpose
@@ -185,3 +196,4 @@ This document tracks known security risks in the SmartAssist database configurat
 | Date | Reviewer | Changes |
 |------|---------|---------|
 | 2026-07-14 | Cursor AI | Initial risk register created as part of Phase 7 security work |
+| 2026-08-04 | Cursor AI | v2.5 cross-link header: RC-1/RC-2/RC-5/RC-7 closed (2026-08-03); RC-3/RC-4 in flight; source of truth = `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` |

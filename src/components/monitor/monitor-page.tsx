@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   RefreshCw,
   MessageSquare,
@@ -72,7 +73,7 @@ export function MonitorPage() {
       params.set('search', searchQueryRef.current);
     }
 
-    const res = await fetch(`/api/conversations?${params.toString()}`);
+    const res = await apiFetch(`/api/conversations?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
@@ -167,7 +168,7 @@ export function MonitorPage() {
   const loadMessages = useCallback(async (convId: string, silent = false) => {
     if (!silent) setIsLoadingMessages(true);
     try {
-      const res = await fetch(`/api/conversations/${convId}`);
+      const res = await apiFetch(`/api/conversations/${convId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.messages) {
@@ -205,7 +206,7 @@ export function MonitorPage() {
   // Takeover conversation
   const handleTakeover = useCallback(async (convId: string) => {
     try {
-      const res = await fetch(`/api/conversations/${convId}/handoff`, {
+      const res = await apiFetch(`/api/conversations/${convId}/handoff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: '坐席主动接管' }),
@@ -225,7 +226,7 @@ export function MonitorPage() {
   // End conversation
   const handleEnd = useCallback(async (convId: string) => {
     try {
-      await fetch(`/api/conversations/${convId}`, {
+      await apiFetch(`/api/conversations/${convId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'ended' }),
@@ -243,7 +244,7 @@ export function MonitorPage() {
   // Reopen conversation
   const handleReopen = useCallback(async (convId: string) => {
     try {
-      await fetch(`/api/conversations/${convId}`, {
+      await apiFetch(`/api/conversations/${convId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'active' }),
@@ -270,7 +271,7 @@ export function MonitorPage() {
     setMessages((prev) => [...prev, tempMsg]);
 
     try {
-      const res = await fetch(`/api/conversations/${convId}/messages`, {
+      const res = await apiFetch(`/api/conversations/${convId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, role: 'agent' }),
@@ -296,7 +297,7 @@ export function MonitorPage() {
     setMessages((prev) => [...prev, tempMsg]);
 
     try {
-      const res = await fetch(`/api/conversations/${convId}/internal-note`, {
+      const res = await apiFetch(`/api/conversations/${convId}/internal-note`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, mentions }),
@@ -312,7 +313,7 @@ export function MonitorPage() {
     const conv = conversations.find((c) => c.id === convId);
     if (!conv) return;
     try {
-      const res = await fetch('/api/tickets/from-conversation', {
+      const res = await apiFetch('/api/tickets/from-conversation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

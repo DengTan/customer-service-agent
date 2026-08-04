@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { Upload, X, Loader2, ImageIcon, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 export interface UploadedImage {
   url: string;
@@ -63,7 +64,7 @@ export function MultiImageUpload({
       formData.append('file', file);
       formData.append('purpose', purpose);
 
-      const res = await fetch('/api/upload', {
+      const res = await apiFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });

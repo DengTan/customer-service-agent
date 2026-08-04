@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { RoutingService } from '@/server/services/routing-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
+import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
 
 const service = new RoutingService();
 
@@ -36,20 +37,24 @@ const UpdateRuleSchema = z.object({
   is_enabled: z.boolean().optional(),
 });
 
-// GET /api/routing-rules - List all routing rules
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'routing', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'routing', action: 'read' },
+  },
+  async () => {
   const result = await service.listRules();
   return apiSuccess(result);
-});
+}, );
 
-// POST /api/routing-rules - Create a new routing rule
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'routing', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'routing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -63,13 +68,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.createRule(parsed.data);
   return apiSuccess(result, HttpStatus.CREATED);
-});
+}, );
 
-// PUT /api/routing-rules - Update a routing rule
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'routing', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'routing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -84,13 +92,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   const { id, ...rest } = parsed.data;
   const result = await service.updateRule({ id, ...rest });
   return apiSuccess(result);
-});
+}, );
 
-// DELETE /api/routing-rules?id=xxx - Delete a routing rule
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'routing', 'delete');
-  if (denied) return denied;
+export { PUTHandler as PUT };
 
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'routing', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -104,4 +115,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
 
   await service.deleteRule(parsed.data);
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };

@@ -1,8 +1,14 @@
 import { NextRequest } from 'next/server';
 import { KnowledgeSearchService } from '@/server/services/knowledge-search-service';
-import { apiError, apiSuccess, HttpStatus, withErrorHandlerSimple } from '@/lib/api-utils';
+import { apiError, apiSuccess, HttpStatus } from '@/lib/api-utils';
+import { GET } from '@/lib/api/with-api';
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'read' },
+  },
+  async ({ request }) => {
   const knowledgeSearchService = new KnowledgeSearchService();
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('query');
@@ -29,4 +35,6 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     confidence: result.confidence,
     images: result.images,
   });
-});
+}, );
+
+export { GETHandler as GET };

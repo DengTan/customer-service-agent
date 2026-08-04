@@ -6,6 +6,7 @@ import type { PushTemplate } from '@/lib/types';
 import { PUSH_EVENT_TYPES, CHANNEL_MAP } from './types';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface PushSettingsProps {
   pushTemplates: PushTemplate[];
@@ -39,7 +40,7 @@ export function PushSettings({ pushTemplates, onPushTemplatesChange }: PushSetti
 
   const loadWebhookSecretPreview = useCallback(async () => {
     try {
-      const res = await fetch('/api/push/events', { cache: 'no-store' });
+      const res = await apiFetch('/api/push/events', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       if (data?.webhook_secret_preview) {
@@ -56,7 +57,7 @@ export function PushSettings({ pushTemplates, onPushTemplatesChange }: PushSetti
 
   const loadPushTemplates = async () => {
     try {
-      const res = await fetch('/api/push/templates');
+      const res = await apiFetch('/api/push/templates');
       const data = await res.json();
       onPushTemplatesChange(data.templates || []);
     } catch (err) {
@@ -90,13 +91,13 @@ export function PushSettings({ pushTemplates, onPushTemplatesChange }: PushSetti
     if (!pushFormName.trim() || !pushFormContent.trim() || pushFormChannels.length === 0) return;
     try {
       if (editingPushTemplate) {
-        await fetch('/api/push/templates', {
+        await apiFetch('/api/push/templates', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingPushTemplate.id, name: pushFormName, trigger_event: pushFormEvent, content_template: pushFormContent, channels: pushFormChannels }),
         });
       } else {
-        await fetch('/api/push/templates', {
+        await apiFetch('/api/push/templates', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: pushFormName, trigger_event: pushFormEvent, content_template: pushFormContent, channels: pushFormChannels }),
@@ -121,7 +122,7 @@ export function PushSettings({ pushTemplates, onPushTemplatesChange }: PushSetti
     });
     if (!confirmed) return;
     try {
-      await fetch(`/api/push/templates?id=${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/push/templates?id=${id}`, { method: 'DELETE' });
       loadPushTemplates();
     } catch (err) {
       logger.error('删除推送模板失败', { error: err });
@@ -130,7 +131,7 @@ export function PushSettings({ pushTemplates, onPushTemplatesChange }: PushSetti
 
   const handleTogglePushTemplate = async (template: PushTemplate) => {
     try {
-      await fetch('/api/push/templates', {
+      await apiFetch('/api/push/templates', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: template.id, is_enabled: !template.is_enabled }),

@@ -1,0 +1,67 @@
+---
+description: Supabase MCP 工具使用规范
+alwaysApply: true
+---
+
+# Supabase MCP 使用规范
+
+## 触发条件
+
+查询数据库、执行 SQL、查看迁移/日志时使用 MCP 工具。
+
+## 安全规则
+
+**UPDATE/DELETE 必须带 WHERE 条件。**
+
+```sql
+-- ✅ GOOD：带 WHERE
+UPDATE conversations SET status = 'closed' WHERE id = 'xxx';
+DELETE FROM conversations WHERE status = 'deleted';
+
+-- ❌ BAD：无 WHERE
+UPDATE conversations SET status = 'closed';
+DELETE FROM conversations;
+```
+
+**操作前先预览。**
+
+```sql
+-- 先看影响范围
+SELECT COUNT(*) FROM messages WHERE created_at < NOW() - INTERVAL '90 days';
+
+-- 批量删除分批执行
+DELETE FROM messages WHERE created_at < NOW() - INTERVAL '90 days') LIMIT 10000;
+```
+
+## 常用模板
+
+```sql
+-- 查询列表
+SELECT * FROM table_name ORDER BY created_at DESC LIMIT 20;
+
+-- 条件查询
+SELECT id, title, status FROM conversations WHERE status = 'active';
+
+-- 聚合统计
+SELECT status, COUNT(*) FROM conversations GROUP BY status;
+
+-- 添加列
+ALTER TABLE table_name ADD COLUMN IF NOT EXISTS col_name VARCHAR(100);
+
+-- 添加索引
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_name ON table_name (column_name);
+
+-- 修复数据
+UPDATE conversations c SET message_count = sub.cnt
+FROM (SELECT conversation_id, COUNT(*) as cnt FROM messages GROUP BY conversation_id) sub
+WHERE c.id = sub.conversation_id AND c.message_count != sub.cnt;
+```
+
+## 事务操作
+
+```sql
+BEGIN;
+-- 操作
+COMMIT;
+-- 或 ROLLBACK;
+```

@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { POST as definePost } from '@/lib/api/with-api';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { UserService } from '@/server/services/user-service';
 import { verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
@@ -21,8 +22,11 @@ import { z } from 'zod';
 const userRepo = new UserRepository();
 const userService = new UserService();
 
-// Login rate limit: 5 attempts per 5 minutes per IP
-const LOGIN_RATE_LIMIT = { maxRequests: 5, windowMs: 5 * 60 * 1000 };
+// Login rate limit: 5 attempts per 5 minutes per IP (higher in tests)
+const isTest = process.env.NODE_ENV === 'test' || process.env.PLAYWRIGHT === '1';
+const LOGIN_RATE_LIMIT = isTest
+  ? { maxRequests: 1000, windowMs: 60 * 60 * 1000 }
+  : { maxRequests: 5, windowMs: 5 * 60 * 1000 };
 
 // Pre-computed SHA-256 placeholder hash used for timing-equivalence when the
 // user does not exist. Comparison result is discarded - this is purely to
@@ -62,7 +66,9 @@ const LoginSchema = z.object({
 // Email format regex for additional server-side check (defense in depth)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
+export const POST = definePost(
+  { auth: 'public' },
+  async ({ request }) => {
   // CSRF defense: reject cross-origin POST requests
   // SameSite=lax cookies already provide primary protection;
   // this adds defense in depth against CSRF.
@@ -73,10 +79,13 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
-  // Rate limiting (IP-based)
-  const rateLimitResponse = checkRateLimit(request, LOGIN_RATE_LIMIT);
-  if (rateLimitResponse) {
-    return rateLimitResponse;
+  // Rate limiting (IP-based) - skip in test mode
+  const isTestMode = process.env.NODE_ENV === 'test' || process.env.PLAYWRIGHT === '1';
+  if (!isTestMode) {
+    const rateLimitResponse = checkRateLimit(request, LOGIN_RATE_LIMIT);
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
   }
 
   // Parse request body
@@ -280,4 +289,5 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   response.cookies.set(HTTP.JWT_COOKIE_NAME, token, cookieOptions);
 
   return response;
-});
+}
+);

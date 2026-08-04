@@ -28,6 +28,17 @@ function resolveAllowOrigin(request: NextRequest): string {
   return origin || DEFAULT_ALLOW_ORIGIN;
 }
 
+/**
+ * Check if credentials are allowed for the current origin.
+ * When using credentials: 'include', Access-Control-Allow-Origin cannot be '*'.
+ */
+function allowCredentials(request: NextRequest): boolean {
+  const env = process.env.CORS_ALLOW_ORIGIN;
+  if (env && env.trim()) return true; // Explicit origin configured
+  const origin = request.headers.get('origin');
+  return !!origin; // If there's an origin header, credentials are allowed
+}
+
 export interface CorsPreflightResult {
   response: NextResponse;
 }
@@ -39,6 +50,7 @@ export interface CorsPreflightResult {
  */
 export function handleCorsPreflight(request: NextRequest): CorsPreflightResult {
   const allowOrigin = resolveAllowOrigin(request);
+  const credentialsAllowed = allowCredentials(request);
   const headers: Record<string, string> = {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': process.env.CORS_ALLOW_METHODS ?? DEFAULT_ALLOW_METHODS,
@@ -46,6 +58,9 @@ export function handleCorsPreflight(request: NextRequest): CorsPreflightResult {
     'Access-Control-Max-Age': process.env.CORS_MAX_AGE ?? DEFAULT_MAX_AGE_SECONDS,
     Vary: 'Origin',
   };
+  if (credentialsAllowed && allowOrigin !== '*') {
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
   return {
     response: new NextResponse(null, { status: 204, headers }),
   };
@@ -53,12 +68,20 @@ export function handleCorsPreflight(request: NextRequest): CorsPreflightResult {
 
 /**
  * Attach CORS headers to an existing response (used by `problemResponse`
- * and the L2 gateway wrapper so that error bodies also pass preflights).
+ * and the L2 gateway wrapper so that error responses also pass preflights).
+ * When credentials are allowed, Access-Control-Allow-Credentials is set.
  */
 export function attachCorsHeaders(response: NextResponse, request: NextRequest): NextResponse {
   const allowOrigin = resolveAllowOrigin(request);
+  const credentialsAllowed = allowCredentials(request);
+
   response.headers.set('Access-Control-Allow-Origin', allowOrigin);
   response.headers.set('Vary', 'Origin');
+
+  if (credentialsAllowed && allowOrigin !== '*') {
+    response.headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+
   return response;
 }
 

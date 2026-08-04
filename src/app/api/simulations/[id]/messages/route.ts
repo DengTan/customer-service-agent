@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withErrorHandler, parseJsonBody, apiSuccess, apiError, HttpStatus, getAuthenticatedUserId, extractUserRole } from '@/lib/api-utils';
+import { NextResponse } from 'next/server';
+import { parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
 import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import { simulationRepository } from '@/server/repositories/simulation-repository';
@@ -12,6 +12,7 @@ import { botConfigRepository } from '@/server/repositories/bot-config-repository
 import { detectHandoffIntent } from '@/lib/confidence-calculator';
 import { parseSSEStream } from '@/lib/sse-parser';
 import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
+import { GET as defineGet, POST as definePost } from '@/lib/api/with-api';
 
 /**
  * Check if user has permission to access a simulation conversation
@@ -40,64 +41,62 @@ function canAccessConversation(
 }
 
 // GET /api/simulations/[id]/messages - Get messages
-export const GET = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const { id } = await params;
-  const userId = getAuthenticatedUserId(request);
-  const role = extractUserRole(request);
+export const GET = defineGet(
+  { auth: 'required', perm: { resource: 'conversations', action: 'read' } },
+  async ({ request, user, params }) => {
+    const { id } = params as { id: string };
+    const userId = user?.sub ?? undefined;
+    const role = user?.role ?? undefined;
 
-  const simulation = await simulationRepository.getById(id);
+    const simulation = await simulationRepository.getById(id);
 
-  if (!simulation) {
-    return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
-  }
+    if (!simulation) {
+      return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
+    }
 
-  if (!canAccessConversation(simulation, userId, role)) {
-    return apiError('无权限查看此会话', { status: HttpStatus.FORBIDDEN });
-  }
+    if (!canAccessConversation(simulation, userId ?? null, role ?? null)) {
+      return apiError('无权限查看此会话', { status: HttpStatus.FORBIDDEN });
+    }
 
-  const messages = await simulationRepository.listMessages(id);
-  return apiSuccess({ messages });
-});
+    const messages = await simulationRepository.listMessages(id);
+    return apiSuccess({ messages });
+  },
+);
 
 // POST /api/simulations/[id]/messages - Send a message and get streaming response
-export const POST = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const { id: conversationId } = await params;
+export const POST = definePost(
+  { auth: 'required', perm: { resource: 'conversations', action: 'write' } },
+  async ({ request, user, params }) => {
+    const { id: conversationId } = params as { id: string };
+    const userId = user?.sub ?? undefined;
+    const role = user?.role ?? undefined;
 
-  // Permission check: require login and access permission
-  const userId = getAuthenticatedUserId(request);
-  const role = extractUserRole(request);
-  if (!userId) {
-    return apiError('请先登录', { status: HttpStatus.UNAUTHORIZED });
-  }
+    if (!userId) {
+      return apiError('请先登录', { status: HttpStatus.UNAUTHORIZED });
+    }
 
-  const simulation = await simulationRepository.getById(conversationId);
-  if (!simulation) {
-    return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
-  }
+    const simulation = await simulationRepository.getById(conversationId);
+    if (!simulation) {
+      return apiError('模拟会话不存在', { status: HttpStatus.NOT_FOUND });
+    }
 
-  if (!canAccessConversation(simulation, userId, role)) {
-    return apiError('无权限向此会话发送消息', { status: HttpStatus.FORBIDDEN });
-  }
+    if (!canAccessConversation(simulation, userId, role ?? null)) {
+      return apiError('无权限向此会话发送消息', { status: HttpStatus.FORBIDDEN });
+    }
 
-  const { data: body, error: parseError } = await parseJsonBody<{ content: string; bot_id?: string }>(request);
-  if (parseError) return parseError;
+    const { data: body, error: parseError } = await parseJsonBody<{ content: string; bot_id?: string }>(request);
+    if (parseError) return parseError;
 
-  const userMessage = body?.content;
-  if (!userMessage || typeof userMessage !== 'string') {
-    return apiError('消息内容不能为空', { status: HttpStatus.BAD_REQUEST });
-  }
+    const userMessage = body?.content;
+    if (!userMessage || typeof userMessage !== 'string') {
+      return apiError('消息内容不能为空', { status: HttpStatus.BAD_REQUEST });
+    }
 
-  // P0: Get bot configuration - prioritize request bot_id, fallback to conversation's bot_id
-  // P2: Validate bot exists and log warning if not found
-  const requestedBotId = body?.bot_id || simulation.bot_id;
-  let systemPrompt = '';
-  if (requestedBotId) {
+    // P0: Get bot configuration - prioritize request bot_id, fallback to conversation's bot_id
+    // P2: Validate bot exists and log warning if not found
+    const requestedBotId = body?.bot_id || simulation.bot_id;
+    let systemPrompt = '';
+    if (requestedBotId) {
     const bot = await botConfigRepository.findById(requestedBotId);
     if (bot && bot.system_prompt) {
       systemPrompt = bot.system_prompt;
@@ -113,61 +112,61 @@ export const POST = withErrorHandler(async (
       // P2: Bot not found or has no system_prompt
       logger.warn('[Simulation] Bot not found or has no system prompt', { botId: requestedBotId, found: !!bot });
     }
-  }
+    }
 
-  // P1-2: Message length limit
-  if (userMessage.length > HTTP.MAX_MESSAGE_LENGTH) {
+    // P1-2: Message length limit
+    if (userMessage.length > HTTP.MAX_MESSAGE_LENGTH) {
     return apiError(`消息内容不能超过 ${HTTP.MAX_MESSAGE_LENGTH} 个字符`, {
       status: HttpStatus.BAD_REQUEST,
       code: 'MESSAGE_TOO_LONG',
     });
-  }
+    }
 
-  // Get existing messages
-  const existingMessages = await simulationRepository.listMessages(conversationId);
+    // Get existing messages
+    const existingMessages = await simulationRepository.listMessages(conversationId);
 
-  // Add user message (using crypto.randomUUID)
-  const userMsg = await simulationRepository.createMessage({
+    // Add user message (using crypto.randomUUID)
+    const userMsg = await simulationRepository.createMessage({
     id: crypto.randomUUID(),
     conversation_id: conversationId,
     role: 'user',
     content: userMessage,
-  });
+    });
 
-  // Load settings for system_prompt fallback (通用模式 fallback 到系统设置)
-  const settingsService = new SettingsService();
-  const appSettings = await settingsService.getSettingsMap();
+    // Load settings for system_prompt fallback (通用模式 fallback 到系统设置)
+    const settingsService = new SettingsService();
+    const appSettings = await settingsService.getSettingsMap();
 
-  // Fallback: if no bot system_prompt, use system settings system_prompt
-  if (!systemPrompt && appSettings.system_prompt) {
+    // Fallback: if no bot system_prompt, use system settings system_prompt
+    if (!systemPrompt && appSettings.system_prompt) {
     systemPrompt = appSettings.system_prompt;
     logger.info('[Simulation] Using system settings system prompt (generic mode)');
-  }
+    }
 
-  // P0: Validate system prompt exists - user must have either bot or system settings configured
-  if (!systemPrompt) {
+    // P0: Validate system prompt exists - user must have either bot or system settings configured
+    if (!systemPrompt) {
     return apiError('请先在 Bot 配置或系统设置中配置系统提示词', {
       status: HttpStatus.BAD_REQUEST,
       code: 'NO_SYSTEM_PROMPT',
     });
-  }
+    }
 
-  // P0: Use shared RetrievalOrchestrator — single gate + retrieval + evidence contract
-  // This replaces the old parallel search + raw source merge pattern.
-  // The orchestrator applies query gating (SKIP/RETRIEVE/CLARIFY) and returns graded evidence.
-  const orchestrator = new RetrievalOrchestrator();
-  const recentMessages = existingMessages
+    // P0: Use shared RetrievalOrchestrator — single gate + retrieval + evidence contract
+    // This replaces the old parallel search + raw source merge pattern.
+    // The orchestrator applies query gating (SKIP/RETRIEVE/CLARIFY) and returns graded evidence.
+    const orchestrator = new RetrievalOrchestrator();
+    const recentMessages = existingMessages
     .slice(-10)
     .map(m => ({ role: m.role as string, content: m.content as string }));
 
-  const retrievalResult = await orchestrator.retrieve(userMessage, recentMessages, { useHybrid: true });
-  const { evidence: evidenceBundle } = retrievalResult;
+    const retrievalResult = await orchestrator.retrieve(userMessage, recentMessages, { useHybrid: true });
+    const { evidence: evidenceBundle } = retrievalResult;
 
-  // Normalize orchestrator output for downstream LLM context injection.
-  // We keep the legacy { knowledgeContext, productContext, sizeChartContext } shape
-  // so LLMStreamingService and confidence calculation are unchanged in behavior,
-  // but we use orchestrator-graded context, not raw knowledge search results.
-  const knowledgeContextForLLM: KnowledgeSearchResult = retrievalResult.knowledgeContext
+    // Normalize orchestrator output for downstream LLM context injection.
+    // We keep the legacy { knowledgeContext, productContext, sizeChartContext } shape
+    // so LLMStreamingService and confidence calculation are unchanged in behavior,
+    // but we use orchestrator-graded context, not raw knowledge search results.
+    const knowledgeContextForLLM: KnowledgeSearchResult = retrievalResult.knowledgeContext
     ? {
         context: retrievalResult.knowledgeContext.context,
         sources: retrievalResult.knowledgeContext.knowledgeSources,
@@ -175,17 +174,17 @@ export const POST = withErrorHandler(async (
         images: retrievalResult.knowledgeContext.images,
       }
     : { context: '', sources: [], confidence: 0, images: [] };
-  const productContextForLLM = retrievalResult.productContext?.productContext ?? '';
-  const sizeChartContextForLLM = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
-  const orchestratorCitations = evidenceBundle.citations;
+    const productContextForLLM = retrievalResult.productContext?.productContext ?? '';
+    const sizeChartContextForLLM = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
+    const orchestratorCitations = evidenceBundle.citations;
 
-  // Check auto-reply first
-  const autoReplyService = new AutoReplyService();
-  const autoReply = await autoReplyService.matchReply(userMessage);
+    // Check auto-reply first
+    const autoReplyService = new AutoReplyService();
+    const autoReply = await autoReplyService.matchReply(userMessage);
 
-  // Prepare stream response
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
+    // Prepare stream response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
     async start(controller) {
       try {
         let responseText = '';
@@ -559,13 +558,14 @@ export const POST = withErrorHandler(async (
         controller.close();
       }
     },
-  });
+    });
 
-  return new NextResponse(stream, {
+    return new NextResponse(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     },
-  });
-});
+    });
+    },
+);

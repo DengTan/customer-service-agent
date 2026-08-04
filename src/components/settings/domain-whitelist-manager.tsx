@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface AllowedDomain {
   id: string;
@@ -95,7 +96,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
   const loadDomains = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/content-filter/domains');
+      const res = await apiFetch('/api/content-filter/domains');
       const data = await res.json();
       let domainsList: AllowedDomain[] = data.domains || [];
       setAllDomains(domainsList);
@@ -149,13 +150,13 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
 
       let res: Response;
       if (editingDomain) {
-        res = await fetch('/api/content-filter/domains', {
+        res = await apiFetch('/api/content-filter/domains', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingDomain.id, ...payload }),
         });
       } else {
-        res = await fetch('/api/content-filter/domains', {
+        res = await apiFetch('/api/content-filter/domains', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -188,7 +189,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/content-filter/domains?id=${id}`, {
+      const res = await apiFetch(`/api/content-filter/domains?id=${id}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -207,7 +208,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
 
   const handleToggle = async (domain: AllowedDomain) => {
     try {
-      const res = await fetch('/api/content-filter/domains', {
+      const res = await apiFetch('/api/content-filter/domains', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: domain.id, is_enabled: !domain.is_enabled }),
@@ -224,7 +225,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
 
   const handleQuickAdd = async (preset: typeof COMMON_DOMAINS[0]) => {
     try {
-      const res = await fetch('/api/content-filter/domains', {
+      const res = await apiFetch('/api/content-filter/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -267,7 +268,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(id =>
-          fetch(`/api/content-filter/domains?id=${id}`, { method: 'DELETE' })
+          apiFetch(`/api/content-filter/domains?id=${id}`, { method: 'DELETE' })
         )
       );
       const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
@@ -294,7 +295,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(id =>
-          fetch('/api/content-filter/domains', {
+          apiFetch('/api/content-filter/domains', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, is_enabled: enable }),
@@ -402,7 +403,7 @@ export default function DomainWhitelistManager({ open, onClose, onCountChange }:
 
       setImporting(true);
       try {
-        const res = await fetch('/api/content-filter/domains/import', {
+        const res = await apiFetch('/api/content-filter/domains/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ domains }),

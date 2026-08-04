@@ -234,7 +234,7 @@ async function chunkTextByLLM(text: string, targetChunkSize: number): Promise<Ch
       }
       baseUrl = provider.base_url;
       apiKey = provider.api_key;
-      model = provider.default_model || aiModel || '';
+      model = provider.models?.[0] || aiModel || '';
       providerSource = `provider:${provider.name}`;
     } else {
       const defaultProvider = await llmProviderService.getDefaultProvider();
@@ -247,7 +247,7 @@ async function chunkTextByLLM(text: string, targetChunkSize: number): Promise<Ch
       }
       baseUrl = providerWithKey.base_url;
       apiKey = providerWithKey.api_key;
-      model = providerWithKey.default_model || aiModel || '';
+      model = providerWithKey.models?.[0] || aiModel || '';
       providerSource = `default:${defaultProvider.name}`;
     }
 

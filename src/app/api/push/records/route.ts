@@ -1,10 +1,16 @@
 import { NextRequest } from 'next/server';
 import { PushService } from '@/server/services/push-service';
-import { apiSuccess, withErrorHandlerSimple } from '@/lib/api-utils';
+import { apiSuccess } from '@/lib/api-utils';
+import { GET } from '@/lib/api/with-api';
 
 const pushService = new PushService();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'push', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
 
   const result = await pushService.listRecords({
@@ -18,4 +24,6 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   });
 
   return apiSuccess({ records: result.records, total: result.total });
-});
+}, );
+
+export { GETHandler as GET };

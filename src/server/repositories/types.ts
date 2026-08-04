@@ -61,6 +61,7 @@ export interface TicketRow {
   creator_id?: string | null;
   conversation_id?: string | null;
   parent_ticket_id?: string | null;
+  custom_fields?: Record<string, unknown>;
   resolved_at?: string | null;
   closed_at?: string | null;
   created_at: string;
@@ -169,6 +170,7 @@ export interface QuickReplyRow {
   variables?: unknown;
   scope: string;
   creator_id?: string | null;
+  platform_connection_id?: string | null;
   usage_count: number;
   created_at: string;
   updated_at?: string | null;
@@ -279,6 +281,12 @@ export interface BotConfigRow {
   knowledge_ids?: unknown;
   skill_group_id?: string | null;
   is_default: boolean;
+  parent_bot_id?: string | null;
+  delegation_prompt?: string | null;
+  collaboration_config?: Record<string, unknown> | null;
+  is_sub_agent: boolean;
+  status: string;
+  platform_connection_id?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -470,7 +478,6 @@ export interface LlmProviderRow {
   base_url: string;
   api_key?: string | null;
   models: string[];
-  default_model?: string | null;
   supports_vision: boolean;
   supports_streaming: boolean;
   max_context_tokens?: number | null;
@@ -478,7 +485,6 @@ export interface LlmProviderRow {
   request_config?: unknown | null;
   is_enabled: boolean;
   is_default: boolean;
-  priority: number;
   created_at: string;
   updated_at?: string | null;
 }
@@ -494,10 +500,10 @@ export interface LlmModelRow {
   supports_streaming: boolean;
   supports_function_calling: boolean;
   default_max_tokens?: number | null;
-  priority: number;
   cost_per_1k_input?: number | null;
   cost_per_1k_output?: number | null;
   is_enabled: boolean;
+  type: string;
   created_at: string;
   updated_at?: string | null;
 }

@@ -5,6 +5,7 @@ import { X, Plus, Trash2, Upload, ImageIcon, Ruler, Search, Check, Loader2 } fro
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SizeChartFormModal } from './size-chart-form-modal';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ProductSpec {
   key: string;
@@ -58,7 +59,7 @@ function ProductImageUploader({
       formData.append('file', file);
       formData.append('purpose', 'knowledge');
 
-      const res = await fetch('/api/upload', {
+      const res = await apiFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -273,7 +274,7 @@ function SizeChartSelectorModal({ open, productId, alreadyAssocIds, onClose, onA
     try {
       const params = new URLSearchParams({ page: '1', page_size: '200', status: 'active' });
       if (typeFilter) params.set('chart_type', typeFilter);
-      const res = await fetch(`/api/knowledge/size-charts?${params}`);
+      const res = await apiFetch(`/api/knowledge/size-charts?${params}`);
       if (!res.ok) throw new Error('加载失败');
       const data = await res.json();
       setCharts(data.items || []);
@@ -300,7 +301,7 @@ function SizeChartSelectorModal({ open, productId, alreadyAssocIds, onClose, onA
     let hasError = false;
     for (const chartId of selectedIds) {
       try {
-        const res = await fetch('/api/knowledge/size-charts', {
+        const res = await apiFetch('/api/knowledge/size-charts', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: chartId, product_id: productId }),
@@ -496,7 +497,7 @@ function SizeChartSearchAdd({ productId, alreadyAssocIds, onAdded }: SizeChartSe
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch('/api/knowledge/size-charts?page_size=200&status=active')
+    apiFetch('/api/knowledge/size-charts?page_size=200&status=active')
       .then(r => r.json())
       .then(data => {
         setCharts(data.items || []);
@@ -516,7 +517,7 @@ function SizeChartSearchAdd({ productId, alreadyAssocIds, onAdded }: SizeChartSe
     const chart = charts.find(c => c.id === chartId);
     if (!chart) return;
     try {
-      const res = await fetch('/api/knowledge/size-charts', {
+      const res = await apiFetch('/api/knowledge/size-charts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: chartId, product_id: productId }),
@@ -592,13 +593,13 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
     setLoadingCharts(true);
     try {
       // Use findByProductId endpoint (no pagination limit) instead of paginated list API
-      const res = await fetch(`/api/knowledge/size-charts/by-product/${product.id}`);
+      const res = await apiFetch(`/api/knowledge/size-charts/by-product/${product.id}`);
       if (res.ok) {
         const data = await res.json();
         setAssocCharts(data.items || []);
       } else {
         // Fallback: use paginated list with large page size
-        const fallbackRes = await fetch(`/api/knowledge/size-charts?product_id=${product.id}&page_size=1000`);
+        const fallbackRes = await apiFetch(`/api/knowledge/size-charts?product_id=${product.id}&page_size=1000`);
         if (fallbackRes.ok) {
           const fallbackData = await fallbackRes.json();
           setAssocCharts(fallbackData.items || []);
@@ -611,7 +612,7 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
 
   const removeAssoc = useCallback(async (chartId: string) => {
     try {
-      const res = await fetch('/api/knowledge/size-charts', {
+      const res = await apiFetch('/api/knowledge/size-charts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: chartId, product_id: null }),
@@ -781,13 +782,13 @@ export function ProductFormModal({ open, product, onClose, onSaved, productOptio
 
       let res: Response;
       if (isEditing) {
-        res = await fetch('/api/knowledge/products', {
+        res = await apiFetch('/api/knowledge/products', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: product!.id, ...payload }),
         });
       } else {
-        res = await fetch('/api/knowledge/products', {
+        res = await apiFetch('/api/knowledge/products', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

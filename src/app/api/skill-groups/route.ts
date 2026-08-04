@@ -16,7 +16,7 @@ const SkillGroupSchema = z.object({
 export const GETHandler = GET(
   {
     auth: 'required',
-    perm: { resource: 'team', action: 'read' },
+    perm: { resource: 'conversations', action: 'write' },
   },
   async () => {
     const groups = await service.listGroups();

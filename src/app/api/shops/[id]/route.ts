@@ -1,23 +1,30 @@
 import { NextRequest } from 'next/server';
 import { ShopService } from '@/server/services/shop-service';
-import { parseJsonBody, apiSuccess, withErrorHandler, requireRole } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess } from '@/lib/api-utils';
+import { GET, PATCH, DELETE } from '@/lib/api/with-api';
 
 const shopService = new ShopService();
 
-export const GET = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  const authError = requireRole(request, ['admin']);
-  if (authError) return authError;
-
-  const { id } = await params;
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'read' },
+  },
+  async ({ params }) => {
+  const { id } = params as { id: string };
   const result = await shopService.getById(id);
   return apiSuccess({ shop: result.shop });
-});
+}, );
 
-export const PATCH = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  const authError = requireRole(request, ['admin']);
-  if (authError) return authError;
+export { GETHandler as GET };
 
-  const { id } = await params;
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request, params }) => {
+  const { id } = params as { id: string };
   const { data: body, error: parseError } = await parseJsonBody<{
     name?: string;
     platform?: string;
@@ -38,13 +45,19 @@ export const PATCH = withErrorHandler(async (request: NextRequest, { params }: {
 
   const result = await shopService.update(id, body!);
   return apiSuccess({ shop: result.shop });
-});
+}, );
 
-export const DELETE = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  const authError = requireRole(request, ['admin']);
-  if (authError) return authError;
+export { PATCHHandler as PATCH };
 
-  const { id } = await params;
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'delete' },
+  },
+  async ({ params }) => {
+  const { id } = params as { id: string };
   await shopService.delete(id);
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };

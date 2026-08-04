@@ -5,6 +5,7 @@
 
 import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { GET as defineGet } from '@/lib/api/with-api';
 import { verifyToken, extractTokenFromCookies } from '@/lib/auth/jwt';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
@@ -12,7 +13,9 @@ import { logger } from '@/lib/logger';
 
 const userRepo = new UserRepository();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
+export const GET = defineGet(
+  { auth: 'required' },
+  async ({ request }) => {
   // Extract token from cookie
   const cookieHeader = request.headers.get('cookie');
   const token = extractTokenFromCookies(cookieHeader);
@@ -90,4 +93,5 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
       agentStatus,
     },
   });
-});
+}
+);

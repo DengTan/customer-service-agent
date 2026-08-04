@@ -1,28 +1,25 @@
 import { NextRequest } from 'next/server';
 import { knowledgeImportService } from '@/server/services/knowledge-import-service';
-import { apiError, apiSuccess, HttpStatus, withErrorHandlerSimple, checkRateLimit } from '@/lib/api-utils';
-import { getAuthenticatedUserId } from '@/lib/api-utils';
-import { logger } from '@/lib/logger';
+import { apiError, apiSuccess, HttpStatus, checkRateLimit } from '@/lib/api-utils';
+import { GET, POST } from '@/lib/api/with-api';
 
 /**
- * 创建导入任务
- * POST /api/knowledge/import-jobs
- * 
+ * POST /api/knowledge/import-jobs - 创建导入任务
  * Body: FormData
  * - file: File (必需)
- * - name: string (可选，默认使用文件名)
- * - category: string (可选，默认"未分类")
+ * - name: string (可选)
+ * - category: string (可选)
  * - parent_category: string (可选)
  * - image_url: string (可选)
+ * - description: string (可选)
  */
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // 速率限制
-  const rateLimitError = checkRateLimit(request, { maxRequests: 10, windowMs: 60_000 });
-  if (rateLimitError) return rateLimitError;
-
-  // 获取当前用户 ID
-  const userId = await getAuthenticatedUserId(request);
-
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+    rateLimit: { maxRequests: 10, windowMs: 60_000 },
+  },
+  async ({ request }) => {
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.includes('multipart/form-data')) {
     return apiError('请使用 multipart/form-data 格式上传文件', {
@@ -55,50 +52,40 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       parentCategory,
       imageUrl,
       description,
-      userId: userId || undefined,
+      userId: undefined,
     });
-
-    logger.api.info('import-job-created', { jobId, fileName: file.name, userId });
 
     return apiSuccess({ job_id: jobId, status: 'pending' });
   } catch (error) {
     const message = error instanceof Error ? error.message : '创建导入任务失败';
     
-    // 特定错误码处理
     if (message.includes('内容重复')) {
-      return apiError(message, {
-        status: HttpStatus.CONFLICT,
-        code: 'DUPLICATE_CONTENT',
-      });
+      return apiError(message, { status: HttpStatus.CONFLICT, code: 'DUPLICATE_CONTENT' });
     }
     if (message.includes('不支持的文件格式')) {
-      return apiError(message, {
-        status: HttpStatus.BAD_REQUEST,
-        code: 'VALIDATION_ERROR',
-      });
+      return apiError(message, { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
     }
     if (message.includes('文件大小超过限制')) {
-      return apiError(message, {
-        status: HttpStatus.BAD_REQUEST,
-        code: 'VALIDATION_ERROR',
-      });
+      return apiError(message, { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
     }
 
-    return apiError(message, {
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      code: 'IMPORT_ERROR',
-    });
+    return apiError(message, { status: HttpStatus.INTERNAL_SERVER_ERROR, code: 'IMPORT_ERROR' });
   }
-});
+}, );
+
+export { POSTHandler as POST };
 
 /**
- * 获取用户进行中的导入任务
- * GET /api/knowledge/import-jobs
+ * GET /api/knowledge/import-jobs - 获取用户进行中的导入任务
  */
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const userId = await getAuthenticatedUserId(request);
-
-  const jobs = await knowledgeImportService.getActiveJobs(userId || undefined);
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'read' },
+  },
+  async () => {
+  const jobs = await knowledgeImportService.getActiveJobs(undefined);
   return apiSuccess({ jobs });
-});
+}, );
+
+export { GETHandler as GET };

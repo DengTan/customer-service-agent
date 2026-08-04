@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Star, X, Trash2, Loader2, BarChart3 } from 'lucide-react';
 import { SimulationEvaluation, SimulationEvaluationStats } from '@/lib/types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface EvaluationPanelProps {
   simulationId: string;
@@ -53,7 +54,7 @@ export function SimulationEvaluationPanel({
 
   const fetchEvaluations = async () => {
     try {
-      const res = await fetch(`/api/simulations/${simulationId}/evaluation`);
+      const res = await apiFetch(`/api/simulations/${simulationId}/evaluation`, { credentials: 'include' });
       if (!res.ok) throw new Error('获取评价失败');
       const json = await res.json();
       setData(json);
@@ -112,8 +113,9 @@ export function SimulationEvaluationPanel({
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/simulations/${simulationId}/evaluation?evaluation_id=${evalId}`, {
+      const res = await apiFetch(`/api/simulations/${simulationId}/evaluation?evaluation_id=${evalId}`, {
         method: 'DELETE',
+        credentials: 'include',
       });
       if (!res.ok) throw new Error('删除失败');
       toast.success('评价已删除');

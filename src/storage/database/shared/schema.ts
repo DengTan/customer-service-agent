@@ -123,12 +123,15 @@ export const botConfigs = pgTable(
     collaboration_config: jsonb("collaboration_config").default(sql`'{}'`), // 协作配置：可通信的目标子Agent列表、通信模式等
     is_sub_agent: boolean("is_sub_agent").notNull().default(false), // 是否为子Agent
     status: varchar("status", { length: 20 }).notNull().default("active"), // active, disabled
+    // platform_connection_id: 关联的店铺ID（每个店铺只能绑定一个Bot）
+    platform_connection_id: varchar("platform_connection_id", { length: 36 }).references(() => shops.id, { onDelete: "set null" }),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
   },
   (table) => [
     index("bot_configs_parent_bot_id_idx").on(table.parent_bot_id),
     index("bot_configs_is_sub_agent_idx").on(table.is_sub_agent),
+    index("bot_configs_platform_connection_id_idx").on(table.platform_connection_id),
   ]
 );
 
@@ -226,6 +229,7 @@ export const conversations = pgTable(
   (table) => [
     index("conversations_status_idx").on(table.status),
     index("conversations_created_at_idx").on(table.created_at),
+    index("conversations_participant_ids_idx").on(table.participant_ids), // JSONB 字段索引，支持 @> 查询
   ]
 );
 
@@ -705,6 +709,7 @@ export const quickReplies = pgTable(
     variables: jsonb("variables").notNull().default(sql`'[]'`),
     scope: varchar("scope", { length: 20 }).notNull().default("global"), // personal, team, global
     creator_id: varchar("creator_id", { length: 36 }),
+    platform_connection_id: varchar("platform_connection_id", { length: 36 }).references(() => shops.id, { onDelete: "set null" }),
     usage_count: integer("usage_count").notNull().default(0),
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -712,6 +717,7 @@ export const quickReplies = pgTable(
   (table) => [
     index("quick_replies_category_idx").on(table.category),
     index("quick_replies_scope_idx").on(table.scope),
+    index("quick_replies_platform_connection_id_idx").on(table.platform_connection_id),
   ]
 );
 
@@ -1184,6 +1190,9 @@ export const tickets = pgTable(
     parent_ticket_id: varchar("parent_ticket_id", { length: 36 }),
     // 自定义字段
     custom_fields: jsonb("custom_fields").default(sql`'{}'`),
+    // 时间戳
+    resolved_at: timestamp("resolved_at", { withTimezone: true }), // 解决问题时间
+    closed_at: timestamp("closed_at", { withTimezone: true }), // 关闭时间
     // 审计字段
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -1352,7 +1361,6 @@ export const llmProviders = pgTable(
     api_key: varchar("api_key", { length: 500 }), // API Key（加密存储）
     // 模型配置
     models: jsonb("models").notNull().default(sql`'[]'`), // 可用模型列表
-    default_model: varchar("default_model", { length: 100 }), // 默认模型
     // 功能支持
     supports_vision: boolean("supports_vision").notNull().default(false), // 是否支持视觉（多模态）
     supports_streaming: boolean("supports_streaming").notNull().default(true), // 是否支持流式输出
@@ -1363,8 +1371,6 @@ export const llmProviders = pgTable(
     request_config: jsonb("request_config").notNull().default(sql`'{}'`), // 请求配置（超时、重试等）
     // 状态
     is_enabled: boolean("is_enabled").notNull().default(true), // 是否启用
-    is_default: boolean("is_default").notNull().default(false), // 是否为默认提供商
-    priority: integer("priority").notNull().default(0), // 优先级（数字越大优先级越高）
     // 审计字段
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -1372,7 +1378,6 @@ export const llmProviders = pgTable(
   (table) => [
     index("llm_providers_name_idx").on(table.name),
     index("llm_providers_enabled_idx").on(table.is_enabled),
-    index("llm_providers_priority_idx").on(table.priority),
   ]
 );
 
@@ -1395,15 +1400,14 @@ export const llmModels = pgTable(
     supports_streaming: boolean("supports_streaming").notNull().default(true),
     supports_function_calling: boolean("supports_function_calling").notNull().default(false),
     // 性能参数
-    default_temperature: doublePrecision("default_temperature").notNull().default(0.7),
     default_max_tokens: integer("default_max_tokens"), // 默认最大输出
-    // 优先级（用于自动选择模型，数字越大优先级越高）
-    priority: integer("priority").notNull().default(0),
     // 成本信息（可选）
     cost_per_1k_input: doublePrecision("cost_per_1k_input"), // 每 1000 输入 Token 成本
     cost_per_1k_output: doublePrecision("cost_per_1k_output"), // 每 1000 输出 Token 成本
     // 状态
     is_enabled: boolean("is_enabled").notNull().default(true),
+    // 模型类型（chat/vision/embedding）
+    type: varchar("type", { length: 20 }).notNull().default('chat'),
     // 审计字段
     created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true }),
@@ -1411,8 +1415,6 @@ export const llmModels = pgTable(
   (table) => [
     index("llm_models_provider_idx").on(table.provider_id),
     index("llm_models_enabled_idx").on(table.is_enabled),
-    index("llm_models_priority_idx").on(table.priority),
-    index("llm_models_select_idx").on(table.is_enabled, table.priority),
   ]
 );
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, requirePermission } from '@/lib/api-utils';
+import { apiSuccess, parseJsonBody, HttpStatus, requirePermission } from '@/lib/api-utils';
+import { GET, POST } from '@/lib/api/with-api';
 import { logger } from '@/lib/logger';
 import { ConversationService } from '@/server/services/conversation-service';
 import { CustomerService } from '@/server/services/customer-service';
@@ -9,10 +10,12 @@ import { AlertRepository } from '@/server/repositories/alert-repository';
 const conversationService = new ConversationService();
 const customerService = new CustomerService();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'conversations', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
   const search = searchParams.get('search');
@@ -23,7 +26,6 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   const start_date = searchParams.get('start_date');
   const end_date = searchParams.get('end_date');
 
-  // Parse has_rating: 'true' -> true, 'false' -> false, null -> no filter
   let has_rating: boolean | null = null;
   if (hasRatingParam === 'true') has_rating = true;
   else if (hasRatingParam === 'false') has_rating = false;
@@ -46,23 +48,28 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     limit,
     statusCounts: result.statusCounts,
   });
-});
+}, );
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'conversations', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
+
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody<{
     title?: string;
     source?: string;
     priority?: string;
-    visitor_id?: string; // Web 端访客标识（localStorage UUID），用于识别回头客
+    visitor_id?: string;
     platform_connection_id?: string;
   }>(request);
   if (parseError) return parseError;
 
   const conversation = await conversationService.createConversation(body ?? {});
 
-  // Insert welcome message if configured in settings
+  // Insert welcome message if configured
   try {
     const settingsService = new SettingsService();
     const settings = await settingsService.getSettingsMap();
@@ -75,7 +82,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       });
     }
 
-    // Create alert for new conversation notification if enabled
     if (settings.new_conversation_notify === 'true') {
       try {
         const alertRepo = new AlertRepository();
@@ -90,16 +96,14 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       }
     }
   } catch (err) {
-    // Welcome message is non-critical; log and continue
     logger.api.error('Failed to insert welcome message', { error: err, conversationId: conversation.id });
   }
 
-  // 自动关联客户（失败不影响对话创建响应）
   try {
     await customerService.findOrCreateFromConversation({
       conversationId: conversation.id,
       source: body?.source || 'web',
-      externalUserId: body?.visitor_id || null, // Web: visitor_id → 客户 external_id
+      externalUserId: body?.visitor_id || null,
       platformConnectionId: body?.platform_connection_id || null,
     });
   } catch (custErr) {
@@ -107,4 +111,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   return apiSuccess({ conversation }, HttpStatus.CREATED);
-});
+}, );
+
+export { POSTHandler as POST };

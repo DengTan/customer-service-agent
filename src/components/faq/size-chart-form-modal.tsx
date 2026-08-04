@@ -5,6 +5,7 @@ import { X, Plus, Trash2, Upload, Ruler, Eye, Edit3, Search } from 'lucide-react
 import { toast } from 'sonner';
 import { ImageUploadInput } from '@/components/common/image-upload-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface SizeColumn {
   key: string;
@@ -203,7 +204,7 @@ export function SizeChartFormModal({
   useEffect(() => {
     if (!open || productOptions.length > 0) return;
     setLoadingProducts(true);
-    fetch('/api/knowledge/products?page_size=200')
+    apiFetch('/api/knowledge/products?page_size=200')
       .then(res => res.json())
       .then(data => {
         setProductList(data.items?.map((p: { id: string; name: string; sku: string }) => ({
@@ -411,7 +412,7 @@ export function SizeChartFormModal({
         status: form.status,
       };
 
-      const res = await fetch('/api/knowledge/size-charts', {
+      const res = await apiFetch('/api/knowledge/size-charts', {
         method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

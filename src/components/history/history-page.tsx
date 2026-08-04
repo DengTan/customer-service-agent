@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Conversation, Message } from '@/lib/types';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 export function HistoryPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -93,7 +94,7 @@ export function HistoryPage() {
       }
       params.set('page', String(currentPage));
       params.set('limit', String(pageSize));
-      const res = await fetch(`/api/conversations?${params.toString()}`);
+      const res = await apiFetch(`/api/conversations?${params.toString()}`);
       const data = await res.json();
       const convs: Conversation[] = data.conversations || [];
       if (data.total !== undefined) {
@@ -136,7 +137,7 @@ export function HistoryPage() {
     if (!confirmed) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/conversations/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('删除请求失败');
       setConversations((prev) => prev.filter((c) => c.id !== id));
       setSelectedIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
@@ -163,7 +164,7 @@ export function HistoryPage() {
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map((id) =>
-          fetch(`/api/conversations/${id}`, { method: 'DELETE' }).then(async (res) => {
+          apiFetch(`/api/conversations/${id}`, { method: 'DELETE' }).then(async (res) => {
             if (!res.ok) throw new Error(`删除失败: ${id}`);
             return id;
           })
@@ -316,7 +317,7 @@ export function HistoryPage() {
     try {
       // Load newest messages first with DESC order
       const params = new URLSearchParams({ page: '1', limit: String(detailPageSize), order: 'desc' });
-      const res = await fetch(`/api/conversations/${conv.id}?${params}`);
+      const res = await apiFetch(`/api/conversations/${conv.id}?${params}`);
       if (!res.ok) throw new Error('加载失败');
       const data = await res.json();
       setDetailMessages(data.messages || []);
@@ -344,7 +345,7 @@ export function HistoryPage() {
         offset: String(offset),
         order: 'desc'
       });
-      const res = await fetch(`/api/conversations/${detailConv.id}?${params}`);
+      const res = await apiFetch(`/api/conversations/${detailConv.id}?${params}`);
       if (!res.ok) throw new Error('加载更多消息失败');
       const data = await res.json();
       if (data.messages && data.messages.length > 0) {
@@ -365,7 +366,7 @@ export function HistoryPage() {
 
   // 公共：获取对话详情（含全部消息，最多1000条）
   const fetchConversationWithMessages = async (id: string) => {
-    const res = await fetch(`/api/conversations/${id}?page=1&limit=1000`);
+    const res = await apiFetch(`/api/conversations/${id}?page=1&limit=1000`);
     if (!res.ok) throw new Error('获取对话详情失败');
     return res.json();
   };

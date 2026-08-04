@@ -1,85 +1,76 @@
 /**
  * POST /api/auth/password
  * Set or reset user password (admin only)
- * 
- * Used by administrators to:
- * - Set initial password for new users
- * - Reset password for existing users
  */
-
-import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requireRole, parseJsonBody } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { UserRepository } from '@/server/repositories/user-repository';
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password';
-import { checkRateLimit } from '@/lib/api-utils';
 
 const userRepo = new UserRepository();
 
-// Password change rate limit: 10 attempts per 5 minutes per IP
 const PASSWORD_RATE_LIMIT = { maxRequests: 10, windowMs: 5 * 60 * 1000 };
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // Rate limiting
-  const rateLimitResponse = checkRateLimit(request, PASSWORD_RATE_LIMIT);
-  if (rateLimitResponse) return rateLimitResponse;
+export const POST = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'team', action: 'write' },
+    rateLimit: PASSWORD_RATE_LIMIT,
+  },
+  async ({ request }) => {
+    let body: { userId?: string; email?: string; password?: string } | null = null;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: '请求体无效', code: 'INVALID_BODY' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // Only admin can set passwords
-  const forbidden = requireRole(request, ['admin']);
-  if (forbidden) return forbidden;
+    if (!body) {
+      return new Response(JSON.stringify({ ok: false, error: '请求体无效', code: 'INVALID_BODY' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // Parse request body
-  const { data: body, error: parseError } = await parseJsonBody<{
-    userId?: string;
-    email?: string;
-    password?: string;
-  }>(request);
-  if (parseError) return parseError;
-  if (!body) {
-    return apiError('请求体无效', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'INVALID_BODY',
+    const { userId, email, password } = body;
+
+    if (!password) {
+      return new Response(JSON.stringify({ ok: false, error: '请提供新密码', code: 'MISSING_PASSWORD' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const validation = validatePasswordStrength(password);
+    if (!validation.isValid) {
+      return new Response(JSON.stringify({ ok: false, error: validation.error || '密码强度不足', code: 'WEAK_PASSWORD' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    let user = null;
+    if (userId) {
+      user = await userRepo.findById(userId);
+    } else if (email) {
+      user = await userRepo.findByEmail(email);
+    }
+
+    if (!user) {
+      return new Response(JSON.stringify({ ok: false, error: '用户不存在', code: 'USER_NOT_FOUND' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const passwordHash = await hashPassword(password);
+    await userRepo.updatePassword(user.id, passwordHash);
+
+    return new Response(JSON.stringify({ ok: true, success: true, message: '密码设置成功' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     });
-  }
-
-  const { userId, email, password } = body;
-
-  // Validate input
-  if (!password) {
-    return apiError('请提供新密码', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_PASSWORD',
-    });
-  }
-
-  // Validate password strength
-  const validation = validatePasswordStrength(password);
-  if (!validation.isValid) {
-    return apiError(validation.error || '密码强度不足', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'WEAK_PASSWORD',
-    });
-  }
-
-  // Find user by ID or email
-  let user = null;
-  if (userId) {
-    user = await userRepo.findById(userId);
-  } else if (email) {
-    user = await userRepo.findByEmail(email);
-  }
-
-  if (!user) {
-    return apiError('用户不存在', {
-      status: HttpStatus.NOT_FOUND,
-      code: 'USER_NOT_FOUND',
-    });
-  }
-
-  // Hash password
-  const passwordHash = await hashPassword(password);
-
-  // Update user password
-  await userRepo.updatePassword(user.id, passwordHash);
-
-  return apiSuccess({ success: true, message: '密码设置成功' });
-});
+  },
+);

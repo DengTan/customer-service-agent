@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
+import { GET, POST, PUT, PATCH, DELETE } from '@/lib/api/with-api';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('SubAgents');
 
 const service = new SubAgentService();
 
-// Matches any 8-4-4-4-12 hex format (including all-zero UUIDs)
 const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: '必须是合法 UUID' });
 
 const CollaborationConfigSchema = z
@@ -40,13 +40,12 @@ const UpdateSubAgentSchema = z.object({
   status: z.enum(['active', 'disabled']).optional(),
 });
 
-// GET /api/sub-agents?parent_bot_id=xxx - List sub-agents under a parent bot
-// GET /api/sub-agents?bot_tree=xxx - Get bot tree (parent + sub-agents)
-// GET /api/sub-agents?main_bots=true - List all main bots with sub-agent counts
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const parentBotId = searchParams.get('parent_bot_id');
   const botTree = searchParams.get('bot_tree');
@@ -103,13 +102,16 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
     status: HttpStatus.BAD_REQUEST,
     code: 'VALIDATION_ERROR',
   });
-});
+}, );
 
-// POST /api/sub-agents - Create a new sub-agent
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -124,13 +126,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const result = await service.createSubAgent(parsed.data);
 
   return apiSuccess(result, HttpStatus.CREATED);
-});
+}, );
 
-// PUT /api/sub-agents - Update a sub-agent
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -145,13 +150,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   const { id, ...rest } = parsed.data;
   const result = await service.updateSubAgent({ id, ...rest });
   return apiSuccess(result);
-});
+}, );
 
-// PATCH /api/sub-agents - Update sub-agent status (partial update)
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'write');
-  if (denied) return denied;
+export { PUTHandler as PUT };
 
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -165,13 +173,16 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.updateSubAgent({ id: id as string, status: status as string });
   return apiSuccess(result);
-});
+}, );
 
-// DELETE /api/sub-agents?id=xxx - Delete a sub-agent
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'delete');
-  if (denied) return denied;
+export { PATCHHandler as PATCH };
 
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -185,4 +196,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.deleteSubAgent(parsed.data);
   return apiSuccess(result);
-});
+}, );
+
+export { DELETEHandler as DELETE };

@@ -1,13 +1,16 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { apiSuccess, requirePermission } from '@/lib/api-utils';
+import { GET, POST, PATCH } from '@/lib/api/with-api';
 import { KnowledgeService } from '@/server/services/knowledge-service';
 
 const knowledgeService = new KnowledgeService();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'knowledge', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const itemId = searchParams.get('item_id');
 
@@ -17,12 +20,16 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await knowledgeService.listVersions(itemId);
   return apiSuccess({ versions: result.versions });
-});
+}, );
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'knowledge', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+  },
+  async ({ request }) => {
   const body = await request.json();
   const { item_id, title, content, category, change_summary, created_by } = body ?? {};
 
@@ -34,12 +41,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     created_by: created_by || null,
   });
   return apiSuccess({ version }, 201);
-});
+}, );
 
-export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'knowledge', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+  },
+  async ({ request }) => {
   const body = await request.json();
   const { version_id, created_by } = body ?? {};
 
@@ -48,4 +59,6 @@ export const PATCH = withErrorHandlerSimple(async (request: NextRequest) => {
     created_by: created_by || null,
   });
   return apiSuccess({ version: result.version });
-});
+}, );
+
+export { PATCHHandler as PATCH };

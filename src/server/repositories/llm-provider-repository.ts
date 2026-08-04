@@ -48,7 +48,7 @@ export class LlmProviderRepository {
     const { data, error } = await this.client
       .from('llm_providers')
       .select('*')
-      .order('priority', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) throw new RepositoryError('list llm_providers', error.message, error.code);
     return processProvidersForResponse((data ?? []) as LlmProviderRow[]);
@@ -126,26 +126,7 @@ export class LlmProviderRepository {
   }
 
   /**
-   * Get the default provider (is_default = true)
-   */
-  async getDefault(): Promise<LlmProviderRow | null> {
-    if (isDemoMode()) {
-      const providers = this.getDemoProviders();
-      return providers.find(p => p.is_default) ?? providers[0] ?? null;
-    }
-
-    const { data, error } = await this.client
-      .from('llm_providers')
-      .select('*')
-      .eq('is_default', true)
-      .maybeSingle();
-
-    if (error) throw new RepositoryError('get default llm_provider', error.message, error.code);
-    return data ? processProviderForResponse(data as LlmProviderRow) : null;
-  }
-
-  /**
-   * Get enabled providers sorted by priority
+   * Get enabled providers
    */
   async listEnabled(): Promise<LlmProviderRow[]> {
     if (isDemoMode()) {
@@ -156,7 +137,7 @@ export class LlmProviderRepository {
       .from('llm_providers')
       .select('*')
       .eq('is_enabled', true)
-      .order('priority', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) throw new RepositoryError('list enabled llm_providers', error.message, error.code);
     return processProvidersForResponse((data ?? []) as LlmProviderRow[]);
@@ -183,15 +164,12 @@ export class LlmProviderRepository {
         base_url: provider.base_url,
         api_key: encryptedApiKey,
         models: provider.models ?? [],
-        default_model: provider.default_model ?? null,
         supports_vision: provider.supports_vision,
         supports_streaming: provider.supports_streaming,
         max_context_tokens: provider.max_context_tokens ?? null,
         auth_config: provider.auth_config ?? null,
         request_config: provider.request_config ?? {},
         is_enabled: provider.is_enabled,
-        is_default: provider.is_default,
-        priority: provider.priority,
       })
       .select()
       .single();
@@ -227,14 +205,12 @@ export class LlmProviderRepository {
     if (updates.description !== undefined) updateData.description = updates.description ?? null;
     if (updates.base_url !== undefined) updateData.base_url = updates.base_url;
     if (updates.models !== undefined) updateData.models = updates.models;
-    if (updates.default_model !== undefined) updateData.default_model = updates.default_model ?? null;
     if (updates.supports_vision !== undefined) updateData.supports_vision = updates.supports_vision;
     if (updates.supports_streaming !== undefined) updateData.supports_streaming = updates.supports_streaming;
     if (updates.max_context_tokens !== undefined) updateData.max_context_tokens = updates.max_context_tokens ?? null;
     if (updates.auth_config !== undefined) updateData.auth_config = updates.auth_config ?? null;
     if (updates.request_config !== undefined) updateData.request_config = updates.request_config;
     if (updates.is_enabled !== undefined) updateData.is_enabled = updates.is_enabled;
-    if (updates.priority !== undefined) updateData.priority = updates.priority;
     
     updateData.updated_at = new Date().toISOString();
 
@@ -263,31 +239,6 @@ export class LlmProviderRepository {
       .eq('id', id);
 
     if (error) throw new RepositoryError(`delete llm_provider ${id}`, error.message, error.code);
-  }
-
-  /**
-   * Set a provider as default (unset others)
-   */
-  async setDefault(id: string): Promise<void> {
-    if (isDemoMode()) {
-      throw new Error('Demo mode: set default not supported');
-    }
-
-    const now = new Date().toISOString();
-    
-    // First, unset all defaults
-    await this.client
-      .from('llm_providers')
-      .update({ is_default: false, updated_at: now })
-      .eq('is_default', true);
-
-    // Then set the new default
-    const { error } = await this.client
-      .from('llm_providers')
-      .update({ is_default: true, updated_at: now })
-      .eq('id', id);
-
-    if (error) throw new RepositoryError(`set default llm_provider ${id}`, error.message, error.code);
   }
 
   /**
@@ -423,15 +374,12 @@ export class LlmProviderRepository {
         base_url: 'https://api.openai.com/v1',
         api_key: 'sk-***demo***',
         models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-        default_model: 'gpt-4o-mini',
         supports_vision: true,
         supports_streaming: true,
         max_context_tokens: 128000,
         auth_config: null,
         request_config: {},
         is_enabled: true,
-        is_default: true,
-        priority: 100,
         created_at: new Date().toISOString(),
         updated_at: null,
       },
@@ -443,15 +391,12 @@ export class LlmProviderRepository {
         base_url: 'https://api.deepseek.com/v1',
         api_key: 'sk-***demo***',
         models: ['deepseek-chat', 'deepseek-reasoner'],
-        default_model: 'deepseek-chat',
         supports_vision: false,
         supports_streaming: true,
         max_context_tokens: 64000,
         auth_config: null,
         request_config: {},
         is_enabled: true,
-        is_default: false,
-        priority: 50,
         created_at: new Date().toISOString(),
         updated_at: null,
       },
@@ -471,10 +416,10 @@ export class LlmProviderRepository {
         supports_streaming: true,
         supports_function_calling: true,
         default_max_tokens: 2048,
-        priority: 10,
         cost_per_1k_input: 0,
         cost_per_1k_output: 0,
         is_enabled: true,
+        type: 'chat',
         created_at: new Date().toISOString(),
         updated_at: null,
       },
@@ -489,10 +434,10 @@ export class LlmProviderRepository {
         supports_streaming: true,
         supports_function_calling: true,
         default_max_tokens: 4096,
-        priority: 20,
         cost_per_1k_input: 0,
         cost_per_1k_output: 0,
         is_enabled: true,
+        type: 'vision',
         created_at: new Date().toISOString(),
         updated_at: null,
       },

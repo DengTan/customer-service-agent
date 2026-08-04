@@ -8,7 +8,8 @@ const conversationService = new ConversationService();
 
 export const POSTHandler = POST(
   {
-    auth: 'optional',
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
   },
   async ({ request, params }) => {
     const { id } = params as { id: string };

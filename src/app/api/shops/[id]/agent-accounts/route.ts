@@ -1,13 +1,18 @@
 import { NextRequest } from 'next/server';
-import { parseJsonBody, withErrorHandler, apiSuccess } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess } from '@/lib/api-utils';
 import { requireRole } from '@/lib/api-utils';
 import { ShopAgentAccountsService } from '@/server/services/shop-agent-accounts-service';
+import { GET, POST, DELETE } from '@/lib/api/with-api';
 
 const service = new ShopAgentAccountsService();
 
-export const GET = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  requireRole(request, ['admin']);
-  const { id: shopId } = await params;
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'read' },
+  },
+  async ({ params }) => {
+  const { id: shopId } = params as { id: string };
   if (!shopId) return apiSuccess({ accounts: [], total: 0, active: 0 });
 
   const [accountsResult, countResult] = await Promise.all([
@@ -19,11 +24,17 @@ export const GET = withErrorHandler(async (request: NextRequest, { params }: { p
     ...accountsResult,
     ...countResult,
   });
-});
+}, );
 
-export const POST = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  requireRole(request, ['admin']);
-  const { id: shopId } = await params;
+export { GETHandler as GET };
+
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request, params }) => {
+  const { id: shopId } = params as { id: string };
   if (!shopId) throw new Error('Missing shop ID');
 
   const { data: body, error: parseError } = await parseJsonBody(request);
@@ -37,14 +48,22 @@ export const POST = withErrorHandler(async (request: NextRequest, { params }: { 
   );
 
   return apiSuccess({ account });
-});
+}, );
 
-export const DELETE = withErrorHandler(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-  requireRole(request, ['admin']);
+export { POSTHandler as POST };
+
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request }) => {
   const url = new URL(request.url);
   const accountId = url.searchParams.get('account_id');
   if (!accountId) throw new Error('Missing account_id');
 
   const result = await service.delete(accountId);
   return apiSuccess(result);
-});
+}, );
+
+export { DELETEHandler as DELETE };

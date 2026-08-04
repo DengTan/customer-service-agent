@@ -1,12 +1,15 @@
 import { ShopService } from '@/server/services/shop-service';
-import { parseJsonBody, apiSuccess, withErrorHandlerSimple, requireRole } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess } from '@/lib/api-utils';
+import { GET, POST } from '@/lib/api/with-api';
 
 const shopService = new ShopService();
 
-export const GET = withErrorHandlerSimple(async (request) => {
-  const authError = requireRole(request, ['admin']);
-  if (authError) return authError;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'read' },
+  },
+  async ({ request }) => {
   const url = new URL(request.url);
   const withStats = url.searchParams.get('stats') === 'true';
 
@@ -23,12 +26,16 @@ export const GET = withErrorHandlerSimple(async (request) => {
 
   const result = await shopService.list();
   return apiSuccess({ shops: result.shops });
-});
+}, );
 
-export const POST = withErrorHandlerSimple(async (request) => {
-  const authError = requireRole(request, ['admin']);
-  if (authError) return authError;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody<{
     name: string;
     platform: string;
@@ -47,4 +54,6 @@ export const POST = withErrorHandlerSimple(async (request) => {
 
   const result = await shopService.create(body!);
   return apiSuccess({ shop: result.shop });
-});
+}, );
+
+export { POSTHandler as POST };

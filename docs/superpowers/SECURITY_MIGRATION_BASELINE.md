@@ -5,6 +5,17 @@
 **Document Version:** 2026-07-14
 **Status:** Living document — update after each migration application
 
+> **Updated 2026-08-04 (v2.5)** — This baseline is the **legacy (Phase 7) snapshot** dated 2026-07-14. Since then the project has applied the Phase A + B + C migration set per `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5. Delta vs. the 2026-07-14 snapshot:
+>
+> - **RC-2 / B1 — 62 RLS policy files** committed under `supabase/policies/` (one per table). `pg_policies` snapshot checked into `.snapshot.sql`; CI gate `pnpm policies:snapshot:check` runs in 0s. `pnpm policies:inventory` Vitest enforces coverage.
+> - **RC-3 / B2 — Drizzle schema gap closed** via `drizzle.config.ts` + 5 missing tables (ticketCategories/CustomFields/FieldValues/Relations/AuditLog) added to `schema.ts`. `pnpm ddls:guard` scans 90 migrations and rejects drift.
+> - **RC-5 / B4b — `effect_outbox` table** (id / effect_name / payload jsonb / attempts / max_attempts / next_run_at / last_error / created_at) in Drizzle schema + `supabase/policies/effect_outbox.sql` (service_role only).
+> - **RC-6 / Q7 — 12 deprecated API routes** removed/replaced (see `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` §3.1 A6).
+> - **RC-7 / A6 — DROP 4 tables with missing RLS** (`customers`, `auto_reply_rules`, `quick_replies`, plus one more via Supabase migration `20260801_stage_a6_drop_public_rls.sql`); REVOKE on 2 SECURITY DEFINER RPCs from anon/authenticated; `/api/admin/migrate` returns 410 Gone (RFC 7807).
+> - **Phase C — schema-drift-check.ts baseline** + `tests/e2e/auth-matrix.spec.ts` (88/106 passing) + `stryker.config.json` + `renovate.json`.
+>
+> The 60-table RLS batch and 14 SECURITY DEFINER RPC hardening listed below remain in force. Source of truth: `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5.
+
 ---
 
 ## Purpose

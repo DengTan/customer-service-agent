@@ -9,6 +9,7 @@ import { getRefundProvider } from '@/server/services/tool-providers';
 export const POSTHandler = POST(
   {
     auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
     rateLimit: { maxRequests: 30, windowMs: 60_000 },
   },
   async ({ request }) => {

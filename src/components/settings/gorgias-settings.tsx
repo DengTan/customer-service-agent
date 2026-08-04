@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Globe, Key, Check, X, Loader2, RefreshCw, ExternalLink, Webhook, Copy, CheckCircle2, AlertTriangle, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface GorgiasSettings {
   enabled: boolean;
@@ -71,7 +72,7 @@ export default function GorgiasSettings() {
     if (!settings.enabled || !settings.webhookEnabled) return;
     setDiagnosing(true);
     try {
-      const res = await fetch('/api/gorgias');
+      const res = await apiFetch('/api/gorgias');
       if (res.ok) {
         const data = await res.json();
         setWebhookDiagnostics((data.webhook as WebhookDiagnostics) || null);
@@ -91,7 +92,7 @@ export default function GorgiasSettings() {
 
   const loadSettings = async () => {
     try {
-      const res = await fetch('/api/gorgias/settings');
+      const res = await apiFetch('/api/gorgias/settings');
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -178,7 +179,7 @@ export default function GorgiasSettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/gorgias/settings', {
+      const res = await apiFetch('/api/gorgias/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

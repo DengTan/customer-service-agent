@@ -18,6 +18,7 @@ import { useThemeSettings } from '@/lib/theme-settings-context';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { NON_RESETTABLE_KEYS } from '@/lib/settings-schema';
+import { apiFetch } from '@/lib/api-fetch';
 
 // Lazy load section components
 const AutoReplySettings = dynamic(() => import('./auto-reply-settings').then(m => ({ default: m.AutoReplySettings })), {
@@ -227,13 +228,13 @@ export function SettingsPage() {
     setIsLoading(true);
     try {
       const [rulesRes, settingsRes, pushTemplatesRes, pushEventsRes, shopsRes, skillGroupsRes, externalKbRes] = await Promise.all([
-        fetch('/api/auto-reply'),
-        fetch('/api/settings'),
-        fetch('/api/push/templates'),
-        fetch('/api/push/events'),
-        fetch('/api/shops?stats=true').catch(() => null),
-        fetch('/api/skill-groups').catch(() => null),
-        fetch('/api/knowledge/external/settings').catch(() => null),
+        apiFetch('/api/auto-reply'),
+        apiFetch('/api/settings'),
+        apiFetch('/api/push/templates'),
+        apiFetch('/api/push/events'),
+        apiFetch('/api/shops?stats=true').catch(() => null),
+        apiFetch('/api/skill-groups').catch(() => null),
+        apiFetch('/api/knowledge/external/settings').catch(() => null),
       ]);
       const rulesData = await rulesRes.json();
       const settingsData = await settingsRes.json();
@@ -336,7 +337,7 @@ export function SettingsPage() {
     setSaving(true);
     try {
       // 1. Save all non-secret settings via the generic endpoint
-      const res = await fetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: writableSettings }),
@@ -346,7 +347,7 @@ export function SettingsPage() {
       // 2. Save system_prompt via the dedicated narrow-scope endpoint
       //    (system_prompt is no longer writable via the generic endpoint;
       //     calling it here is safe even if the value hasn't changed — it's idempotent)
-      const spRes = await fetch('/api/settings/system-prompt', {
+      const spRes = await apiFetch('/api/settings/system-prompt', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ system_prompt: systemPrompt ?? '' }),
@@ -359,7 +360,7 @@ export function SettingsPage() {
         // Re-fetch full settings so the single source of truth (server DB) is
         // reflected in the Theme Context and localStorage.
         try {
-          const fullRes = await fetch('/api/settings');
+          const fullRes = await apiFetch('/api/settings');
           if (fullRes.ok) {
             const full = await fullRes.json();
             const db = full.settings ?? {};

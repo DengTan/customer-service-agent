@@ -8,8 +8,7 @@ const service = new MarketingService();
 export const POSTHandler = POST(
   {
     auth: 'required',
-    perm: { resource: 'marketing', action: 'write' },
-    rateLimit: { maxRequests: 30, windowMs: 60_000 },
+    perm: { resource: 'team', action: 'read' },
   },
   async ({ request }) => {
     const { data: body, error: parseError } = await parseJsonBody(request);

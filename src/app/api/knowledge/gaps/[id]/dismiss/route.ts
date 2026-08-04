@@ -1,31 +1,35 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandler, requireRole } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { KnowledgeGapService } from '@/server/services/knowledge-gap-service';
-import { getAuthenticatedUserId } from '@/lib/api-utils';
 
-const ADMIN_ONLY = ['admin'];
 const service = new KnowledgeGapService();
 
 interface DismissBody {
   notes?: string;
 }
 
-export const POST = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+export const POST = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+  },
+  async ({ request, params }) => {
+    const { id } = params as { id: string };
+    if (!id) {
+      return new Response(JSON.stringify({ ok: false, error: 'id is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { id } = await params;
-  if (!id) return apiSuccess({ success: false, error: 'id is required' });
-
-  const { data: body } = await parseJsonBody<DismissBody>(request);
-  const userId = getAuthenticatedUserId(request) ?? 'admin';
-
-  const gap = await service.dismissGap(id, {
-    resolvedBy: userId,
-    notes: body?.notes,
-  });
-  return apiSuccess({ gap });
-});
+    const body = await request.json().catch(() => ({})) as DismissBody;
+    const gap = await service.dismissGap(id, {
+      resolvedBy: id,
+      notes: body?.notes,
+    });
+    return new Response(JSON.stringify({ ok: true, gap }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

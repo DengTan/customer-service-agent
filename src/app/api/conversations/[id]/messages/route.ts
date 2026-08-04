@@ -1,12 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { apiError, parseJsonBody, HttpStatus, withErrorHandler, checkRateLimit } from '@/lib/api-utils';
+import { NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { ConversationService } from '@/server/services/conversation-service';
 import { AutoReplyService } from '@/server/services/auto-reply-service';
 import { LLMStreamingService } from '@/server/services/llm-streaming-service';
 import { SubAgentService } from '@/server/services/sub-agent-service';
 import { SettingsService } from '@/server/services/settings-service';
-import { HandoffService } from '@/server/services/handoff-service';
 import { RoutingService } from '@/server/services/routing-service';
 import type { RoutingMatchResult } from '@/server/services/routing-service';
 import { RetrievalOrchestrator } from '@/server/services/retrieval-orchestrator';
@@ -18,6 +16,7 @@ import { ContentFilterService } from '@/server/services/content-filter-service';
 import { HTTP } from '@/lib/constants';
 import { ConfidenceBreakdown } from '@/lib/confidence-calculator';
 import { z } from 'zod';
+import { withApi } from '@/lib/api/with-api';
 
 const FORWARD_HEADER_KEYS = new Set([
   'x-request-id',
@@ -43,7 +42,6 @@ function extractForwardHeaders(headers: Headers): Record<string, string> {
   return result;
 }
 
-// Zod schema for message input validation
 const MessageSchema = z.object({
   content: z.string()
     .min(1, '消息内容不能为空')
@@ -53,27 +51,34 @@ const MessageSchema = z.object({
   enable_sub_agent: z.boolean().optional(),
 });
 
-export const POST = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  // Rate limit: 20 messages per minute per IP
-  const rateLimitError = checkRateLimit(request, { maxRequests: 20, windowMs: 60_000 });
-  if (rateLimitError) return rateLimitError;
+export const POST = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+    rateLimit: { maxRequests: 20, windowMs: 60_000 },
+  },
+  async ({ request, params }) => {
+  const { id: conversationId } = params as { id: string };
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(JSON.stringify({ message: { role: 'system', content: '请求体无效' } }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-  const { id: conversationId } = await params;
-  const { data: body, error: parseError } = await parseJsonBody(request);
-  if (parseError) return parseError;
-
-  // Validate input with Zod schema
   const validationResult = MessageSchema.safeParse(body);
   if (!validationResult.success) {
-    return apiError(validationResult.error.issues[0]?.message || '输入格式不正确', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+    return new Response(JSON.stringify({ message: { role: 'system', content: validationResult.error.issues[0]?.message || '输入格式不正确' } }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const { content: userMessage, role: messageRole, image_url: imageUrl, enable_sub_agent: enableSubAgent } = validationResult.data;
 
-  // Content security filter check
   const contentFilterService = new ContentFilterService();
   const filterResult = await contentFilterService.filterContent(userMessage, {
     conversationId,
@@ -89,7 +94,6 @@ export const POST = withErrorHandler(async (
     }, { status: 400 });
   }
 
-  // If content was filtered (replacements), use the filtered content
   const processedMessage = filterResult.filteredContent;
   if (processedMessage !== userMessage) {
     logger.api.info('Content filtered', {
@@ -100,26 +104,20 @@ export const POST = withErrorHandler(async (
     });
   }
 
-  // Initialize services
   const conversationService = new ConversationService();
   const autoReplyService = new AutoReplyService();
   const llmStreamingService = new LLMStreamingService();
   const subAgentService = new SubAgentService();
 
-  // 1. Validate conversation exists and status allows AI responses
-  // Throws ServiceError if not found, caught by withErrorHandler
   const { status: convStatus } = await conversationService.ensureCanReceiveAiMessage(conversationId);
 
-  // If conversation is in handoff status, handle agent messages separately
   if (convStatus === 'handoff') {
-    // Agent sending a message during handoff: save directly without AI pipeline
     if (messageRole === 'agent') {
       await conversationService.insertMessage({
         conversation_id: conversationId,
         role: 'agent',
         content: userMessage,
       });
-      // Update conversation timestamp
       await conversationService.updateMessageCountAfterUserMessage(conversationId, userMessage);
       return NextResponse.json({
         message: {
@@ -129,7 +127,6 @@ export const POST = withErrorHandler(async (
         },
       });
     }
-    // Non-agent messages during handoff: return system notice
     return NextResponse.json({
       message: {
         role: 'system',
@@ -138,7 +135,6 @@ export const POST = withErrorHandler(async (
     });
   }
 
-  // 1.5 Check AI max concurrent conversations
   const settingsService = new SettingsService();
   const appSettings = await settingsService.getSettingsMap();
   const maxConcurrent = parseInt(appSettings.ai_max_concurrent || '0', 10);
@@ -155,7 +151,6 @@ export const POST = withErrorHandler(async (
     }
   }
 
-  // 1.5.1 Load extended LLM provider settings using unified config loader
   let llmProviderConfig: {
     providerId?: string;
     providerBaseUrl?: string;
@@ -167,8 +162,6 @@ export const POST = withErrorHandler(async (
   try {
     const { LlmProviderService } = await import('@/server/services/llm-provider-service');
     const llmService = new LlmProviderService();
-
-    // Use unified config loader (handles lookup + decryption + error handling)
     const providerConfig = await llmService.loadProviderConfig(llmProviderId);
     if (providerConfig) {
       llmProviderConfig = {
@@ -182,18 +175,13 @@ export const POST = withErrorHandler(async (
     logger.api.warn('Failed to load LLM provider config', { error, providerId: llmProviderId });
   }
 
-  // 1.6 Check session timeout from settings (max_turns check moved below — uses
-  // role='user' exact count which we cannot read until the conversation exists)
-
   const sessionInfo = await conversationService.getSessionInfo(conversationId);
   if (sessionInfo) {
-    // Check session timeout
     const timeoutMinutes = parseInt(appSettings.session_timeout || '0', 10);
     if (timeoutMinutes > 0) {
       const lastActiveAt = new Date(sessionInfo.updated_at).getTime();
       const elapsedMinutes = (Date.now() - lastActiveAt) / 60_000;
       if (elapsedMinutes > timeoutMinutes) {
-        // Auto-end the conversation
         await conversationService.updateConversation(conversationId, { status: 'ended' });
         return NextResponse.json({
           message: {
@@ -205,12 +193,6 @@ export const POST = withErrorHandler(async (
     }
   }
 
-  // 1.6.1 Check max_turns against exact role='user' count.
-  // The route reads existing user turns BEFORE inserting this user message.
-  // This keeps the semantic: max_turns=N allows the first N user messages and
-  // rejects the (N+1)th, regardless of how many assistant/system/agent rows
-  // exist. countUserMessages falls back to 0 on DB failure so the intake is
-  // not blocked by a transient DB error (logged inside the service).
   const maxTurns = parseInt(appSettings.max_turns || '0', 10);
   if (maxTurns > 0) {
     const existingUserTurns = await conversationService.countUserMessages(conversationId);
@@ -226,7 +208,6 @@ export const POST = withErrorHandler(async (
     }
   }
 
-  // 2. Save user message (with image URL if present)
   await conversationService.insertMessage({
     conversation_id: conversationId,
     role: 'user',
@@ -234,15 +215,11 @@ export const POST = withErrorHandler(async (
     image_url: imageUrl || null,
   });
 
-  // 3. Update conversation message count and title
   await conversationService.updateMessageCountAfterUserMessage(conversationId, userMessage);
 
-  // 4. Check auto-reply rules (using filtered content for matching)
   const autoReply = await autoReplyService.matchReply(processedMessage);
 
-  // 5. If auto-reply matched, return immediately
   if (autoReply) {
-    // Filter AI response content for sensitive words and URLs (bidirectional filtering)
     const filteredAutoReplyContent = await contentFilterService.filterAssistantContent(autoReply.content);
 
     await conversationService.insertMessage({
@@ -253,7 +230,6 @@ export const POST = withErrorHandler(async (
       sources: [{ type: 'auto_reply', keyword: autoReply.rule.keyword }],
     });
 
-    // Update message count for the assistant message (user count already incremented in step 3)
     await conversationService.incrementMessageCount(conversationId);
 
     return NextResponse.json({
@@ -266,11 +242,8 @@ export const POST = withErrorHandler(async (
     });
   }
 
-  // 6. Get message history for context
   const historyMessages = await conversationService.listMessageHistory(conversationId, 20);
 
-  // [P0-B] Route FIRST — must happen before retrieval so we know which bot's
-  // knowledge_ids to use for the knowledge search, and which tools are allowed.
   let routingMatch: RoutingMatchResult | null = null;
   try {
     const routingService = new RoutingService();
@@ -288,15 +261,12 @@ export const POST = withErrorHandler(async (
     logger.agent.debug('[messages/route] routing match error, falling back to default', { error: err });
   }
 
-  // P0/P1: Use shared RetrievalOrchestrator
   const orchestrator = new RetrievalOrchestrator();
   const recentMessages = historyMessages.slice(-10).map(m => ({
     role: (m as unknown as { role: string }).role,
     content: (m as unknown as { content: string }).content,
   }));
 
-  // [P0-B] Build the bot-scoped knowledge_ids list from routing match.
-  // routingMatch.bot.knowledge_ids is typed as string[] (bot-config-repository.ts).
   const routedBotKnowledgeIds: string[] | undefined =
     routingMatch?.bot?.knowledge_ids
       ? (Array.isArray(routingMatch.bot.knowledge_ids) && routingMatch.bot.knowledge_ids.length > 0
@@ -304,7 +274,6 @@ export const POST = withErrorHandler(async (
           : undefined)
       : undefined;
 
-  // [P0-B] Build the bot-scoped tools list from routing match.
   const routedBotTools: string[] | undefined =
     routingMatch?.bot?.tools
       ? (Array.isArray(routingMatch.bot.tools) && routingMatch.bot.tools.length > 0
@@ -312,8 +281,6 @@ export const POST = withErrorHandler(async (
           : undefined)
       : undefined;
 
-  // [P0-B] Thread routed knowledge_ids into the orchestrator so the knowledge search
-  // is scoped to the matched bot's knowledge base (not global).
   const retrievalResult = await orchestrator.retrieve(processedMessage, recentMessages, {
     useHybrid: true,
     routedKnowledgeIds: routedBotKnowledgeIds,
@@ -321,9 +288,6 @@ export const POST = withErrorHandler(async (
   const { evidence: evidenceBundle } = retrievalResult;
   const orchestratorCitations = evidenceBundle.citations;
 
-  // Normalize orchestrator output to legacy LLM context shape. The LLM still
-  // receives the accepted context (for generation), but public citations are
-  // pinned to evidenceCitations — no more regex-driven or auto-promotion paths.
   const knowledgeResult: KnowledgeSearchResult = retrievalResult.knowledgeContext
     ? {
         context: retrievalResult.knowledgeContext.context,
@@ -335,22 +299,18 @@ export const POST = withErrorHandler(async (
   const productContext = retrievalResult.productContext?.productContext ?? '';
   const sizeChartContext = retrievalResult.sizeChartContext?.sizeChartContext ?? '';
 
-  // 8. Extract custom headers for LLM
   const customHeaders = extractForwardHeaders(request.headers);
 
-  // 9. Get conversation's shop (platform_connection_id) to determine which Bot to use
   const botConfigRepo = new BotConfigRepository();
   let shopBotSystemPrompt: string | undefined;
   let shopBotId: string | undefined;
   let shopBotName: string | undefined;
 
   try {
-    // Get conversation's shop ID
     const conversation = await conversationService.getConversationBasic(conversationId);
     const shopId = conversation?.platform_connection_id;
 
     if (shopId) {
-      // Find the Bot bound to this shop
       const shopBot = await botConfigRepo.findByShopId(shopId);
       if (shopBot && shopBot.status === 'active') {
         shopBotSystemPrompt = shopBot.system_prompt;
@@ -367,26 +327,20 @@ export const POST = withErrorHandler(async (
     logger.api.error('Failed to lookup shop bot, falling back to default', { error: botLookupError, conversationId });
   }
 
-  // [P0-B] Routing system_prompt takes priority over shop-bound bot.
-  // routingMatch is already computed above (before retrieval). Re-use it here.
   let routingSystemPrompt: string | undefined;
   if (routingMatch?.bot?.system_prompt) {
     routingSystemPrompt = routingMatch.bot.system_prompt;
-    // Update parentBotId for sub-agent delegation — routing bot overrides shop bot
     if (enableSubAgent && !routingMatch.bot.is_sub_agent) {
       shopBotId = routingMatch.bot.id;
     }
   }
 
-  // 9.7 Proactive sub-agent intent detection — if a sub-agent matches with high confidence,
-  // delegate directly instead of going through the general LLM flow
   const parentBotId = shopBotId;
   let subAgentDelegationResult: { childBotName: string; responseContent: string; confidence: number; delegationId: string } | null = null;
   if (enableSubAgent && parentBotId) {
     try {
       const intentResult = await subAgentService.detectIntentAndRoute(parentBotId, processedMessage);
       if (intentResult.matchedSubAgent && intentResult.confidence >= 0.5) {
-        // High confidence match — delegate directly to the sub-agent
         const result = await subAgentService.delegateTask({
           conversation_id: conversationId,
           parent_bot_id: parentBotId,
@@ -401,7 +355,6 @@ export const POST = withErrorHandler(async (
           delegationId: result.delegation.id,
         };
 
-        // Save the sub-agent's response as an assistant message
         const subAgentBreakdown: ConfidenceBreakdown = {
           knowledge_score: 0,
           tool_score: 0,
@@ -411,7 +364,6 @@ export const POST = withErrorHandler(async (
           final: result.confidence,
         };
 
-        // Filter AI response content for sensitive words and URLs (bidirectional filtering)
         const filteredSubAgentContent = await contentFilterService.filterAssistantContent(result.responseContent);
 
         await conversationService.insertMessage({
@@ -423,10 +375,8 @@ export const POST = withErrorHandler(async (
           confidence_breakdown: subAgentBreakdown,
         });
 
-        // Update message count for the assistant message
         await conversationService.incrementMessageCount(conversationId);
 
-        // Return as SSE stream for consistent frontend handling
         const delegationStream = new ReadableStream({
           start(controller) {
             const encoder = new TextEncoder();
@@ -454,26 +404,15 @@ export const POST = withErrorHandler(async (
       }
     } catch (delegationError) {
       logger.api.error('Proactive sub-agent delegation failed, falling back to LLM', { error: delegationError, conversationId });
-      // Fall through to normal LLM flow
     }
   }
 
-  // 10. Read AI model settings (appSettings already loaded in step 1.5)
-
-  // 11. Stream LLM response with error boundary (using filtered content)
-  // [P0-C] Create AbortController so that post-stream DB operations
-  // (incrementMessageCount / qualityCheck / knowledgeGap) are skipped when the
-  // client aborts the SSE stream (disconnect / navigation).
   const abortController = new AbortController();
   let stream: ReadableStream<Uint8Array>;
   try {
     stream = llmStreamingService.createStream(conversationId, processedMessage, historyMessages, {
-      // Knowledge context — orchestrator-graded (P0). Used for LLM generation only,
-      // NOT auto-published as citations.
       knowledgeContext: knowledgeResult.context || undefined,
       knowledgeConfidence: knowledgeResult.confidence,
-      // CANONICAL public citations. These become SSE done.sources AND the
-      // persisted Message.sources (in handlePostStreamOperations).
       evidenceCitations: orchestratorCitations,
       knowledgeImages: knowledgeResult.images,
       productContext: productContext || undefined,
@@ -481,7 +420,6 @@ export const POST = withErrorHandler(async (
       imageUrl: imageUrl || null,
       customHeaders,
       knowledgeMinScore: retrievalResult.minScore,
-      // Provenance trace for observability (consumed by handlePostStreamOperations → metadata)
       retrievalTrace: {
         action: retrievalResult.decision.action,
         reasonCode: retrievalResult.decision.reasonCode,
@@ -494,7 +432,7 @@ export const POST = withErrorHandler(async (
       parentBotName: shopBotName,
       enableSubAgentDelegation: !!parentBotId,
       aiModel: appSettings.ai_model_enabled === 'false'
-        ? undefined  // Will fall back to multimodal model
+        ? undefined
         : appSettings.ai_model,
       multimodalModel: appSettings.multimodal_model,
       multimodalEnabled: appSettings.multimodal_enabled !== 'false',
@@ -503,20 +441,16 @@ export const POST = withErrorHandler(async (
       systemPrompt: routingSystemPrompt || shopBotSystemPrompt || appSettings.system_prompt || undefined,
       temperature: appSettings.ai_temperature ? parseFloat(appSettings.ai_temperature) : undefined,
       maxTokens: appSettings.ai_max_tokens ? parseInt(appSettings.ai_max_tokens, 10) : undefined,
-      // Extended LLM Provider configuration
       llmProviderId: llmProviderConfig.providerId,
       llmProviderBaseUrl: llmProviderConfig.providerBaseUrl,
       llmProviderApiKey: llmProviderConfig.providerApiKey,
       llmProviderDefaultModel: llmProviderConfig.defaultModel,
-      // [P0-B] Tool scoping: routed bot's tools restrict which tools the LLM may call.
-      // [P0-C] Pass abortController so cancel() propagates abort to post-stream effects.
       routedBotTools,
       abortSignal: abortController.signal,
       abortController,
     });
   } catch (streamInitError) {
     logger.api.error('Failed to create LLM stream', { error: streamInitError, conversationId });
-    // Return a minimal SSE stream with the error so the frontend can display it
     const errorEvent = `data: ${JSON.stringify({ error: 'AI 服务暂时不可用，请稍后重试', done: true })}\n\n`;
     return new Response(errorEvent, {
       headers: {
@@ -527,12 +461,6 @@ export const POST = withErrorHandler(async (
     });
   }
 
-  // Return streaming response
-  // Note: Post-stream operations (insert assistant message, generate summary, check alerts)
-  // are handled internally by the LLMStreamingService.
-  // [P0-C] Pass abortController.signal so that when the client disconnects and the
-  // Response is cancelled, abortController.abort() fires → handlePostStreamOperations
-  // detects signal.aborted and skips all DB side-effects.
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
@@ -542,4 +470,5 @@ export const POST = withErrorHandler(async (
     // @ts-expect-error - signal is supported by Next.js / Node.js Response but not in TS lib <5.3
     signal: abortController.signal,
   });
-});
+},
+);

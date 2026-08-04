@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import { AlertTriangle, Bell, CheckCircle, Loader2, RefreshCw, X, ArrowUpDown } from 'lucide-react';
 import {
   Sheet,
@@ -30,7 +31,7 @@ export function AlertDrawer({ open, onOpenChange, onAlertResolved, onConversatio
   const loadAlerts = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/alerts?limit=50');
+      const res = await apiFetch('/api/alerts?limit=50');
       if (!res.ok) return;
       const data = await res.json();
       setAlerts(data.alerts || []);
@@ -53,7 +54,7 @@ export function AlertDrawer({ open, onOpenChange, onAlertResolved, onConversatio
       return next;
     });
     try {
-      const res = await fetch(`/api/alerts?id=${alertId}`, {
+      const res = await apiFetch(`/api/alerts?id=${alertId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'resolve' }),

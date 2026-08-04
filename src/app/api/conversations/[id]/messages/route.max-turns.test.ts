@@ -5,6 +5,18 @@ vi.mock('@/storage/database/supabase-client', () => ({
   isDemoMode: () => false,
 }));
 
+// ── JWT mocks ──────────────────────────────────────────────────────────────────
+// withApi reads extractTokenFromCookies → verifyToken for auth.
+vi.mock('@/lib/auth/jwt', () => ({
+  extractTokenFromCookies: vi.fn(() => 'mock-valid-token'),
+  verifyToken: vi.fn(() => ({ role: 'admin', userId: 'u-admin' })),
+}));
+
+// Mock PermissionService so requirePermission returns null (access granted).
+vi.mock('@/server/services/permission-service', () => ({
+  PermissionService: class { checkPermission = vi.fn(async () => true); },
+}));
+
 // Mock content-filter so it passes through cleanly.
 const filterContentMock = vi.fn(async (content: string) => ({
   allowed: true,
@@ -105,7 +117,11 @@ import { POST } from '@/app/api/conversations/[id]/messages/route';
 function buildRequest(body: { content: string }): Request {
   return new Request('http://localhost/api/conversations/conv-1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Provide a valid JWT cookie so withApi auth gate passes.
+      'cookie': 'auth_token=mock-valid-token',
+    },
     body: JSON.stringify(body),
   });
 }

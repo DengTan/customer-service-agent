@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { QualityService } from '@/server/services/quality-service';
-import { apiError, apiSuccess, parseJsonBody, HttpStatus, withErrorHandlerSimple, requirePermission } from '@/lib/api-utils';
+import { apiError, apiSuccess, parseJsonBody, HttpStatus } from '@/lib/api-utils';
+import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
 import type { QualityRuleType } from '@/lib/types';
 
 const QUALITY_RULE_TYPES: QualityRuleType[] = [
@@ -13,11 +14,12 @@ const QUALITY_RULE_TYPES: QualityRuleType[] = [
 
 const service = new QualityService();
 
-// GET /api/quality-checks - 获取质检规则和记录
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'quality', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'quality', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
 
@@ -42,13 +44,16 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
   }
 
   return apiError('无效的type参数', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-});
+}, );
 
-// POST /api/quality-checks - 创建质检规则
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'quality', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'quality', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -71,13 +76,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     is_enabled: is_enabled as boolean | undefined,
   });
   return apiSuccess(result);
-});
+}, );
 
-// PUT /api/quality-checks - 更新质检规则
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'quality', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'quality', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -103,13 +111,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
     is_enabled: is_enabled as boolean | undefined,
   });
   return apiSuccess(result);
-});
+}, );
 
-// DELETE /api/quality-checks?id=xxx - 删除质检规则
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'quality', 'delete');
-  if (denied) return denied;
+export { PUTHandler as PUT };
 
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'quality', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
@@ -119,4 +130,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.deleteRule(id);
   return apiSuccess(result);
-});
+}, );
+
+export { DELETEHandler as DELETE };

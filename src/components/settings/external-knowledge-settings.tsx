@@ -6,6 +6,7 @@ import { Globe, TestTube, CheckCircle, XCircle, Loader2, ExternalLink, Info, Spa
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── DTO Types (aligns with API naming) ──────────────────────
 
@@ -80,7 +81,7 @@ export function ExternalKnowledgeSettings({ externalKbSettings, onSettingsChange
 
   const handleSave = async (updates: ExternalKbSettingsRequest): Promise<boolean> => {
     try {
-      const res = await fetch('/api/knowledge/external/settings', {
+      const res = await apiFetch('/api/knowledge/external/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -147,7 +148,7 @@ export function ExternalKnowledgeSettings({ externalKbSettings, onSettingsChange
       : { provider: settings.provider, baseUrl: settings.baseUrl, datasetId: settings.datasetId };
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -184,7 +185,7 @@ export function ExternalKnowledgeSettings({ externalKbSettings, onSettingsChange
     });
     if (!confirmed) return;
 
-    const res = await fetch('/api/knowledge/external/settings', {
+    const res = await apiFetch('/api/knowledge/external/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -236,7 +237,7 @@ export function ExternalKnowledgeSettings({ externalKbSettings, onSettingsChange
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
       if (value) {
-        const res = await fetch('/api/knowledge/external/settings', {
+        const res = await apiFetch('/api/knowledge/external/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ apiKey: value }),

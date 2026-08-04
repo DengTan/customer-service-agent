@@ -1,18 +1,20 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, withErrorHandler, requireRole } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { KnowledgeGapService } from '@/server/services/knowledge-gap-service';
 
-const READ_ROLES = ['admin', 'agent'];
 const service = new KnowledgeGapService();
 
-export const GET = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const forbidden = requireRole(request, READ_ROLES);
-  if (forbidden) return forbidden;
-
-  const { id } = await params;
-  const gap = id ? await service.getGap(id) : null;
-  return apiSuccess({ gap });
-});
+export const GET = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'read' },
+  },
+  async ({ params }) => {
+    const { id } = params as { id: string };
+    const gap = id ? await service.getGap(id) : null;
+    return new Response(JSON.stringify({ ok: true, gap }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

@@ -30,6 +30,7 @@ import { SizeChartFormModal } from './size-chart-form-modal';
 import { SizeChartItem } from './types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 const CHART_TYPE_ICONS: Record<string, React.ReactNode> = {
   clothing: <Shirt className="w-5 h-5" />,
@@ -149,7 +150,7 @@ export function SizeChartsTab() {
   useEffect(() => {
     async function loadProducts() {
       try {
-        const res = await fetch('/api/knowledge/products?page_size=200');
+        const res = await apiFetch('/api/knowledge/products?page_size=200');
         if (!res.ok) return;
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : [];
@@ -179,7 +180,7 @@ export function SizeChartsTab() {
       if (sizeChartFilterType) params.set('chart_type', sizeChartFilterType);
       if (sizeChartFilterStatus) params.set('status', sizeChartFilterStatus);
       if (productFilter) params.set('product_id', productFilter);
-      const res = await fetch(`/api/knowledge/size-charts?${params}`);
+      const res = await apiFetch(`/api/knowledge/size-charts?${params}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSizeCharts(data.items || []);
@@ -206,7 +207,7 @@ export function SizeChartsTab() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/knowledge/size-charts?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/knowledge/size-charts?id=${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '删除失败');
       toast.success('尺码表已删除');
@@ -226,7 +227,7 @@ export function SizeChartsTab() {
     const newStatus = chart.status === 'active' ? 'disabled' : 'active';
     setConfirmToggleSizeChart(null);
     try {
-      const res = await fetch('/api/knowledge/size-charts', {
+      const res = await apiFetch('/api/knowledge/size-charts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: chart.id, status: newStatus }),

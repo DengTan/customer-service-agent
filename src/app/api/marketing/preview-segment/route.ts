@@ -1,19 +1,21 @@
 import { NextRequest } from 'next/server';
 import { MarketingService } from '@/server/services/marketing-service';
-import { parseJsonBody, withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { POST } from '@/lib/api/with-api';
 import { z } from 'zod';
 
 const service = new MarketingService();
 
-// Zod schema for segment preview validation
 const SegmentPreviewSchema = z.object({
   target_segment: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'marketing', 'write');
-  if (denied) return denied;
-  
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -25,4 +27,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const targetSegment = validation.data?.target_segment ?? {};
   const result = await service.previewSegment(targetSegment);
   return apiSuccess(result);
-});
+}, );
+
+export { POSTHandler as POST };

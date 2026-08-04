@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Search, Scan, Inbox, CheckCircle, XCircle, Target,
   Check, X, Pencil, GraduationCap, ChevronLeft, ChevronRight,
@@ -109,7 +110,7 @@ export function KnowledgeLearningPage() {
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
 
-      const res = await fetch(`/api/knowledge-learning?${params}`);
+      const res = await apiFetch(`/api/knowledge-learning?${params}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.items) {
@@ -132,7 +133,7 @@ export function KnowledgeLearningPage() {
   const handleScan = async () => {
     setScanning(true);
     try {
-      const res = await fetch('/api/knowledge-learning', { method: 'POST' });
+      const res = await apiFetch('/api/knowledge-learning', { method: 'POST' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setLastScanTime(new Date().toLocaleString('zh-CN'));
@@ -150,7 +151,7 @@ export function KnowledgeLearningPage() {
 
   const handleApprove = async (id: string) => {
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [id], action: 'approve' }),
@@ -170,7 +171,7 @@ export function KnowledgeLearningPage() {
 
   const handleReject = async (id: string) => {
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [id], action: 'reject' }),
@@ -190,7 +191,7 @@ export function KnowledgeLearningPage() {
   const handleBatchApprove = async () => {
     if (selectedIds.size === 0) return;
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds), action: 'approve' }),
@@ -211,7 +212,7 @@ export function KnowledgeLearningPage() {
   const handleBatchReject = async () => {
     if (selectedIds.size === 0) return;
     try {
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds), action: 'reject' }),
@@ -242,7 +243,7 @@ export function KnowledgeLearningPage() {
     if (!editModal.item) return;
     try {
       // Update the item content first
-      const updateRes = await fetch('/api/knowledge-learning', {
+      const updateRes = await apiFetch('/api/knowledge-learning', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -257,7 +258,7 @@ export function KnowledgeLearningPage() {
         return;
       }
       // Then approve with the edited content
-      const res = await fetch('/api/knowledge-learning', {
+      const res = await apiFetch('/api/knowledge-learning', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

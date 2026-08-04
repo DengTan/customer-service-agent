@@ -3,38 +3,17 @@
  *
  * Admin-only. Runs the calibration pipeline for a slice.
  * Body: { datasetVersionId: string; botId: string; shopId?: string }
- *
- * Per-slice advisory lock prevents concurrent calibration for the same slice.
- * Lock key: computed by PostgreSQL eval_calibration_slice_lock RPC
- *           (uses built-in hashtext() so the key always matches
- *            pg_advisory_xact_lock's internal computation).
  */
 
 import { NextRequest } from 'next/server';
-import {
-  apiSuccess,
-  apiError,
-  parseJsonBody,
-  withErrorHandlerSimple,
-  requireRole,
-  HttpStatus,
-  getAuthenticatedUserId,
-} from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { CalibrationService } from '@/server/services/eval/calibration-service';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { logger } from '@/lib/logger';
+import { getAuthenticatedUserId } from '@/lib/api-utils';
 
-const ADMIN_ONLY = ['admin'];
-
-/**
- * Acquires a per-slice advisory lock using pg_advisory_xact_lock via a
- * PostgreSQL RPC.  The lock key is computed server-side using PostgreSQL's
- * built-in hashtext() so it always matches pg_advisory_xact_lock's
- * internal computation — avoiding the risk of JS reimplementation drift.
- */
 async function acquireSliceLock(botId: string, shopId: string | null): Promise<void> {
   const supabase = getSupabaseClient();
-
   const { error } = await supabase.rpc('eval_calibration_slice_lock', {
     p_bot_id: botId,
     p_shop_id: shopId,
@@ -49,79 +28,70 @@ async function acquireSliceLock(botId: string, shopId: string | null): Promise<v
   }
 }
 
-// Sprint 7 scope-creep triage: this route was added outside the Sprint 6 plan and has not been Standards-axis reviewed. See Sprint 7 review notes.
+export const POST = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const userId = getAuthenticatedUserId(request) ?? 'unknown';
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // --- Admin-only gate ---
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+    const body = await request.json().catch(() => ({}));
+    const { datasetVersionId, botId, shopId } = body as {
+      datasetVersionId?: string;
+      botId?: string;
+      shopId?: string;
+    };
 
-  const userId = getAuthenticatedUserId(request) ?? 'unknown';
+    if (!datasetVersionId || typeof datasetVersionId !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 datasetVersionId', code: 'MISSING_DATASET_VERSION_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // --- Parse body ---
-  const { data: body, error: parseError } = await parseJsonBody<{
-    datasetVersionId?: string;
-    botId?: string;
-    shopId?: string;
-  }>(request);
+    if (!botId || typeof botId !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 botId', code: 'MISSING_BOT_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (parseError) return parseError;
+    if (shopId !== undefined && (typeof shopId !== 'string' || shopId.trim() === '')) {
+      return new Response(JSON.stringify({ error: 'shopId 必须为非空字符串', code: 'INVALID_SHOP_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { datasetVersionId, botId, shopId } = body ?? {};
+    const effectiveShopId = shopId?.trim() || null;
 
-  // --- Validate required fields ---
-  if (!datasetVersionId || typeof datasetVersionId !== 'string') {
-    return apiError('缺少或无效的 datasetVersionId', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_DATASET_VERSION_ID',
+    logger.info('[Eval/Calibration/Run] Starting calibration', {
+      userId,
+      datasetVersionId,
+      botId,
+      shopId: effectiveShopId,
     });
-  }
 
-  if (!botId || typeof botId !== 'string') {
-    return apiError('缺少或无效的 botId', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_BOT_ID',
+    await acquireSliceLock(botId, effectiveShopId);
+
+    const calibrationService = new CalibrationService();
+    const result = await calibrationService.run({
+      datasetVersionId,
+      botId,
+      shopId: effectiveShopId,
+      operatorId: userId,
     });
-  }
 
-  // --- Validate optional shopId ---
-  // If provided, must be a non-empty string (empty string would bypass null filter)
-  if (shopId !== undefined && (typeof shopId !== 'string' || shopId.trim() === '')) {
-    return apiError('shopId 必须为非空字符串', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'INVALID_SHOP_ID',
+    logger.info('[Eval/Calibration/Run] Calibration complete', {
+      userId,
+      datasetVersionId,
+      botId,
+      shopId: effectiveShopId,
+      chosenComposite: result.chosen?.composite,
+      overfitSuspect: result.overfit_suspect,
     });
-  }
 
-  const effectiveShopId = shopId?.trim() || null;
-
-  logger.info('[Eval/Calibration/Run] Starting calibration', {
-    userId,
-    datasetVersionId,
-    botId,
-    shopId: effectiveShopId,
-  });
-
-  // --- Acquire per-slice advisory lock ---
-  await acquireSliceLock(botId, effectiveShopId);
-
-  // --- Run calibration ---
-  const calibrationService = new CalibrationService();
-  const result = await calibrationService.run({
-    datasetVersionId,
-    botId,
-    shopId: effectiveShopId,
-    operatorId: userId,
-  });
-
-  logger.info('[Eval/Calibration/Run] Calibration complete', {
-    userId,
-    datasetVersionId,
-    botId,
-    shopId: effectiveShopId,
-    chosenComposite: result.chosen?.composite,
-    overfitSuspect: result.overfit_suspect,
-  });
-
-  return apiSuccess(result, HttpStatus.OK);
-});
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

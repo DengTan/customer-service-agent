@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandler, requireRole, getAuthenticatedUserId } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { KnowledgeGapService } from '@/server/services/knowledge-gap-service';
 
-const ADMIN_ONLY = ['admin'];
 const service = new KnowledgeGapService();
 
 interface ResolveBody {
@@ -11,24 +10,30 @@ interface ResolveBody {
   notes?: string;
 }
 
-export const POST = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+export const POST = withApi(
+  {
+    auth: 'required',
+    perm: { resource: 'knowledge', action: 'write' },
+  },
+  async ({ request, params }) => {
+    const { id } = params as { id: string };
+    if (!id) {
+      return new Response(JSON.stringify({ ok: false, error: 'id is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { id } = await params;
-  if (!id) return apiSuccess({ success: false, error: 'id is required' });
+    const body = await request.json().catch(() => ({})) as ResolveBody;
 
-  const { data: body } = await parseJsonBody<ResolveBody>(request);
-  const userId = getAuthenticatedUserId(request) ?? 'admin';
-
-  const gap = await service.resolveGap(id, {
-    resolvedBy: userId,
-    // 支持 camelCase 和 snake_case 两种格式
-    linkedKnowledgeItemId: body?.linkedKnowledgeItemId ?? body?.linked_knowledge_item_id,
-    notes: body?.notes,
-  });
-  return apiSuccess({ gap });
-});
+    const gap = await service.resolveGap(id, {
+      resolvedBy: id,
+      linkedKnowledgeItemId: body?.linkedKnowledgeItemId ?? body?.linked_knowledge_item_id,
+      notes: body?.notes,
+    });
+    return new Response(JSON.stringify({ ok: true, gap }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

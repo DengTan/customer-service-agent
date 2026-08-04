@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
+import { apiFetch } from '@/lib/api-fetch';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -91,7 +92,7 @@ export function ChatPanel({
 
   // Fetch quick replies
   useEffect(() => {
-    fetch('/api/quick-replies')
+    apiFetch('/api/quick-replies')
       .then(res => res.ok ? res.json() : { replies: [] })
       .then(data => setQuickReplies(data.replies || []))
       .catch(() => {
@@ -130,7 +131,7 @@ export function ChatPanel({
       setMessages(prev => [...prev, msg]);
 
       try {
-        const res = await fetch(`/api/conversations/${selectedConversation.conversation_id}/internal-note`, {
+        const res = await apiFetch(`/api/conversations/${selectedConversation.conversation_id}/internal-note`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: msg.content, mentions }),
@@ -165,7 +166,7 @@ export function ChatPanel({
     setMessages(prev => [...prev, msg]);
 
     try {
-      const res = await fetch(`/api/conversations/${selectedConversation.conversation_id}/messages`, {
+      const res = await apiFetch(`/api/conversations/${selectedConversation.conversation_id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msg.content, role: 'agent', attachments: currentAttachments }),
@@ -185,7 +186,7 @@ export function ChatPanel({
     if (!selectedConversation || !selectedTransferAgent) return;
     const selectedAgent = agents.find(a => a.id === selectedTransferAgent);
     try {
-      const res = await fetch('/api/agent/queue', {
+      const res = await apiFetch('/api/agent/queue', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 import {
     Megaphone,
@@ -224,7 +225,7 @@ export default function MarketingPage() {
     const handlePreviewSegment = async () => {
         setPreviewing(true);
         try {
-            const res = await fetch('/api/marketing/preview-segment', {
+            const res = await apiFetch('/api/marketing/preview-segment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target_segment: buildSegment() }),
@@ -240,7 +241,7 @@ export default function MarketingPage() {
 
     const fetchCustomerTags = useCallback(async () => {
         try {
-            const res = await fetch('/api/customer-tags');
+            const res = await apiFetch('/api/customer-tags');
             const data = await res.json();
             setCustomerTags(data.data?.tags ?? []);
         } catch { /* ignore */ }
@@ -249,7 +250,7 @@ export default function MarketingPage() {
     const fetchAnalytics = useCallback(async () => {
         setLoadingAnalytics(true);
         try {
-            const res = await fetch(`/api/marketing/analytics?days=${analyticsDays}`);
+            const res = await apiFetch(`/api/marketing/analytics?days=${analyticsDays}`);
             const data = await res.json();
             if (data.data) {
                 setAnalyticsData(data.data);
@@ -270,7 +271,7 @@ export default function MarketingPage() {
         for (const c of campaigns) {
             if (!c.ab_variants?.enabled) continue;
             try {
-                const res = await fetch('/api/marketing/ab-winner', {
+                const res = await apiFetch('/api/marketing/ab-winner', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ campaign_id: c.id }),
@@ -289,7 +290,7 @@ export default function MarketingPage() {
     const handlePromoteWinner = async (campaignId: string, winner: string) => {
         setPromoting(campaignId);
         try {
-            const res = await fetch('/api/marketing/ab-winner', {
+            const res = await apiFetch('/api/marketing/ab-winner', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ campaign_id: campaignId, action: 'promote', winner }),
@@ -310,7 +311,7 @@ export default function MarketingPage() {
 
     const fetchCampaigns = useCallback(async () => {
         try {
-            const res = await fetch("/api/marketing");
+            const res = await apiFetch("/api/marketing", { credentials: 'include' });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             setCampaigns(data.campaigns || []);
@@ -395,8 +396,9 @@ export default function MarketingPage() {
             if (campaignForm.scheduled_at) {
                 body.scheduled_at = new Date(campaignForm.scheduled_at).toISOString();
             }
-            const res = await fetch("/api/marketing", {
+            const res = await apiFetch("/api/marketing", {
                 method: editingCampaign ? "PATCH" : "POST",
+                credentials: 'include',
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(editingCampaign ? { ...body, id: editingCampaign.id, status: editingCampaign.status } : body),
             });
@@ -412,13 +414,12 @@ export default function MarketingPage() {
         const newStatus = campaign.status === "running" ? "paused" : "running";
 
         try {
-            const res = await fetch("/api/marketing", {
+            const res = await apiFetch("/api/marketing", {
                 method: "PATCH",
-
+                credentials: 'include',
                 headers: {
                     "Content-Type": "application/json"
                 },
-
                 body: JSON.stringify({
                     id: campaign.id,
                     status: newStatus
@@ -448,7 +449,7 @@ export default function MarketingPage() {
         if (!confirmed) return;
         setExecutingCampaignId(campaign.id);
         try {
-            const res = await fetch('/api/marketing/execute', {
+            const res = await apiFetch('/api/marketing/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ campaign_id: campaign.id }),

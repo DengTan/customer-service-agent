@@ -1,5 +1,5 @@
-import { NextRequest } from 'next/server';
 import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { GET as defineGet, POST as definePost, DELETE as defineDelete } from '@/lib/api/with-api';
 
 // Timeout for fetch calls in batch operations (30 seconds)
 const FETCH_TIMEOUT_MS = 30000;
@@ -46,112 +46,121 @@ function cleanupOldTasks() {
 }
 
 // POST /api/simulations/batch - Start batch test
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  cleanupOldTasks(); // Clean up old tasks on each request
-  const { data: body, error: parseError } = await request.json().catch(() => ({ data: null, error: 'Invalid JSON' }));
-  if (parseError) {
-    return apiError('Invalid request body', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
+export const POST = definePost(
+  { auth: 'required', perm: { resource: 'conversations', action: 'write' } },
+  async ({ request }) => {
+    cleanupOldTasks(); // Clean up old tasks on each request
+    const body = await request.json().catch(() => ({ data: null, error: 'Invalid JSON' }));
+    if (!body || body.error) {
+      return apiError('Invalid request body', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+    }
 
-  const scripts = body?.scripts as string[];
-  const botId = body?.botId as string | undefined;
+    const scripts = body?.scripts as string[];
+    const botId = body?.botId as string | undefined;
 
-  if (!Array.isArray(scripts) || scripts.length === 0) {
-    return apiError('scripts is required and must be a non-empty array', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'VALIDATION_ERROR',
+    if (!Array.isArray(scripts) || scripts.length === 0) {
+      return apiError('scripts is required and must be a non-empty array', {
+        status: HttpStatus.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    if (scripts.length > 50) {
+      return apiError('Maximum 50 scripts allowed per batch', {
+        status: HttpStatus.BAD_REQUEST,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+
+    const taskId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const task: BatchTask = {
+      id: taskId,
+      scripts,
+      botId,
+      status: 'pending',
+      currentIndex: 0,
+      total: scripts.length,
+      successCount: 0,
+      failCount: 0,
+      results: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    batchTasks.set(taskId, task);
+
+    // Start async execution
+    executeBatchTask(taskId);
+
+    return apiSuccess({
+      task_id: taskId,
+      status: task.status,
+      total: task.total,
     });
-  }
-
-  if (scripts.length > 50) {
-    return apiError('Maximum 50 scripts allowed per batch', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'VALIDATION_ERROR',
-    });
-  }
-
-  const taskId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-  const task: BatchTask = {
-    id: taskId,
-    scripts,
-    botId,
-    status: 'pending',
-    currentIndex: 0,
-    total: scripts.length,
-    successCount: 0,
-    failCount: 0,
-    results: [],
-    createdAt: new Date().toISOString(),
-  };
-
-  batchTasks.set(taskId, task);
-
-  // Start async execution
-  executeBatchTask(taskId);
-
-  return apiSuccess({
-    task_id: taskId,
-    status: task.status,
-    total: task.total,
-  });
-});
+  },
+);
 
 // GET /api/simulations/batch?task_id=xxx - Get batch test progress
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  cleanupOldTasks(); // Clean up old tasks on each request
-  const { searchParams } = new URL(request.url);
-  const taskId = searchParams.get('task_id');
+export const GET = defineGet(
+  { auth: 'required', perm: { resource: 'conversations', action: 'read' } },
+  async ({ request }) => {
+    cleanupOldTasks(); // Clean up old tasks on each request
+    const url = new URL(request.url);
+    const taskId = url.searchParams.get('task_id');
 
-  if (!taskId) {
-    return apiError('task_id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
+    if (!taskId) {
+      return apiError('task_id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+    }
 
-  const task = batchTasks.get(taskId);
+    const task = batchTasks.get(taskId);
 
-  if (!task) {
-    return apiError('Task not found', { status: HttpStatus.NOT_FOUND, code: 'NOT_FOUND' });
-  }
+    if (!task) {
+      return apiError('Task not found', { status: HttpStatus.NOT_FOUND, code: 'NOT_FOUND' });
+    }
 
-  return apiSuccess({
-    task_id: task.id,
-    status: task.status,
-    progress: {
-      current: task.currentIndex,
-      total: task.total,
-      success_count: task.successCount,
-      fail_count: task.failCount,
-    },
-    results: task.results,
-    created_at: task.createdAt,
-    completed_at: task.completedAt,
-  });
-});
+    return apiSuccess({
+      task_id: task.id,
+      status: task.status,
+      progress: {
+        current: task.currentIndex,
+        total: task.total,
+        success_count: task.successCount,
+        fail_count: task.failCount,
+      },
+      results: task.results,
+      created_at: task.createdAt,
+      completed_at: task.completedAt,
+    });
+  },
+);
 
 // DELETE /api/simulations/batch?task_id=xxx - Cancel batch test
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const { searchParams } = new URL(request.url);
-  const taskId = searchParams.get('task_id');
+export const DELETE = defineDelete(
+  { auth: 'required', perm: { resource: 'conversations', action: 'delete' } },
+  async ({ request }) => {
+    const url = new URL(request.url);
+    const taskId = url.searchParams.get('task_id');
 
-  if (!taskId) {
-    return apiError('task_id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
+    if (!taskId) {
+      return apiError('task_id is required', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
+    }
 
-  const task = batchTasks.get(taskId);
+    const task = batchTasks.get(taskId);
 
-  if (!task) {
-    return apiError('Task not found', { status: HttpStatus.NOT_FOUND, code: 'NOT_FOUND' });
-  }
+    if (!task) {
+      return apiError('Task not found', { status: HttpStatus.NOT_FOUND, code: 'NOT_FOUND' });
+    }
 
-  if (task.status === 'completed' || task.status === 'cancelled') {
-    return apiError('Task already finished', { status: HttpStatus.BAD_REQUEST, code: 'INVALID_STATE' });
-  }
+    if (task.status === 'completed' || task.status === 'cancelled') {
+      return apiError('Task already finished', { status: HttpStatus.BAD_REQUEST, code: 'INVALID_STATE' });
+    }
 
-  task.status = 'cancelled';
-  batchTasks.set(taskId, task);
+    task.status = 'cancelled';
+    batchTasks.set(taskId, task);
 
-  return apiSuccess({ task_id: taskId, status: 'cancelled' });
-});
+    return apiSuccess({ task_id: taskId, status: 'cancelled' });
+  },
+);
 
 async function executeBatchTask(taskId: string) {
   const task = batchTasks.get(taskId);

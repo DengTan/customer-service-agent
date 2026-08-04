@@ -65,7 +65,7 @@ ${existingSummary ? `【之前的对话摘要】\n${existingSummary}\n` : ''}【
 
       let newSummary = '';
       const summaryStream = adapter.stream(summaryMessages, {
-        model: provider.default_model || '',
+        model: provider.models?.[0] || '',
         temperature: 0.3,
       });
 

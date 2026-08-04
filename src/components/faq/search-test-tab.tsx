@@ -9,6 +9,7 @@ import { SearchAnalysisPanel } from './search-analysis-panel';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertCircle } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 
 export function SearchTestTab() {
   const [loading, setLoading] = useState(false);
@@ -34,7 +35,7 @@ export function SearchTestTab() {
     setMinScore(searchMinScore);
 
     try {
-      const response = await fetch('/api/knowledge/test-search', {
+      const response = await apiFetch('/api/knowledge/test-search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

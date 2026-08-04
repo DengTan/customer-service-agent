@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { FRONTEND } from '@/lib/constants';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ============================================
 // Types
@@ -92,7 +93,7 @@ export function AgentAssignmentSettings() {
 
   const fetchCurrentStrategy = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-assignment/current-strategy');
+      const res = await apiFetch('/api/agent-assignment/current-strategy');
       if (res.ok) {
         const data = await res.json();
         if (data.strategy) {
@@ -106,7 +107,7 @@ export function AgentAssignmentSettings() {
 
   const fetchBindings = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-assignment/shop-bindings');
+      const res = await apiFetch('/api/agent-assignment/shop-bindings');
       if (res.ok) {
         const data = await res.json();
         setBindings(data.bindings || []);
@@ -118,7 +119,7 @@ export function AgentAssignmentSettings() {
 
   const fetchAgents = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent-assignment/agents');
+      const res = await apiFetch('/api/agent-assignment/agents');
       if (res.ok) {
         const data = await res.json();
         setAgents(data.agents || []);
@@ -131,7 +132,7 @@ export function AgentAssignmentSettings() {
 
   const fetchShops = useCallback(async () => {
     try {
-      const res = await fetch('/api/shops');
+      const res = await apiFetch('/api/shops');
       if (res.ok) {
         const data = await res.json();
         setShops(data.shops || []);
@@ -143,7 +144,7 @@ export function AgentAssignmentSettings() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch('/api/users');
+      const res = await apiFetch('/api/users');
       if (res.ok) {
         const data = await res.json();
         setUsers((data.users || []).filter((u: User) => u.role === 'agent' || u.role === 'admin'));
@@ -183,7 +184,7 @@ export function AgentAssignmentSettings() {
   const handleStrategyChange = async (strategy: AssignmentStrategy) => {
     setIsSaving(true);
     try {
-      const res = await fetch('/api/agent-assignment/current-strategy', {
+      const res = await apiFetch('/api/agent-assignment/current-strategy', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ strategy }),
@@ -221,7 +222,7 @@ export function AgentAssignmentSettings() {
 
     setSavingBinding(true);
     try {
-      const res = await fetch('/api/agent-assignment/shop-bindings', {
+      const res = await apiFetch('/api/agent-assignment/shop-bindings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -257,7 +258,7 @@ export function AgentAssignmentSettings() {
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/agent-assignment/shop-bindings?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/agent-assignment/shop-bindings?id=${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || '删除失败');

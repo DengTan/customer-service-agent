@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface CategoryItem {
   category: string;
@@ -80,7 +81,7 @@ export function CategoryManagerModal({
   const loadCategories = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/knowledge/categories');
+      const res = await apiFetch('/api/knowledge/categories');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setCategories(data.categories || []);
@@ -115,7 +116,7 @@ export function CategoryManagerModal({
     if (!name) { toast.error('请输入分类名称'); return; }
     setCreating(true);
     try {
-      const res = await fetch('/api/knowledge/categories', {
+      const res = await apiFetch('/api/knowledge/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: name }),
@@ -148,7 +149,7 @@ export function CategoryManagerModal({
     setRenaming(true);
     try {
       // Rename: find items with old category, update to new category
-      const res = await fetch('/api/knowledge/items/bulk-update', {
+      const res = await apiFetch('/api/knowledge/items/bulk-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: renamingCategory, new_category: newName }),
@@ -181,7 +182,7 @@ export function CategoryManagerModal({
     setDeleting(true);
     setDeletingCategory(catName);
     try {
-      const res = await fetch('/api/knowledge/items/delete-category', {
+      const res = await apiFetch('/api/knowledge/items/delete-category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ category: catName }),

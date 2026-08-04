@@ -1,17 +1,16 @@
 import { NextRequest } from 'next/server';
 import { MarketingService } from '@/server/services/marketing-service';
-import { withErrorHandler } from '@/lib/api-utils';
 import { apiSuccess, apiError, HttpStatus, parseJsonBody } from '@/lib/api-utils';
+import { POST } from '@/lib/api/with-api';
 
 const service = new MarketingService();
 
-/**
- * POST /api/marketing/ab-winner
- * Determine A/B test winner for a campaign
- * POST /api/marketing/ab-winner/promote
- * Promote winner variant to all future sends
- */
-export const POST = withErrorHandler(async (request: NextRequest) => {
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'marketing', action: 'write' },
+  },
+  async ({ request }) => {
   const { data, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -32,7 +31,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     return apiSuccess(result);
   }
 
-  // Default: determine winner
   const result = await service.determineABWinner(campaign_id);
   return apiSuccess(result);
-});
+}, );
+
+export { POSTHandler as POST };

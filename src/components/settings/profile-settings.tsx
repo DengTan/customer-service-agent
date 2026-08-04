@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Camera, Upload, X, User as UserIcon, UserCog, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { USER } from '@/lib/constants';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ProfileSettingsProps {
   className?: string;
@@ -137,7 +138,7 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
         setUploadProgress(85);
 
         // Update user profile with new avatar using /api/users/me
-        const updateRes = await fetch('/api/users/me', {
+        const updateRes = await apiFetch('/api/users/me', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ avatar: avatarUrl }),
@@ -175,7 +176,7 @@ export function ProfileSettings({ className }: ProfileSettingsProps) {
     setPreviewUrl(null);
 
     try {
-      const res = await fetch('/api/users/me', {
+      const res = await apiFetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ avatar: null }),

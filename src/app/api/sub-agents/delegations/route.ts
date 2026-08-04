@@ -1,17 +1,19 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus, requirePermission } from '@/lib/api-utils';
+import { apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { GET } from '@/lib/api/with-api';
 
 const service = new SubAgentService();
 
 const ConversationIdSchema = z.string().uuid({ message: 'conversation_id 必须是合法 UUID' });
 
-// GET /api/sub-agents/delegations?conversation_id=xxx - Get delegation history for a conversation
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const conversationId = searchParams.get('conversation_id');
 
@@ -25,4 +27,6 @@ export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const result = await service.getDelegationHistory(parsed.data);
   return apiSuccess(result);
-});
+}, );
+
+export { GETHandler as GET };

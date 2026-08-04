@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { BotConfigService } from '@/server/services/bot-config-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, apiSuccess, requirePermission, getAuthenticatedUserId } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError, apiSuccess, getAuthenticatedUserId } from '@/lib/api-utils';
+import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 
 const service = new BotConfigService();
@@ -10,12 +11,10 @@ const supabase = getSupabaseClient();
 async function getActorFromRequest(request: NextRequest) {
   const userId = getAuthenticatedUserId(request);
   if (!userId) return undefined;
-  // Resolve user name for denormalised display in audit log
   const { data: user } = await supabase.from('users').select('name').eq('id', userId).maybeSingle();
   return { id: userId, name: user?.name ?? null };
 }
 
-// Matches any 8-4-4-4-12 hex format (including all-zero UUIDs)
 const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: '必须是合法 UUID' });
 
 const NullableUuidSchema = z.union([UuidSchema, z.literal('')]).transform(v => v === '' ? null : v).nullish();
@@ -58,22 +57,26 @@ const UpdateBotBodySchema = z.object({
   platform_connection_id: NullableUuidSchema,
 });
 
-// GET /api/bot-configs - List all bot configs
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'bots', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'bots', action: 'read' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const includeSubAgents = searchParams.get('include_sub_agents') !== 'false';
   const result = await service.listBots(includeSubAgents);
   return apiSuccess(result);
-});
+}, );
 
-// POST /api/bot-configs - Create a new bot config (or sub-agent)
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'bots', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'bots', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -88,13 +91,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
   const actor = await getActorFromRequest(request);
   const result = await service.createBot(parsed.data, actor);
   return apiSuccess(result, HttpStatus.CREATED);
-});
+}, );
 
-// PUT /api/bot-configs - Update a bot config (or sub-agent)
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'bots', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
 
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'bots', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -110,14 +116,16 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
   const { id, ...rest } = parsed.data;
   const result = await service.updateBot({ id, ...rest }, actor);
   return apiSuccess(result);
-});
+}, );
 
-// DELETE /api/bot-configs?id=xxx[&force=true] - Delete a bot config
-// Optional `force=true` bypasses the reference guard.
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'bots', 'delete');
-  if (denied) return denied;
+export { PUTHandler as PUT };
 
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'bots', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   const confirm = searchParams.get('confirm') === 'true';
@@ -130,7 +138,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
     });
   }
 
-  // When caller has not confirmed, return reference counts so the UI can prompt
   if (!confirm) {
     const guard = await service.getDeleteGuard(parsed.data);
     if (guard.hasReferences) {
@@ -145,4 +152,6 @@ export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
   const actor = await getActorFromRequest(request);
   await service.deleteBot(parsed.data, { force: confirm, actor });
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };

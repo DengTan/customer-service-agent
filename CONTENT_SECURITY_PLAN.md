@@ -1,5 +1,13 @@
 # 内容安全过滤功能实现计划
 
+> **Updated 2026-08-04 (v2.5)** — This is a **feature plan** for content security filtering (sensitive words + URL whitelist + UI). It is not yet implemented; the tables / settings / API routes described below are aspirational until the work is picked up.
+>
+> **RC-4 status (input validation / secret handling):** In flight per `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5 §RC-4. The foundation has been laid (Phase B3 — `src/lib/api/parse.ts` unified Zod entry shipped, 15 focused tests, `scripts/check-routes.ts` coverage tool with warn-only baseline). The remaining work — full Zod schema coverage for HTTP body / query / header / Webhook / SSE client events; domain model separation (HTTP → DTO → Domain → Persistence); key-aware secret rotation; structured Error boundary — is tracked in `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` §RC-4 and §B3. The `/api/admin/migrate` endpoint (which used to execute arbitrary SQL via Bearer `INTERNAL_API_SECRET`) was **closed in Phase A6** and now returns **410 Gone (RFC 7807)**.
+>
+> The `messages` role-validation concern mentioned under "需求概述" below was the original motivation for RC-4; it is no longer an open P0 because `withApi` covers all 171 routes (auth + perm + rate limit + audit), but the broader DTO/Domain/Persistence layering work remains on the roadmap.
+>
+> Source of truth: `docs/ROOT_CAUSE_REMEDIATION_PLAN.md` v2.5.
+
 ## 需求概述
 
 为 SmartAssist 智能客服系统添加消息内容安全过滤功能，包括：

@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 import { Bot, Star, Send, Sparkles, Copy, Check, PhoneOff, Download, RotateCcw, Zap, ArrowRightLeft, User, BookOpen, Headphones, X, ChevronRight, Clock, Tag, MessageSquare, Globe, AlertTriangle, FileText, Paperclip, ImageIcon, Loader2, Ticket, Cpu, Network, Users } from 'lucide-react';
 import type { Conversation, Message } from './chat-page';
 import type { CardAction } from '@/lib/types';
@@ -83,7 +84,7 @@ function ConversationTicketsBanner({ conversationId }: { conversationId?: string
 
     const controller = new AbortController();
 
-    fetch(`/api/tickets/customer?conversation_id=${conversationId}`, {
+    apiFetch(`/api/tickets/customer?conversation_id=${conversationId}`, {
       signal: controller.signal,
     })
       .then(r => r.ok ? r.json() : null)
@@ -183,7 +184,7 @@ export function ChatWindow({
       try {
         // Load quick replies from API (filtered by scope if provided)
         const scopeParam = quickRepliesScope ? `?scope=${quickRepliesScope}` : '';
-        const qrRes = await fetch(`/api/quick-replies${scopeParam}`);
+        const qrRes = await apiFetch(`/api/quick-replies${scopeParam}`);
         if (qrRes.ok) {
           const qrData = await qrRes.json();
           if (qrData.replies?.length) {
@@ -194,7 +195,7 @@ export function ChatWindow({
 
       try {
         // Load skill groups as transfer departments
-        const sgRes = await fetch('/api/skill-groups');
+        const sgRes = await apiFetch('/api/skill-groups');
         if (sgRes.ok) {
           const sgData = await sgRes.json();
           if (sgData.groups?.length) {
@@ -209,7 +210,7 @@ export function ChatWindow({
 
       try {
         // Load online agents as transfer targets
-        const uRes = await fetch('/api/users?role=agent&status=active');
+        const uRes = await apiFetch('/api/users?role=agent&status=active');
         if (uRes.ok) {
           const uData = await uRes.json();
           if (uData.users?.length) {
@@ -499,7 +500,7 @@ export function ChatWindow({
       const reason = transferTarget.type === 'dept'
         ? `转接至${transferTarget.name}`
         : `转接至坐席 ${transferTarget.name}`;
-      const res = await fetch(`/api/conversations/${conversation.id}/handoff`, {
+      const res = await apiFetch(`/api/conversations/${conversation.id}/handoff`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -525,7 +526,7 @@ export function ChatWindow({
     if (!conversation) return;
     setIsCreatingTicket(true);
     try {
-      const res = await fetch('/api/tickets/from-conversation', {
+      const res = await apiFetch('/api/tickets/from-conversation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

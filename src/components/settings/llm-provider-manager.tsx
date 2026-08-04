@@ -18,6 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { logger } from '@/lib/logger';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface LlmProvider {
   id: string;
@@ -27,12 +28,9 @@ interface LlmProvider {
   base_url: string;
   api_key?: string | null;
   models: string[];
-  default_model?: string | null;
   supports_vision: boolean;
   supports_streaming: boolean;
   is_enabled: boolean;
-  is_default: boolean;
-  priority: number;
 }
 
 interface LlmModel {
@@ -41,7 +39,6 @@ interface LlmModel {
   model_id: string;
   display_name: string;
   description?: string | null;
-  priority?: number | null;
   supports_vision: boolean;
   supports_streaming: boolean;
   supports_function_calling: boolean;
@@ -52,7 +49,6 @@ interface ModelFormData {
   model_id: string;
   display_name: string;
   description: string;
-  priority: string;
   supports_vision: boolean;
   supports_streaming: boolean;
   supports_function_calling: boolean;
@@ -85,7 +81,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
     model_id: '',
     display_name: '',
     description: '',
-    priority: '0',
     supports_vision: false,
     supports_streaming: false,
     supports_function_calling: false,
@@ -98,9 +93,8 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
   // Confirm dialog
   const { confirm } = useConfirmDialog();
 
-  // Get active provider (from props or default)
+  // Get active provider (from props or first available)
   const activeProvider = providers.find(p => p.id === currentProviderId) 
-    || providers.find(p => p.is_default)
     || providers[0];
   const activeProviderId = activeProvider?.id;
 
@@ -113,11 +107,9 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
     api_key: '',
     has_existing_api_key: false, // Track if provider already has an API key
     models: '',
-    default_model: '',
     supports_vision: false,
     supports_streaming: false,
     is_enabled: true,
-    priority: '0',
   });
   const [showApiKey, setShowApiKey] = useState(false);
   // Track if we're in edit mode to switch model selection logic
@@ -130,7 +122,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
   const loadProviders = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/llm-providers');
+      const res = await apiFetch('/api/llm-providers');
       const data = await res.json();
       const providerList = data.providers || [];
       setProviders(providerList);
@@ -139,7 +131,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       // Load models for each provider
       const modelsMap: Record<string, LlmModel[]> = {};
       for (const provider of providerList) {
-        const modelsRes = await fetch(`/api/llm-providers?provider_id=${provider.id}`);
+        const modelsRes = await apiFetch(`/api/llm-providers?provider_id=${provider.id}`);
         const modelsData = await modelsRes.json();
         modelsMap[provider.id] = modelsData.models || [];
       }
@@ -161,11 +153,9 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       api_key: '',
       has_existing_api_key: false,
       models: '',
-      default_model: '',
       supports_vision: false,
       supports_streaming: false,
       is_enabled: true,
-      priority: '0',
     });
     setPendingModels([]); // Reset pending models when starting new provider
     setShowAddModal(true);
@@ -180,11 +170,9 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       api_key: '', // Don't show existing API key
       has_existing_api_key: !!provider.api_key, // Track if provider has existing key
       models: provider.models.join(', '),
-      default_model: provider.default_model || '',
       supports_vision: provider.supports_vision,
       supports_streaming: provider.supports_streaming,
       is_enabled: provider.is_enabled,
-      priority: provider.priority.toString(),
     });
     setEditingProvider(provider);
     setShowAddModal(true);
@@ -200,11 +188,9 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       description: formData.description || undefined,
       base_url: formData.base_url,
       models: formData.models.split(',').map(m => m.trim()).filter(Boolean),
-      default_model: formData.default_model || undefined,
       supports_vision: formData.supports_vision,
       supports_streaming: formData.supports_streaming,
       is_enabled: formData.is_enabled,
-      priority: parseInt(formData.priority) || 0,
     };
 
     // Only include API key in payload if user entered a new one
@@ -241,14 +227,13 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
         if (providerId) {
           for (const model of pendingModels) {
             try {
-              await fetch(`/api/llm-providers/${providerId}/models`, {
+              await apiFetch(`/api/llm-providers/${providerId}/models`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   model_id: model.model_id,
                   display_name: model.display_name,
                   description: model.description || undefined,
-                  priority: parseInt(model.priority) || 0,
                   supports_vision: model.supports_vision,
                   supports_streaming: model.supports_streaming,
                   supports_function_calling: model.supports_function_calling,
@@ -283,7 +268,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/llm-providers/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/llm-providers/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.error || '删除失败');
@@ -297,7 +282,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
 
   const handleSetDefault = async (id: string) => {
     try {
-      const res = await fetch(`/api/llm-providers/${id}/set-default`, { method: 'POST' });
+      const res = await apiFetch(`/api/llm-providers/${id}/set-default`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.error || '设置失败');
@@ -319,7 +304,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
   const handleTestConnection = async (id: string) => {
     setTestingId(id);
     try {
-      const res = await fetch(`/api/llm-providers/${id}/test`, { method: 'POST' });
+      const res = await apiFetch(`/api/llm-providers/${id}/test`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         toast.success('连接成功');
@@ -335,7 +320,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
 
   const handleToggleEnabled = async (provider: LlmProvider) => {
     try {
-      const res = await fetch(`/api/llm-providers/${provider.id}`, {
+      const res = await apiFetch(`/api/llm-providers/${provider.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_enabled: !provider.is_enabled }),
@@ -355,7 +340,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       model_id: '',
       display_name: '',
       description: '',
-      priority: '0',
       supports_vision: false,
       supports_streaming: false,
       supports_function_calling: false,
@@ -372,7 +356,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       model_id: '',
       display_name: '',
       description: '',
-      priority: '0',
       supports_vision: false,
       supports_streaming: false,
       supports_function_calling: false,
@@ -390,7 +373,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       model_id: model.model_id,
       display_name: model.display_name,
       description: model.description,
-      priority: model.priority,
       supports_vision: model.supports_vision,
       supports_streaming: model.supports_streaming,
       supports_function_calling: model.supports_function_calling,
@@ -411,7 +393,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       model_id: model.model_id,
       display_name: model.display_name,
       description: model.description || '',
-      priority: model.priority?.toString() || '0',
       supports_vision: model.supports_vision,
       supports_streaming: model.supports_streaming,
       supports_function_calling: model.supports_function_calling,
@@ -450,7 +431,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
       model_id: modelFormData.model_id,
       display_name: modelFormData.display_name,
       description: modelFormData.description || undefined,
-      priority: parseInt(modelFormData.priority) || 0,
       supports_vision: modelFormData.supports_vision,
       supports_streaming: modelFormData.supports_streaming,
       supports_function_calling: modelFormData.supports_function_calling,
@@ -497,7 +477,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/llm-providers/models/${modelId}`, {
+      const res = await apiFetch(`/api/llm-providers/models/${modelId}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -554,7 +534,7 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
             <div
               key={provider.id}
               className={`rounded-lg border transition-colors ${
-                provider.is_default 
+                provider.id === currentProviderId
                   ? 'border-primary bg-primary/5' 
                   : 'border-border bg-card hover:border-primary/30'
               }`}
@@ -563,19 +543,13 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <div className={`p-2 rounded-lg ${
-                      provider.is_default ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                      provider.id === currentProviderId ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
                     }`}>
                       {getIconForProvider(provider)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-medium text-foreground">{provider.display_name}</h4>
-                        {provider.is_default && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded">
-                            <Star className="w-2.5 h-2.5" />
-                            默认
-                          </span>
-                        )}
                         <span className={`inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded ${
                           provider.is_enabled 
                             ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' 
@@ -640,12 +614,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                             </>
                           )}
                         </DropdownMenuItem>
-                        {!provider.is_default && (
-                          <DropdownMenuItem onClick={() => handleSetDefault(provider.id)}>
-                            <Star className="w-4 h-4 mr-2" />
-                            设为默认
-                          </DropdownMenuItem>
-                        )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
                           onClick={() => handleDelete(provider.id)}
@@ -680,10 +648,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                           {provider.supports_streaming ? '是' : '否'}
                         </span>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">优先级：</span>
-                        <span className="text-foreground">{provider.priority}</span>
-                      </div>
                     </div>
                     {models[provider.id]?.length > 0 && (
                       <div className="mt-3">
@@ -703,9 +667,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="text-foreground font-medium truncate">{model.display_name}</span>
-                                  {model.model_id === provider.default_model && (
-                                    <span className="px-1 py-0.5 text-[9px] bg-primary/10 text-primary rounded">默认</span>
-                                  )}
                                   {!model.is_enabled && (
                                     <span className="px-1 py-0.5 text-[9px] bg-muted text-muted-foreground rounded">已禁用</span>
                                   )}
@@ -868,16 +829,15 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                         setModelProviderId('pending');
                       }
                       setEditingModel(null);
-                      setModelFormData({
-                        model_id: '',
-                        display_name: '',
-                        description: '',
-                        priority: '0',
-                        supports_vision: false,
-                        supports_streaming: false,
-                        supports_function_calling: false,
-                        is_enabled: true,
-                      });
+                    setModelFormData({
+                      model_id: '',
+                      display_name: '',
+                      description: '',
+                      supports_vision: false,
+                      supports_streaming: false,
+                      supports_function_calling: false,
+                      is_enabled: true,
+                    });
                       setShowModelModal(true);
                     }}
                     className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/10 rounded transition-colors"
@@ -895,9 +855,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium truncate">{model.display_name}</span>
-                            {model.model_id === editingProvider.default_model && (
-                              <span className="px-1 py-0.5 text-[9px] bg-primary/10 text-primary rounded">默认</span>
-                            )}
                             {!model.is_enabled && (
                               <span className="px-1 py-0.5 text-[9px] bg-muted text-muted-foreground rounded">已禁用</span>
                             )}
@@ -912,7 +869,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                                 model_id: model.model_id,
                                 display_name: model.display_name,
                                 description: model.description || '',
-                                priority: model.priority?.toString() || '0',
                                 supports_vision: model.supports_vision,
                                 supports_streaming: model.supports_streaming,
                                 supports_function_calling: model.supports_function_calling,
@@ -970,60 +926,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                     暂无详细模型配置，点击「添加模型」配置详细参数
                   </p>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-foreground mb-1.5">
-                  默认模型 <span className="text-destructive">*</span>
-                </label>
-                <Select
-                  value={formData.default_model}
-                  onValueChange={(value) => setFormData({ ...formData, default_model: value })}
-                >
-                  <SelectTrigger className="w-full h-10 bg-muted border-none rounded-lg focus:ring-2 focus:ring-primary/30 data-[placeholder]:text-muted-foreground">
-                    <SelectValue placeholder="请选择默认模型" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-64 z-[60]" side="bottom" sideOffset={4}>
-                    {/* 编辑模式：显示已保存的模型 */}
-                    {isEditingMode && models[editingProvider.id]?.length > 0 ? (
-                      models[editingProvider.id].map((model) => (
-                        <SelectItem
-                          key={model.id}
-                          value={model.model_id}
-                          disabled={!model.is_enabled}
-                          className="flex flex-col items-start gap-0.5 py-2.5"
-                        >
-                          <span className="font-medium text-sm">{model.display_name}</span>
-                          <span className="text-xs text-muted-foreground font-normal">
-                            {model.model_id}{!model.is_enabled && ' [已禁用]'}
-                          </span>
-                        </SelectItem>
-                      ))
-                    ) : pendingModels.length > 0 ? (
-                      // 新建模式：显示 pending 模型
-                      pendingModels.map((model) => (
-                        <SelectItem
-                          key={model.tempId}
-                          value={model.model_id}
-                          disabled={!model.is_enabled}
-                          className="flex flex-col items-start gap-0.5 py-2.5"
-                        >
-                          <span className="font-medium text-sm">{model.display_name || model.model_id}</span>
-                          <span className="text-xs text-muted-foreground font-normal">
-                            {model.model_id}{!model.is_enabled && ' [已禁用]'}
-                          </span>
-                        </SelectItem>
-                      ))
-                    ) : (
-                      // Fallback: 显示简单的模型列表
-                      formData.models.split(',').map(m => m.trim()).filter(Boolean).map((model) => (
-                        <SelectItem key={model} value={model} className="py-2">
-                          {model}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1122,19 +1024,6 @@ export function LlmProviderManager({ currentProviderId, onProviderChange, onMode
                   placeholder="简要描述这个模型"
                   className="w-full px-3 py-2 text-sm bg-muted border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">优先级</label>
-                  <input
-                    type="number"
-                    value={modelFormData.priority}
-                    onChange={(e) => setModelFormData({ ...modelFormData, priority: e.target.value })}
-                    placeholder="0"
-                    className="w-full px-3 py-2 text-sm bg-muted border-none rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-4">

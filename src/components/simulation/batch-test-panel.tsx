@@ -10,6 +10,7 @@ import { parseSSEStream } from '@/lib/sse-parser';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
 import { SSE, HTTP } from '@/lib/constants';
+import { apiFetch } from '@/lib/api-fetch';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
 
 // Default and range for concurrency
@@ -303,8 +304,9 @@ export function BatchTestPanel({ scripts, botId, onProgress, onComplete, onClose
     const combinedSignal = scriptAbortController.signal;
 
     try {
-      const convRes = await fetch('/api/simulations', {
+      const convRes = await apiFetch('/api/simulations', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scenario_id: 'batch_test',
@@ -320,8 +322,9 @@ export function BatchTestPanel({ scripts, botId, onProgress, onComplete, onClose
       const convId = convData.conversation?.id;
       if (!convId) throw new Error('无法获取会话ID');
 
-      const msgRes = await fetch(`/api/simulations/${convId}/messages`, {
+      const msgRes = await apiFetch(`/api/simulations/${convId}/messages`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: script, bot_id: botId }),
         signal: combinedSignal,
@@ -354,7 +357,7 @@ export function BatchTestPanel({ scripts, botId, onProgress, onComplete, onClose
 
       // P0-2: Handle cleanup with error handling
       try {
-        const deleteRes = await fetch(`/api/simulations/${convId}`, { method: 'DELETE' });
+        const deleteRes = await apiFetch(`/api/simulations/${convId}`, { method: 'DELETE', credentials: 'include' });
         if (!deleteRes.ok) {
           logger.warn('[BatchTestPanel] Failed to cleanup test conversation', { convId, status: deleteRes.status });
         }
@@ -590,8 +593,9 @@ export function BatchTestPanel({ scripts, botId, onProgress, onComplete, onClose
     }));
 
     try {
-      const res = await fetch('/api/simulations/export', {
+      const res = await apiFetch('/api/simulations/export', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ results: data }),
       });

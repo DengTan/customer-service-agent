@@ -23,7 +23,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { withErrorHandler, apiSuccess, requirePermission, parseJsonBody, HttpStatus, apiError } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { TicketService } from '@/server/services/ticket-service';
 import { idempotent, SKIPPED, createIdempotencyKey, fnv1a64 } from '@/lib/idempotency';
 
@@ -47,52 +47,62 @@ interface BatchBody {
   requestId?: string;
 }
 
-export const PATCH = withErrorHandler(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'tickets', 'write');
-  if (denied) return denied;
+export const PATCH = withApi(
+  { auth: 'required', perm: { resource: 'tickets', action: 'write' } },
+  async ({ request }) => {
+    const body = await request.json().catch(() => ({})) as BatchBody;
 
-  const { data: body, error: parseErr } = await parseJsonBody<BatchBody>(request);
-  if (parseErr) return parseErr;
+    const ids = body?.ids ?? [];
+    const updates = body?.updates ?? {};
+    const clientRequestId = body?.requestId ?? request.headers.get('Idempotency-Key') ?? null;
 
-  const ids = body?.ids ?? [];
-  const updates = body?.updates ?? {};
-  const clientRequestId = body?.requestId ?? request.headers.get('Idempotency-Key') ?? null;
+    if (ids.length === 0) {
+      return new Response(JSON.stringify({ error: '请选择至少一个工单', code: 'VALIDATION_ERROR' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (Object.keys(updates).length === 0) {
+      return new Response(JSON.stringify({ error: '请提供更新字段', code: 'VALIDATION_ERROR' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (ids.length === 0) {
-    return apiError('请选择至少一个工单', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
-  if (Object.keys(updates).length === 0) {
-    return apiError('请提供更新字段', { status: HttpStatus.BAD_REQUEST, code: 'VALIDATION_ERROR' });
-  }
+    // No client-supplied request ID → skip idempotency (backward-compatible).
+    if (!clientRequestId) {
+      const result = await ticketService.batchUpdate(ids, updates);
+      return new Response(JSON.stringify({ ok: true, updated_count: result.updated_count }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // No client-supplied request ID → skip idempotency (backward-compatible).
-  if (!clientRequestId) {
-    const result = await ticketService.batchUpdate(ids, updates);
-    return apiSuccess({ updated_count: result.updated_count });
-  }
+    // Stable key from the requestId + the canonicalized body. Hash the body
+    // (NOT just the requestId) so two distinct batches sharing the same id by
+    // accident still produce different keys.
+    const bodyFingerprint = fnv1a64(JSON.stringify({ ids: [...ids].sort(), updates }));
+    const idempotencyKey = createIdempotencyKey('batch_tickets', clientRequestId, bodyFingerprint);
 
-  // Stable key from the requestId + the canonicalized body. Hash the body
-  // (NOT just the requestId) so two distinct batches sharing the same id by
-  // accident still produce different keys.
-  const bodyFingerprint = fnv1a64(JSON.stringify({ ids: [...ids].sort(), updates }));
-  const idempotencyKey = createIdempotencyKey('batch_tickets', clientRequestId, bodyFingerprint);
+    const result = await idempotent(
+      { key: idempotencyKey, windowMs: BATCH_IDEMPOTENCY_WINDOW_MS, scope: 'memory', rollbackOnError: true },
+      async () => ticketService.batchUpdate(ids, updates),
+    );
 
-  const result = await idempotent(
-    { key: idempotencyKey, windowMs: BATCH_IDEMPOTENCY_WINDOW_MS, scope: 'memory', rollbackOnError: true },
-    async () => ticketService.batchUpdate(ids, updates),
-  );
+    if (result.value === SKIPPED) {
+      return new Response(JSON.stringify({
+        ok: true,
+        duplicate: true,
+        idempotencyKey,
+        attempts: result.attempts,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
 
-  if (result.value === SKIPPED) {
-    return apiSuccess({
-      duplicate: true,
+    return new Response(JSON.stringify({
+      ok: true,
+      duplicate: false,
+      updated_count: result.value.updated_count,
       idempotencyKey,
-      attempts: result.attempts,
-    });
-  }
-
-  return apiSuccess({
-    duplicate: false,
-    updated_count: result.value.updated_count,
-    idempotencyKey,
-  });
-});
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  },
+);

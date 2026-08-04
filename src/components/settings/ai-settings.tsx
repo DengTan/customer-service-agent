@@ -6,6 +6,7 @@ import { useConfirmDialog } from '@/components/common/confirm-dialog';
 import { NumberInput } from '@/components/common/number-input';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { logger } from '@/lib/logger';
+import { apiFetch } from '@/lib/api-fetch';
 import { ImageIcon, Zap, Bot } from 'lucide-react';
 
 interface LlmModel {
@@ -19,7 +20,6 @@ interface LlmModel {
   supports_vision: boolean;
   supports_function_calling: boolean;
   supports_streaming: boolean;
-  default_temperature: number;
   use_case: string;
   is_enabled: boolean;
 }
@@ -31,13 +31,10 @@ interface LlmProvider {
   description?: string | null;
   base_url: string;
   models: string[];
-  default_model?: string | null;
   supports_vision: boolean;
   supports_streaming: boolean;
   max_context_tokens?: number | null;
   is_enabled: boolean;
-  is_default: boolean;
-  priority: number;
 }
 
 interface AISettingsProps {
@@ -96,7 +93,7 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
     latestProviderIdRef.current = providerId;
     const currentTrigger = latestRefreshTriggerRef.current;
     try {
-      const res = await fetch(`/api/llm-providers?provider_id=${providerId}`);
+      const res = await apiFetch(`/api/llm-providers?provider_id=${providerId}`);
       const data = await res.json();
       // Only update state if this is still the current trigger
       if (currentTrigger === latestRefreshTriggerRef.current) {
@@ -128,7 +125,7 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
     const loadInitialData = async () => {
       try {
         // Fetch providers list
-        const providersRes = await fetch('/api/llm-providers');
+        const providersRes = await apiFetch('/api/llm-providers');
         const providersData = await providersRes.json();
         const providerList = providersData.providers || [];
         setProviders(providerList);
@@ -136,11 +133,11 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
         // Determine which provider to use
         let providerId = settings.llm_provider_id;
         
-        // If no provider set, use default provider or first available
+        // If no provider set, use first available provider
         if (!providerId) {
-          const defaultProvider = providerList.find((p: { is_default: boolean }) => p.is_default) || providerList[0];
-          if (defaultProvider) {
-            providerId = defaultProvider.id;
+          const firstProvider = providerList[0];
+          if (firstProvider) {
+            providerId = firstProvider.id;
             onSettingsChange((prev) => ({ ...prev, llm_provider_id: providerId }));
           }
         }
@@ -274,11 +271,12 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
           ) : (
             <div className="space-y-2">
               {(() => {
-                const textModels = getCurrentProviderModels().filter(m => !m.supports_vision);
-                if (textModels.length === 0) {
-                  return <p className="text-xs text-muted-foreground py-2">该提供商暂无普通模型</p>;
+                // Show all models in the normal model list (including vision models)
+                const allModels = getCurrentProviderModels();
+                if (allModels.length === 0) {
+                  return <p className="text-xs text-muted-foreground py-2">该提供商暂无模型</p>;
                 }
-                return textModels.map((model) => (
+                return allModels.map((model) => (
                   <button
                     key={model.id || model.model_id}
                     onClick={() => onSettingsChange((prev) => ({ ...prev, ai_model: model.model_id }))}
@@ -304,6 +302,11 @@ export function AISettings({ settings, onSettingsChange, onValidationChange }: A
                       <p className="text-xs text-muted-foreground">{model.description || model.model_id}</p>
                     </div>
                     <div className="flex items-center gap-1">
+                      {model.supports_vision && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded">
+                          <ImageIcon className="w-3 h-3" /> 视觉理解
+                        </span>
+                      )}
                       {model.supports_streaming && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
                           <Zap className="w-3 h-3" /> 流式

@@ -18,6 +18,10 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Use a stable absolute path so tests pass in both dev (vitest) and Stryker
+// dry-run environments (where process.cwd() may be the .stryker-tmp/ subdirectory).
+const PROJECT_ROOT = 'D:\\customer_service_agent-main';
+
 const mockKnowledgeSearchFn = vi.fn();
 
 vi.mock('@/server/services/knowledge-search-service', () => {
@@ -139,7 +143,7 @@ describe('Shared retrieval configuration across entry points', () => {
   ];
 
   it.each(entryPoints)('%s explicitly enables hybrid retrieval', relativePath => {
-    const source = readFileSync(resolve(process.cwd(), relativePath), 'utf8');
+    const source = readFileSync(resolve(PROJECT_ROOT, relativePath), 'utf8');
     const calls = findOrchestratorRetrieveCalls(source, relativePath);
 
     expect(calls).toHaveLength(1);
@@ -148,7 +152,7 @@ describe('Shared retrieval configuration across entry points', () => {
 
   it('loads hybrid settings before deriving per-request defaults', () => {
     const source = readFileSync(
-      resolve(process.cwd(), 'src/server/services/hybrid-search-service.ts'),
+      resolve(PROJECT_ROOT, 'src/server/services/hybrid-search-service.ts'),
       'utf8'
     );
     const loadConfigAt = source.indexOf('await this.loadConfig()');
@@ -160,7 +164,7 @@ describe('Shared retrieval configuration across entry points', () => {
 
   it('uses the canonical knowledge threshold as the hybrid default', () => {
     const source = readFileSync(
-      resolve(process.cwd(), 'src/server/services/hybrid-search-service.ts'),
+      resolve(PROJECT_ROOT, 'src/server/services/hybrid-search-service.ts'),
       'utf8'
     );
 
@@ -169,7 +173,7 @@ describe('Shared retrieval configuration across entry points', () => {
 
   it('isolates actual rerank backend state per hybrid request', () => {
     const source = readFileSync(
-      resolve(process.cwd(), 'src/server/services/hybrid-search-service.ts'),
+      resolve(PROJECT_ROOT, 'src/server/services/hybrid-search-service.ts'),
       'utf8'
     );
 

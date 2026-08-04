@@ -8,7 +8,7 @@ const service = new KnowledgeLearningService();
 export const GETHandler = GET(
   {
     auth: 'required',
-    perm: { resource: 'knowledge', action: 'read' },
+    perm: { resource: 'conversations', action: 'write' },
   },
   async ({ request }) => {
     const { searchParams } = new URL(request.url);

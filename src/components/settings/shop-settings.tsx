@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import ShopCreateWizard from './shop-create-wizard';
 import type { Shop, ShopStats } from './types';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ShopSettingsProps {
   shops: Shop[];
@@ -43,7 +44,7 @@ export function ShopSettings({ shops, shopStats, onShopsChange, onShopStatsChang
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/shops/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/shops/${id}`, { method: 'DELETE' });
       if (res.ok) {
         const deleted = shops.find((s) => s.id === id);
         onShopsChange((prev) => prev.filter((s) => s.id !== id));
@@ -68,7 +69,7 @@ export function ShopSettings({ shops, shopStats, onShopsChange, onShopStatsChang
   const handleToggleShopStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'active' ? 'disabled' : 'active';
     try {
-      const res = await fetch(`/api/shops/${id}`, {
+      const res = await apiFetch(`/api/shops/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -86,7 +87,7 @@ export function ShopSettings({ shops, shopStats, onShopsChange, onShopStatsChang
   const handleUpdateShop = async () => {
     if (!editingShopId || !editShop) return;
     try {
-      const res = await fetch(`/api/shops/${editingShopId}`, {
+      const res = await apiFetch(`/api/shops/${editingShopId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

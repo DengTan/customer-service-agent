@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Library,
   Plus,
@@ -116,7 +117,7 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
       if (filterCategory) params.set('category', filterCategory);
       if (searchQuery) params.set('search', searchQuery);
 
-      const res = await fetch(`/api/simulation-test-cases?${params}`);
+      const res = await apiFetch(`/api/simulation-test-cases?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
@@ -214,8 +215,9 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
         ...(editingId ? { id: editingId } : {}),
       };
 
-      const res = await fetch('/api/simulation-test-cases', {
+      const res = await apiFetch('/api/simulation-test-cases', {
         method: editingId ? 'PUT' : 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -248,7 +250,7 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
     if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/simulation-test-cases?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/simulation-test-cases?id=${id}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) throw new Error('删除失败');
       toast.success('已删除');
       setTestCases(prev => prev.filter(tc => tc.id !== id));
@@ -315,8 +317,9 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
         return;
       }
 
-      const res = await fetch('/api/simulation-test-cases/import', {
+      const res = await apiFetch('/api/simulation-test-cases/import', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -368,7 +371,7 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
       const ids = Array.from(selectedIds).join(',');
       try {
         setIsExporting(true);
-        const res = await fetch(`/api/simulation-test-cases/import?ids=${encodeURIComponent(ids)}`);
+        const res = await apiFetch(`/api/simulation-test-cases/import?ids=${encodeURIComponent(ids)}`, { credentials: 'include' });
         if (!res.ok) throw new Error('Export failed');
         const data = await res.json();
         downloadJson(data.data);
@@ -383,7 +386,7 @@ export function TestCaseLibrary({ onRunTest, onImportFromSimulation }: TestCaseL
       // Export all via API
       try {
         setIsExporting(true);
-        const res = await fetch('/api/simulation-test-cases/import');
+        const res = await apiFetch('/api/simulation-test-cases/import', { credentials: 'include' });
         if (!res.ok) throw new Error('Export failed');
         const data = await res.json();
         downloadJson(data.data);

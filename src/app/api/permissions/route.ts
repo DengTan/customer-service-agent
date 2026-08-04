@@ -1,27 +1,34 @@
 import { NextRequest } from 'next/server';
-import { parseJsonBody, withErrorHandlerSimple, apiSuccess, apiError, requireRole, HttpStatus } from '@/lib/api-utils';
+import { parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { GET, PUT } from '@/lib/api/with-api';
 import { PermissionService } from '@/server/services/permission-service';
 
 const service = new PermissionService();
-const ADMIN_ONLY = ['admin'];
 
 // Valid values — defense-in-depth against invalid data being persisted
 const VALID_ROLES = ['admin', 'agent', 'observer'] as const;
 const VALID_RESOURCES = ['conversations', 'knowledge', 'settings', 'team', 'customers', 'analytics', 'tickets', 'marketing', 'bots', 'sub_agents', 'routing', 'quality', 'push'] as const;
 const VALID_ACTIONS = ['read', 'write', 'delete'] as const;
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'team', action: 'read' },
+  },
+  async () => {
   const permissions = await service.listPermissions();
   return apiSuccess({ permissions });
-});
+},
+);
 
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+export { GETHandler as GET };
 
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'team', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -60,4 +67,7 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const results = await service.updatePermissions(permissions);
   return apiSuccess({ permissions: results });
-});
+},
+);
+
+export { PUTHandler as PUT };

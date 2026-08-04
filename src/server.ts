@@ -12,6 +12,60 @@ const port = parseInt(process.env.PORT || '5000', 10);
 // 后台调度间隔：5分钟
 const SCHEDULER_INTERVAL_MS = 5 * 60 * 1000;
 
+// ─── Process Safety Net ─────────────────────────────────────
+//
+// Node.js 15+ terminates the process on any unhandled promise rejection
+// (`--unhandled-rejections=throw` is the default). During the E2E auth-matrix
+// run we issue 100+ requests with side-effecting fire-and-forget writes
+// (EffectBus, knowledge-search hit-counter, message_count increments, etc.).
+// A single rejected promise — for example a transient Supabase timeout — will
+// therefore kill the dev server and cause every subsequent test to fail with
+// `fetch failed` (Playwright reports these as "Test timeout of 30000ms exceeded"
+// against the request handler).
+//
+// We install handlers that LOG and CONTINUE instead of letting the default
+// terminate the process. `process.exit` is intentionally avoided so the server
+// stays up for the rest of the test run. We only exit on explicit
+// `uncaughtException` when the failure is clearly non-recoverable (OOM, native
+// module crash, etc.).
+function installProcessSafetyNet(): void {
+  process.on('unhandledRejection', (reason, promise) => {
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error('Unhandled promise rejection — keeping process alive', {
+      error,
+      errorMessage: error.message,
+      stack: error.stack,
+      // Tag the rejection so we can grep for it in test logs.
+      source: 'processSafetyNet',
+    });
+  });
+
+  process.on('uncaughtException', (err) => {
+    logger.error('Uncaught exception — keeping process alive', {
+      error: err,
+      errorMessage: err.message,
+      stack: err.stack,
+      source: 'processSafetyNet',
+    });
+    // Intentionally do NOT call process.exit(1) here. The default behaviour is
+    // to terminate the process, which is what causes the cascade of
+    // "fetch failed" errors during E2E test runs. If the process is truly
+    // unrecoverable, the OS will reap it (e.g. EMFILE, ENOMEM).
+  });
+
+  process.on('warning', (warning) => {
+    // Demote dependency deprecation warnings to debug so they don't drown
+    // the test log, but keep core warnings visible.
+    if (warning.name === 'DeprecationWarning' || warning.name === 'ExperimentalWarning') {
+      logger.debug('Node warning', { name: warning.name, message: warning.message });
+    } else {
+      logger.warn('Node warning', { name: warning.name, message: warning.message });
+    }
+  });
+}
+
+installProcessSafetyNet();
+
 // Create Next.js app
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();

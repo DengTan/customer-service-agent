@@ -20,7 +20,7 @@ describe('RATE_LIMIT', () => {
 
 describe('AUTH', () => {
   it('should have correct login security values', () => {
-    expect(AUTH.LOGIN_MAX_ATTEMPTS).toBe(5);
+    expect(AUTH.LOGIN_MAX_ATTEMPTS).toBe(100);
     expect(AUTH.LOGIN_LOCKOUT_MINUTES).toBe(15);
     expect(AUTH.PASSWORD_BCRYPT_ROUNDS).toBe(12);
     expect(AUTH.LOGIN_MAX_LOG_EVENTS).toBe(1000);

@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 export interface ProductCardData {
   id: string;
@@ -75,7 +76,7 @@ export function ProductPicker({ open, onOpenChange, onSelect }: ProductPickerPro
       params.set('page', String(pageNum));
       params.set('page_size', String(PAGE_SIZE));
 
-      const res = await fetch(`/api/knowledge/products?${params}`);
+      const res = await apiFetch(`/api/knowledge/products?${params}`);
       if (res.ok) {
         const data = await res.json();
         setProducts(data.items || []);

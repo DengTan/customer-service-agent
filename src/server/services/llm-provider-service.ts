@@ -77,22 +77,10 @@ export class LlmProviderService {
   }
 
   /**
-   * Get the default provider
-   */
-  async getDefaultProvider(): Promise<LlmProviderRow | null> {
-    try {
-      return await this.repository.getDefault();
-    } catch (error) {
-      logger.error('Failed to get default LLM provider', { error });
-      throw this.toServiceError(error, 'Failed to get default provider');
-    }
-  }
-
-  /**
    * 统一加载 LLM Provider 配置（用于发送消息时的 LLM 调用）
    * 同时处理 provider 查找和 API Key 解密，所有使用 LLM 的地方都应使用此方法
    * 
-   * @param providerId - 可选，指定 Provider ID；为空则使用默认 Provider
+   * @param providerId - 可选，指定 Provider ID；为空则使用第一个可用 Provider
    * @returns Provider 配置对象，如果未配置或未启用则返回 null
    */
   async loadProviderConfig(providerId?: string): Promise<LLMProviderConfig | null> {
@@ -105,8 +93,9 @@ export class LlmProviderService {
       }
 
       if (!provider) {
-        // 回退到默认 Provider
-        provider = await this.repository.getDefault();
+        // 回退到第一个可用的 Provider
+        const providers = await this.repository.listEnabled();
+        provider = providers[0] ?? null;
       }
 
       if (!provider || !provider.is_enabled) {
@@ -143,7 +132,7 @@ export class LlmProviderService {
         providerName: provider.name,
         providerBaseUrl: provider.base_url,
         providerApiKey: providerWithKey.api_key,
-        defaultModel: provider.default_model || undefined,
+        defaultModel: provider.models?.[0] || undefined,
       };
 
       logger.info('[LlmProviderService] Loaded provider config', {
@@ -188,10 +177,6 @@ export class LlmProviderService {
       if (existing) {
         throw new Error(`Provider with name '${input.name}' already exists`);
       }
-
-      // If this is the first provider or marked as default, handle defaults
-      const providers = await this.repository.list();
-      const isFirstProvider = providers.length === 0;
       
       const provider = await this.repository.create({
         name: input.name,
@@ -200,15 +185,12 @@ export class LlmProviderService {
         base_url: input.base_url,
         api_key: input.api_key ?? null,
         models: input.models ?? [],
-        default_model: input.default_model ?? null,
         supports_vision: input.supports_vision ?? false,
         supports_streaming: input.supports_streaming ?? true,
         max_context_tokens: input.max_context_tokens ?? null,
         auth_config: input.auth_config ?? null,
         request_config: input.request_config ?? {},
         is_enabled: input.is_enabled ?? true,
-        is_default: input.is_default ?? isFirstProvider,
-        priority: input.priority ?? 0,
       });
 
       logger.info('LLM provider created', { providerId: provider.id, name: provider.name });
@@ -249,26 +231,12 @@ export class LlmProviderService {
       if (input.base_url !== undefined) updates.base_url = input.base_url;
       if (input.api_key !== undefined) updates.api_key = input.api_key ?? null;
       if (input.models !== undefined) updates.models = input.models;
-      if (input.default_model !== undefined) updates.default_model = input.default_model ?? null;
       if (input.supports_vision !== undefined) updates.supports_vision = input.supports_vision;
       if (input.supports_streaming !== undefined) updates.supports_streaming = input.supports_streaming;
       if (input.max_context_tokens !== undefined) updates.max_context_tokens = input.max_context_tokens ?? null;
       if (input.auth_config !== undefined) updates.auth_config = input.auth_config ?? null;
       if (input.request_config !== undefined) updates.request_config = input.request_config;
       if (input.is_enabled !== undefined) updates.is_enabled = input.is_enabled;
-      if (input.priority !== undefined) updates.priority = input.priority;
-
-      if (input.is_default === true) {
-        await this.repository.setDefault(id);
-        updates.is_default = true;
-      } else if (input.is_default === false && existing.is_default) {
-        // Don't allow un-defaulting the only default provider
-        const providers = await this.repository.listEnabled();
-        if (providers.length <= 1) {
-          throw new Error('Cannot remove default status from the only provider');
-        }
-        updates.is_default = false;
-      }
 
       const provider = await this.repository.update(id, updates);
       logger.info('LLM provider updated', { providerId: id });
@@ -292,18 +260,6 @@ export class LlmProviderService {
         throw new Error(`Provider with id '${id}' not found`);
       }
 
-      if (provider.is_default) {
-        const providers = await this.repository.list();
-        if (providers.length <= 1) {
-          throw new Error('Cannot delete the only provider');
-        }
-        // Set another provider as default
-        const otherProvider = providers.find(p => p.id !== id);
-        if (otherProvider) {
-          await this.repository.setDefault(otherProvider.id);
-        }
-      }
-
       await this.repository.delete(id);
       logger.info('LLM provider deleted', { providerId: id, name: provider.name });
     } catch (error) {
@@ -312,33 +268,6 @@ export class LlmProviderService {
       }
       logger.error('Failed to delete LLM provider', { id, error });
       throw this.toServiceError(error, 'Failed to delete provider');
-    }
-  }
-
-  /**
-   * Set a provider as default
-   */
-  async setDefaultProvider(id: string): Promise<LlmProviderRow> {
-    try {
-      const provider = await this.repository.getById(id);
-      if (!provider) {
-        throw new Error(`Provider with id '${id}' not found`);
-      }
-
-      if (!provider.is_enabled) {
-        throw new Error('Cannot set a disabled provider as default');
-      }
-
-      await this.repository.setDefault(id);
-      logger.info('Default LLM provider changed', { providerId: id, name: provider.name });
-      
-      return await this.repository.getById(id) as LlmProviderRow;
-    } catch (error) {
-      if (error instanceof Error && (error.message.includes('not found') || error.message.includes('Cannot set'))) {
-        throw error;
-      }
-      logger.error('Failed to set default LLM provider', { id, error });
-      throw this.toServiceError(error, 'Failed to set default provider');
     }
   }
 
@@ -376,7 +305,7 @@ export class LlmProviderService {
         cost_per_1k_input: input.cost_per_1k_input ?? null,
         cost_per_1k_output: input.cost_per_1k_output ?? null,
         is_enabled: input.is_enabled ?? true,
-        priority: input.priority ?? 0,
+        type: input.type ?? 'chat',
       });
 
       logger.info('LLM model created', { modelId: model.id, providerId });
@@ -404,10 +333,10 @@ export class LlmProviderService {
       if (input.supports_streaming !== undefined) updates.supports_streaming = input.supports_streaming;
       if (input.supports_function_calling !== undefined) updates.supports_function_calling = input.supports_function_calling;
       if (input.default_max_tokens !== undefined) updates.default_max_tokens = input.default_max_tokens ?? null;
-      if (input.priority !== undefined) updates.priority = input.priority;
       if (input.cost_per_1k_input !== undefined) updates.cost_per_1k_input = input.cost_per_1k_input ?? null;
       if (input.cost_per_1k_output !== undefined) updates.cost_per_1k_output = input.cost_per_1k_output ?? null;
       if (input.is_enabled !== undefined) updates.is_enabled = input.is_enabled;
+      if (input.type !== undefined) updates.type = input.type;
 
       const model = await this.repository.updateModel(modelId, updates);
       logger.info('LLM model updated', { modelId });
@@ -456,7 +385,7 @@ export class LlmProviderService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: provider.default_model || provider.models?.[0] || 'gpt-4o-mini',
+          model: provider.models?.[0] || 'gpt-4o-mini',
           messages: [{ role: 'user', content: 'Hi' }],
           max_tokens: 5,
           stream: false,
@@ -508,8 +437,7 @@ export class LlmProviderService {
 
   /**
    * Select the best model based on requirements
-   * Selection criteria: highest priority model among enabled providers,
-   *                     default provider wins ties
+   * Selection criteria: default provider first, then enabled models
    */
   async selectBestModel(params: {
     type: 'chat' | 'vision';
@@ -528,14 +456,8 @@ export class LlmProviderService {
         }
         providers = [provider];
       } else {
-        // Use all enabled providers, sorted by priority (default first)
+        // Use all enabled providers
         providers = await this.repository.listEnabled();
-        // Sort: default provider first, then by priority descending
-        providers.sort((a, b) => {
-          if (a.is_default && !b.is_default) return -1;
-          if (!a.is_default && b.is_default) return 1;
-          return (b.priority || 0) - (a.priority || 0);
-        });
       }
 
       for (const provider of providers) {
@@ -557,9 +479,6 @@ export class LlmProviderService {
 
         if (matchingModels.length === 0) continue;
 
-        // Sort by priority descending
-        matchingModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
         // If function calling is required, filter further
         if (params.supportsFunctionCalling) {
           const fcModel = matchingModels.find(m => m.supports_function_calling);
@@ -568,7 +487,7 @@ export class LlmProviderService {
           }
         }
 
-        // Return the highest priority model
+        // Return the first matching model
         return { provider, model: matchingModels[0] };
       }
 
@@ -612,15 +531,12 @@ export interface CreateProviderInput {
   base_url: string;
   api_key?: string;
   models?: string[];
-  default_model?: string;
   supports_vision?: boolean;
   supports_streaming?: boolean;
   max_context_tokens?: number;
   auth_config?: unknown;
   request_config?: Record<string, unknown>;
   is_enabled?: boolean;
-  is_default?: boolean;
-  priority?: number;
 }
 
 export interface UpdateProviderInput {
@@ -630,15 +546,12 @@ export interface UpdateProviderInput {
   base_url?: string;
   api_key?: string;
   models?: string[];
-  default_model?: string;
   supports_vision?: boolean;
   supports_streaming?: boolean;
   max_context_tokens?: number;
   auth_config?: unknown;
   request_config?: Record<string, unknown>;
   is_enabled?: boolean;
-  is_default?: boolean;
-  priority?: number;
 }
 
 export interface CreateModelInput {
@@ -650,8 +563,8 @@ export interface CreateModelInput {
   supports_streaming?: boolean;
   supports_function_calling?: boolean;
   default_max_tokens?: number;
-  priority?: number;
   cost_per_1k_input?: number;
   cost_per_1k_output?: number;
   is_enabled?: boolean;
+  type?: string;
 }

@@ -502,7 +502,7 @@ export class SubAgentService {
       resolvedConfig = {
         baseUrl: provider.base_url,
         apiKey: providerWithKey?.api_key || provider.api_key || '',
-        model: provider.default_model || aiModel || '',
+        model: provider.models?.[0] || aiModel || '',
       };
     }
 

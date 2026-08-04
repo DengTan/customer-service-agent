@@ -40,6 +40,7 @@ import {
   checkRateLimit,
   REQUEST_ID_HEADER,
 } from '@/lib/api-utils';
+import { HTTP } from '@/lib/constants';
 import { problemResponse } from '@/lib/api/problem-json';
 import {
   attachCorsHeaders,
@@ -111,6 +112,12 @@ function resolveRequest<TParams extends Record<string, string>>(
       }
     }
 
+    // Pathname is used only for RFC 7807 `instance` metadata on problem
+    // responses (diagnostic, never a control-flow signal). Mock Request
+    // objects in unit tests have no `nextUrl`, so we fall back to a stable
+    // sentinel rather than crashing.
+    const instancePath = (request as { nextUrl?: { pathname?: string } })?.nextUrl?.pathname ?? '/unknown';
+
     // 2) Authentication
     let user: JWTPayload | null = null;
     const auth = options.auth ?? 'required';
@@ -123,7 +130,7 @@ function resolveRequest<TParams extends Record<string, string>>(
         return {
           ok: false as const,
           response: problemResponse(HttpStatus.UNAUTHORIZED, 'Webhook secret missing or invalid', {
-            instance: request.nextUrl.pathname,
+            instance: instancePath,
             extensions: { requestId },
           }),
         };
@@ -139,7 +146,7 @@ function resolveRequest<TParams extends Record<string, string>>(
           return {
             ok: false as const,
             response: problemResponse(HttpStatus.UNAUTHORIZED, '未登录或登录已过期', {
-              instance: request.nextUrl.pathname,
+              instance: instancePath,
               extensions: { requestId, code: 'UNAUTHORIZED' },
             }),
           };
@@ -160,7 +167,7 @@ function resolveRequest<TParams extends Record<string, string>>(
       return {
         ok: false as const,
         response: problemResponse(HttpStatus.UNAUTHORIZED, '未登录或登录已过期', {
-          instance: request.nextUrl.pathname,
+          instance: instancePath,
           extensions: { requestId, code: 'UNAUTHORIZED' },
         }),
       };

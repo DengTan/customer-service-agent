@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,7 +81,7 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
     startTransition(async () => {
       onRulesChange((prev) => prev.map((r) => (r.id === id ? { ...r, is_enabled: enabled } : r)));
       try {
-        const res = await fetch('/api/auto-reply', {
+        const res = await apiFetch('/api/auto-reply', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, is_enabled: enabled }),
@@ -102,7 +103,7 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
     if (!deleteRuleId) return;
     startTransition(async () => {
       try {
-        const res = await fetch(`/api/auto-reply?id=${deleteRuleId}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/auto-reply?id=${deleteRuleId}`, { method: 'DELETE' });
         if (res.ok) {
           onRulesChange((prev) => prev.filter((r) => r.id !== deleteRuleId));
           toast.success('规则已删除');
@@ -119,7 +120,7 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
   const handleAddRule = async () => {
     if (!newRule.keyword || !newRule.reply_content) return;
     try {
-      const res = await fetch('/api/auto-reply', {
+      const res = await apiFetch('/api/auto-reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newRule, is_enabled: true }),
@@ -146,7 +147,7 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/auto-reply', {
+      const res = await apiFetch('/api/auto-reply', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,12 +194,12 @@ export function AutoReplySettings({ rules, onRulesChange }: AutoReplySettingsPro
 
       try {
         await Promise.all([
-          fetch('/api/auto-reply', {
+          apiFetch('/api/auto-reply', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, priority: otherRule.priority }),
           }),
-          fetch('/api/auto-reply', {
+          apiFetch('/api/auto-reply', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: otherRule.id, priority: currentRule.priority }),

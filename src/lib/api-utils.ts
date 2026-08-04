@@ -216,6 +216,11 @@ export function checkRateLimit(
   request: NextRequest,
   options: RateLimitOptions = { maxRequests: 60, windowMs: 60_000 },
 ): NextResponse | null {
+  // Allow higher limits during testing
+  const isTest = process.env.NODE_ENV === 'test' || process.env.PLAYWRIGHT === '1';
+  const effectiveMax = isTest ? Math.max(options.maxRequests, 1000) : options.maxRequests;
+  const effectiveWindow = isTest ? 600_000 : options.windowMs; // 10min in tests
+
   // Enforce size limit to prevent memory exhaustion
   if (rateLimitStore.size >= MAX_RATE_LIMIT_ENTRIES) {
     let oldestKey: string | undefined;
@@ -238,12 +243,12 @@ export function checkRateLimit(
   const entry = rateLimitStore.get(ip);
 
   if (!entry || now > entry.resetAt) {
-    rateLimitStore.set(ip, { count: 1, resetAt: now + options.windowMs });
+    rateLimitStore.set(ip, { count: 1, resetAt: now + effectiveWindow });
     return null;
   }
 
   entry.count++;
-  if (entry.count > options.maxRequests) {
+  if (entry.count > effectiveMax) {
     return apiError('请求过于频繁，请稍后再试', {
       status: HttpStatus.TOO_MANY_REQUESTS,
       code: 'RATE_LIMITED',

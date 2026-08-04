@@ -6,7 +6,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts', 'tests/**/*.test.ts'],
-    exclude: ['node_modules', '.next', 'out'],
+    exclude: [
+      'node_modules',
+      '.next',
+      'out',
+      'tests/e2e/**', // Playwright tests run separately
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

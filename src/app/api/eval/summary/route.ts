@@ -1,36 +1,20 @@
 /**
  * GET /api/eval/summary
  *
- * Admin-only.  Returns a unified summary of the three eval subsystems:
- *   - latest regression runs
- *   - shadow run comparator summaries (one row per bot×shop slice)
- *   - calibration settings summaries (one row per calibration config)
- *
- * Each section degrades gracefully: a failure in one section does not
- * block the others from being returned.
+ * Admin-only. Returns a unified summary of the three eval subsystems.
  */
 
 import { NextRequest } from 'next/server';
-import {
-  apiSuccess,
-  withErrorHandlerSimple,
-  requireRole,
-  HttpStatus,
-} from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { logger } from '@/lib/logger';
 import { isDemoMode } from '@/storage/database/supabase-client';
 import { EvalRegressionRepository } from '@/server/repositories/eval-regression-repository';
 import { EvalShadowRepository } from '@/server/repositories/eval-shadow-repository';
-import { EvalCalibrationRepository } from '@/server/repositories/eval-calibration-repository';
 import type { EvalRegressionRunRow } from '@/server/repositories/eval-regression-repository';
 import type { ShadowComparatorRow } from '@/server/repositories/eval-shadow-repository';
 import type { EvalCalibrationSettingsRow } from '@/server/repositories/eval-calibration-repository';
 
-const ADMIN_ONLY = ['admin'];
-
-// ─── Response shapes ───────────────────────────────────────────────────────────
-
-export interface CalibrationSummaryRow {
+interface CalibrationSummaryRow {
   bot_id: string;
   shop_id: string | null;
   status: string;
@@ -46,15 +30,6 @@ export interface CalibrationSummaryRow {
   promoted_at: string | null;
 }
 
-export interface EvalSummaryResponse {
-  latest_regression_runs: EvalRegressionRunRow[];
-  shadow_summary: ShadowComparatorRow[];
-  calibration_summary: CalibrationSummaryRow[];
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Map a full calibration DB row to the public summary shape. */
 function toCalibrationSummary(row: EvalCalibrationSettingsRow): CalibrationSummaryRow {
   return {
     bot_id: row.bot_id,
@@ -66,7 +41,6 @@ function toCalibrationSummary(row: EvalCalibrationSettingsRow): CalibrationSumma
     claim_verifier_threshold: row.claim_verifier_threshold,
     confidence_gate: row.confidence_gate,
     fold_gap: row.fold_gap,
-    // overfit_suspect: fold gap is large relative to composite score
     overfit_suspect: row.fold_gap > 0.1 && row.composite < 0.6,
     is_canary: row.is_canary,
     canary_pct: row.canary_pct,
@@ -74,11 +48,8 @@ function toCalibrationSummary(row: EvalCalibrationSettingsRow): CalibrationSumma
   };
 }
 
-// ─── Section fetchers ─────────────────────────────────────────────────────────
-
 async function fetchRegressionRuns(): Promise<EvalRegressionRunRow[]> {
   const repo = new EvalRegressionRepository();
-  // Return the latest run per kind (ci, continuous, manual) up to 3 rows total
   const [ci, continuous, manual] = await Promise.all([
     repo.latest('ci').catch((err) => {
       logger.error('Failed to fetch latest ci regression run', { error: err });
@@ -93,16 +64,11 @@ async function fetchRegressionRuns(): Promise<EvalRegressionRunRow[]> {
       return null;
     }),
   ]);
-
-  return [ci, continuous, manual].filter(
-    (r): r is EvalRegressionRunRow => r !== null,
-  );
+  return [ci, continuous, manual].filter((r): r is EvalRegressionRunRow => r !== null);
 }
 
 async function fetchShadowSummary(): Promise<ShadowComparatorRow[]> {
   const repo = new EvalShadowRepository();
-
-  // Distinct bot×shop slices from recent shadow runs (last 30 days)
   const { rows: recentRuns } = await repo
     .getRuns({ sinceDays: 30, limit: 1000 })
     .catch((err) => {
@@ -112,12 +78,11 @@ async function fetchShadowSummary(): Promise<ShadowComparatorRow[]> {
 
   if (recentRuns.length === 0) return [];
 
-  // Deduplicate bot×shop pairs
   const slices = Array.from(
     new Set(recentRuns.map((r) => `${r.bot_id}::${r.shop_id ?? 'null'}`)),
   ).map((key) => {
     const [bot_id, shop_id] = key.split('::');
-    return { bot_id, shop_id: shop_id === 'null' ? null : (shop_id as string) };
+    return { bot_id, shop_id: shop_id === 'null' ? null : shop_id as string };
   });
 
   const comparators = await Promise.all(
@@ -138,9 +103,6 @@ async function fetchCalibrationSummary(): Promise<CalibrationSummaryRow[]> {
   if (isDemoMode()) return [];
 
   const { getSupabaseClient } = await import('@/storage/database/supabase-client');
-
-  // We need all non-archived calibrations. listBySlice requires bot+shop.
-  // Instead, query all rows for the admin summary view.
   let data: unknown[] | null = null;
   let error: string | null = null;
   try {
@@ -161,32 +123,28 @@ async function fetchCalibrationSummary(): Promise<CalibrationSummaryRow[]> {
   }
 
   if (error || !data) return [];
-
   return (data as unknown as EvalCalibrationSettingsRow[]).map(toCalibrationSummary);
 }
 
-// ─── Handler ──────────────────────────────────────────────────────────────────
+export const GET = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async () => {
+    const [latest_regression_runs, shadow_summary, calibration_summary] =
+      await Promise.all([
+        fetchRegressionRuns(),
+        fetchShadowSummary(),
+        fetchCalibrationSummary(),
+      ]);
 
-// Sprint 7 scope-creep triage: this route was added outside the Sprint 6 plan and has not been Standards-axis reviewed. See Sprint 7 review notes.
+    const response = {
+      latest_regression_runs,
+      shadow_summary,
+      calibration_summary,
+    };
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  // ── Admin gate ──────────────────────────────────────────────────────────────
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
-  // ── Parallel fetch of all three sections ────────────────────────────────────
-  const [latest_regression_runs, shadow_summary, calibration_summary] =
-    await Promise.all([
-      fetchRegressionRuns(),
-      fetchShadowSummary(),
-      fetchCalibrationSummary(),
-    ]);
-
-  const response: EvalSummaryResponse = {
-    latest_regression_runs,
-    shadow_summary,
-    calibration_summary,
-  };
-
-  return apiSuccess(response, HttpStatus.OK);
-});
+    return new Response(JSON.stringify({ ok: true, ...response }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

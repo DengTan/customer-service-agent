@@ -7,102 +7,90 @@
  *   Body: { action: 'promote' | 'pause' | 'rollback'; id: string }
  */
 
-import { NextRequest } from 'next/server';
-import {
-  apiSuccess,
-  apiError,
-  parseJsonBody,
-  withErrorHandlerSimple,
-  requireRole,
-  HttpStatus,
-  getAuthenticatedUserId,
-} from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { EvalCalibrationRepository } from '@/server/repositories/eval-calibration-repository';
+import { getAuthenticatedUserId } from '@/lib/api-utils';
 
-const ADMIN_ONLY = ['admin'];
+export const GET = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const { searchParams } = new URL(request.url);
 
-// GET /api/eval/calibration — list calibration rows for a slice
+    const botIdRaw = searchParams.get('botId');
+    if (!botIdRaw || typeof botIdRaw !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 botId 参数', code: 'MISSING_BOT_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-// Sprint 7 scope-creep triage: this route was added outside the Sprint 6 plan and has not been Standards-axis reviewed. See Sprint 7 review notes.
+    const shopIdParam = searchParams.get('shopId');
+    const shopId: string | null =
+      shopIdParam === null || shopIdParam === 'null'
+        ? null
+        : shopIdParam ?? null;
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  // ── Admin gate ──────────────────────────────────────────────────────────────
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+    const repo = new EvalCalibrationRepository();
+    const rows = await repo.listBySlice(botIdRaw, shopId);
 
-  // ── Parse query params ──────────────────────────────────────────────────────
-  const { searchParams } = new URL(request.url);
-
-  const botIdRaw = searchParams.get('botId');
-  if (!botIdRaw || typeof botIdRaw !== 'string') {
-    return apiError('缺少或无效的 botId 参数', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_BOT_ID',
+    return new Response(JSON.stringify({ ok: true, rows }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
     });
-  }
+  },
+);
 
-  const shopIdParam = searchParams.get('shopId');
-  // "null" string = all-shops; null in URL = no shop filter; "" = no shop assigned
-  const shopId: string | null =
-    shopIdParam === null || shopIdParam === 'null'
-      ? null
-      : shopIdParam ?? null;
+export const POST = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const userId = getAuthenticatedUserId(request) ?? 'unknown';
 
-  const repo = new EvalCalibrationRepository();
-  const rows = await repo.listBySlice(botIdRaw, shopId);
+    const body = await request.json().catch(() => ({}));
+    const { action, id } = body as { action?: string; id?: string };
 
-  return apiSuccess({ rows }, HttpStatus.OK);
-});
+    if (!id || typeof id !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 id', code: 'MISSING_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-// POST /api/eval/calibration — perform lifecycle action on a calibration row
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+    if (!action || typeof action !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 action', code: 'MISSING_ACTION' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const userId = getAuthenticatedUserId(request) ?? 'unknown';
+    const repo = new EvalCalibrationRepository();
 
-  const { data: body, error: parseError } = await parseJsonBody<{
-    action?: string;
-    id?: string;
-  }>(request);
+    if (action === 'promote') {
+      const updated = await repo.promote(id, userId);
+      return new Response(JSON.stringify({ ok: true, row: updated, action }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (parseError) return parseError;
+    if (action === 'rollback') {
+      const updated = await repo.archive(id);
+      return new Response(JSON.stringify({ ok: true, row: updated, action }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { action, id } = body ?? {};
+    if (action === 'pause') {
+      const updated = await repo.archive(id);
+      return new Response(JSON.stringify({ ok: true, row: updated, action }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  if (!id || typeof id !== 'string') {
-    return apiError('缺少或无效的 id', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_ID',
+    return new Response(JSON.stringify({ error: '不支持的 action 类型', code: 'INVALID_ACTION' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
     });
-  }
-
-  if (!action || typeof action !== 'string') {
-    return apiError('缺少或无效的 action', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_ACTION',
-    });
-  }
-
-  const repo = new EvalCalibrationRepository();
-
-  if (action === 'promote') {
-    const updated = await repo.promote(id, userId);
-    return apiSuccess({ row: updated, action }, HttpStatus.OK);
-  }
-
-  if (action === 'rollback') {
-    const updated = await repo.archive(id);
-    return apiSuccess({ row: updated, action }, HttpStatus.OK);
-  }
-
-  if (action === 'pause') {
-    const updated = await repo.archive(id);
-    return apiSuccess({ row: updated, action }, HttpStatus.OK);
-  }
-
-  return apiError('不支持的 action 类型', {
-    status: HttpStatus.BAD_REQUEST,
-    code: 'INVALID_ACTION',
-  });
-});
+  },
+);

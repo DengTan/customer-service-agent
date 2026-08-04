@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface SensitiveWord {
   id: string;
@@ -88,7 +89,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
   const loadWords = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/content-filter/sensitive-words');
+      const res = await apiFetch('/api/content-filter/sensitive-words');
       const data = await res.json();
       const wordsList: SensitiveWord[] = data.words || [];
       setAllWords(wordsList);
@@ -141,13 +142,13 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
 
       let res: Response;
       if (editingWord) {
-        res = await fetch('/api/content-filter/sensitive-words', {
+        res = await apiFetch('/api/content-filter/sensitive-words', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingWord.id, ...payload }),
         });
       } else {
-        res = await fetch('/api/content-filter/sensitive-words', {
+        res = await apiFetch('/api/content-filter/sensitive-words', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -180,7 +181,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/content-filter/sensitive-words?id=${id}`, {
+      const res = await apiFetch(`/api/content-filter/sensitive-words?id=${id}`, {
         method: 'DELETE',
       });
       if (res.ok) {
@@ -214,7 +215,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(id =>
-          fetch(`/api/content-filter/sensitive-words?id=${id}`, { method: 'DELETE' })
+          apiFetch(`/api/content-filter/sensitive-words?id=${id}`, { method: 'DELETE' })
         )
       );
       const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
@@ -241,7 +242,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
     try {
       const results = await Promise.allSettled(
         Array.from(selectedIds).map(id =>
-          fetch('/api/content-filter/sensitive-words', {
+          apiFetch('/api/content-filter/sensitive-words', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, is_enabled: enable }),
@@ -265,7 +266,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
 
   const handleToggle = async (word: SensitiveWord) => {
     try {
-      const res = await fetch('/api/content-filter/sensitive-words', {
+      const res = await apiFetch('/api/content-filter/sensitive-words', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: word.id, is_enabled: !word.is_enabled }),
@@ -372,7 +373,7 @@ export default function SensitiveWordManager({ open, onClose, onCountChange }: S
 
       setImporting(true);
       try {
-        const res = await fetch('/api/content-filter/sensitive-words/import', {
+        const res = await apiFetch('/api/content-filter/sensitive-words/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ words }),

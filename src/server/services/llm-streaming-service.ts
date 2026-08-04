@@ -308,59 +308,10 @@ export class LLMStreamingService {
           let resolvedProviderApiKey: string | undefined;
           let modelSelectionError: string | null = null;
 
-          // Track user's explicit model requirements for fallback compatibility
-          const userModelRequirements: { supportsVision?: boolean; supportsFunctionCalling?: boolean; supportsStreaming?: boolean } = {};
-
           // Try to auto-select a model from the configured LLM providers/models.
-          // Selection: highest llm_models.priority among enabled providers,
-          //             default provider wins ties.
+          // Selection: default provider first, then compatible models
           const llmProviderService = new LlmProviderService();
           const needsVision = !!options.imageUrl;
-
-          /**
-           * Find a compatible model as fallback when the originally requested model is unavailable.
-           * Compatibility rules (downgrade only, not upgrade):
-           * - Vision model → can fallback to any model (vision or non-vision)
-           * - Non-vision model → can only fallback to non-vision models
-           * - Function-calling model → can fallback to any model (fc or non-fc)
-           * - Non-function-calling model → can only fallback to non-function-calling models
-           * - Streaming model → can fallback to any model (streaming or non-streaming)
-           * - Non-streaming model → can only fallback to non-streaming models
-           */
-          const findCompatibleFallbackModel = async (
-            providerId: string,
-            originalCapabilities: { supportsVision?: boolean; supportsFunctionCalling?: boolean; supportsStreaming?: boolean },
-          ): Promise<string | null> => {
-            try {
-              const models = await llmProviderService.listProviderModels(providerId);
-              const enabledModels = models.filter(m => m.is_enabled);
-
-              // Sort by priority descending
-              enabledModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-              // Find the first model that is compatible (capabilities >= original)
-              const compatibleModel = enabledModels.find(m => {
-                // Vision: if original needs vision, fallback can use any; if not, only non-vision
-                if (originalCapabilities.supportsVision === false && m.supports_vision) {
-                  return false; // Cannot upgrade to vision
-                }
-                // Function calling: if original doesn't need fc, fallback cannot have fc
-                if (originalCapabilities.supportsFunctionCalling === false && m.supports_function_calling) {
-                  return false; // Cannot upgrade to function calling
-                }
-                // Streaming: if original doesn't need streaming, fallback cannot have streaming
-                if (originalCapabilities.supportsStreaming === false && m.supports_streaming) {
-                  return false; // Cannot upgrade to streaming
-                }
-                return true;
-              });
-
-              return compatibleModel?.model_id || null;
-            } catch (error) {
-              logger.warn('Failed to find compatible fallback model', { providerId, error });
-              return null;
-            }
-          };
 
           // Step 1: Try to auto-select a model
           // P0 fix: 优先使用 llm_provider_id 配置指定的 Provider
@@ -380,10 +331,6 @@ export class LLMStreamingService {
           if (selectedProvider) {
             llmModel = selectedProvider.model.model_id;
             resolvedProviderId = selectedProvider.provider.id;
-            // Set user requirements based on the selected model
-            userModelRequirements.supportsVision = selectedProvider.model.supports_vision;
-            userModelRequirements.supportsFunctionCalling = selectedProvider.model.supports_function_calling;
-            userModelRequirements.supportsStreaming = selectedProvider.model.supports_streaming;
             if (selectedProvider.provider.base_url && selectedProvider.provider.api_key) {
               resolvedProviderBaseUrl = selectedProvider.provider.base_url;
               resolvedProviderApiKey = selectedProvider.provider.api_key;
@@ -478,7 +425,7 @@ export class LLMStreamingService {
             }
           }
 
-          // Step 3: Check if the selected model is available, if not find a compatible fallback
+          // Step 3: Check if the selected model is available
           const effectiveProviderId = resolvedProviderId || options.llmProviderId;
           if (llmModel && effectiveProviderId) {
             // Check if the model is available in the provider
@@ -489,36 +436,14 @@ export class LLMStreamingService {
               const selectedModel = models.find(m => m.model_id === llmModel && m.is_enabled);
               if (selectedModel) {
                 modelAvailable = true;
-                // Update user requirements based on the actually selected model
-                userModelRequirements.supportsVision = selectedModel.supports_vision;
-                userModelRequirements.supportsFunctionCalling = selectedModel.supports_function_calling;
-                userModelRequirements.supportsStreaming = selectedModel.supports_streaming;
               } else {
-                // Model not found or disabled, try to find compatible fallback
-                const fallbackModel = await findCompatibleFallbackModel(effectiveProviderId, userModelRequirements);
-                if (fallbackModel) {
-                  logger.info('Model not available, using fallback', {
-                    originalModel: llmModel,
-                    fallbackModel,
-                    providerId: effectiveProviderId,
-                  });
-                  llmModel = fallbackModel;
-                  modelAvailable = true;
-                  // Update user requirements for the fallback model
-                  const fallbackModelInfo = models.find(m => m.model_id === fallbackModel);
-                  if (fallbackModelInfo) {
-                    userModelRequirements.supportsVision = fallbackModelInfo.supports_vision;
-                    userModelRequirements.supportsFunctionCalling = fallbackModelInfo.supports_function_calling;
-                    userModelRequirements.supportsStreaming = fallbackModelInfo.supports_streaming;
-                  }
+                // Model not found or disabled - prompt user to switch model
+                modelAvailable = false;
+                const isModelDisabled = models.some(m => m.model_id === llmModel && !m.is_enabled);
+                if (isModelDisabled) {
+                  modelSelectionError = `当前选中的模型「${llmModel}」已被禁用，请在「设置 → AI 模型」中启用该模型或切换到其他模型`;
                 } else {
-                  // No compatible model found in current provider
-                  const enabledModels = models.filter(m => m.is_enabled);
-                  if (enabledModels.length === 0) {
-                    modelSelectionError = '当前模型提供商「' + (options.llmProviderId ? '未命名提供商' : '') + '」无可用模型（所有模型已被禁用），请在「设置 → AI 模型」中启用至少一个模型';
-                  } else {
-                    modelSelectionError = '当前模型「' + llmModel + '」不可用，且当前提供商无可用替代模型，请检查模型配置';
-                  }
+                  modelSelectionError = `当前选中的模型「${llmModel}」不存在或已从提供商中移除，请在「设置 → AI 模型」中选择其他模型`;
                 }
               }
             } catch (error) {

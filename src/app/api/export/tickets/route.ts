@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/api-utils';
+import { GET } from '@/lib/api/with-api';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { getLogger } from '@/lib/logger';
 import { TICKET } from '@/lib/constants';
 
 const logger = getLogger('ExportTickets');
 
-export async function GET(req: NextRequest) {
-  const denied = await requirePermission(req, 'tickets', 'read');
-  if (denied) return denied;
-
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'tickets', action: 'read' },
+  },
+  async ({ request }) => {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const category = searchParams.get('category');
     const priority = searchParams.get('priority');
@@ -32,7 +35,6 @@ export async function GET(req: NextRequest) {
 
     const tickets = data || [];
 
-    // Generate CSV
     const headers = ['工单编号', '标题', '分类', '优先级', '状态', '负责人ID', '创建人ID', '创建时间', '更新时间'];
     const rows = tickets.map(t => [
       t.ticket_number,
@@ -59,4 +61,6 @@ export async function GET(req: NextRequest) {
     logger.error('[Export Tickets] error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json({ error: '导出失败' }, { status: 500 });
   }
-}
+}, );
+
+export { GETHandler as GET };

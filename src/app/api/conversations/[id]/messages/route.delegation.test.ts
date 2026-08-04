@@ -155,10 +155,28 @@ vi.mock('@/server/repositories/bot-config-repository', () => ({
     },
 }));
 
+// ── JWT mocks ──────────────────────────────────────────────────────────────────
+// withApi reads extractTokenFromCookies → verifyToken for auth.
+// Provide mocks so withApi auth gate passes.
+vi.mock('@/lib/auth/jwt', () => ({
+    extractTokenFromCookies: vi.fn(() => 'mock-valid-token'),
+    verifyToken: vi.fn(() => ({ role: 'admin', userId: 'u-admin' })),
+}));
+
+// Mock PermissionService so requirePermission returns null (access granted).
+vi.mock('@/server/services/permission-service', () => ({
+    PermissionService: class { checkPermission = vi.fn(async () => true); },
+}));
+
 function buildRequest(body: unknown) {
     return new Request('http://localhost/api/conversations/conv-1/messages', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+            'content-type': 'application/json',
+            // Provide a valid JWT cookie so withApi auth gate passes.
+            // extractTokenFromCookies reads `auth_token` from the cookie string.
+            'cookie': 'auth_token=mock-valid-token',
+        },
         body: JSON.stringify(body),
     });
 }

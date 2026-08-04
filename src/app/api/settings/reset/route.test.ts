@@ -8,14 +8,11 @@
  *   - Non-empty body → 400 RESET_PAYLOAD_NOT_EMPTY.
  *   - RPC error → 500 (fail closed).
  *
- * Mock strategy:
- *   - `requireRole` is mocked via `importOriginal` so auth can be fully controlled.
- *   - `resetToDefaults` is patched on the real singleton in each `beforeEach`.
- *     This is necessary because the module-level singleton is created at
- *     module-load time before the hoisted mocks apply.
- *   - Demo mode (isDemoMode()) is exercised via settings-repository.reset.test.ts,
- *     not here, because mocking env-var-based demo mode at the route level is
- *     unreliable with the singleton-based Supabase client architecture.
+ * Mock strategy (Phase A5 update — route migrated to withApi):
+ *   - Mock JWT chain (extractTokenFromCookies / verifyToken) so withApi auth passes.
+ *   - Mock PermissionService.checkPermission for RBAC; use vi.mocked() to configure
+ *     per-test (true=admin has write, false=permission denied).
+ *   - resetToDefaults is patched on the real singleton in each beforeEach.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -31,21 +28,39 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-// Mock `requireRole` — bypass the cookie/JWT chain. All other exports
-// (withErrorHandlerSimple, apiSuccess) come from the real module.
+// ── JWT mock ───────────────────────────────────────────────────────────────────
+// Mock the JWT chain so withApi auth gate passes (extractTokenFromCookies reads
+// the cookie, verifyToken returns admin payload, extractUserRole returns 'admin').
+vi.mock('@/lib/auth/jwt', () => ({
+  extractTokenFromCookies: vi.fn(() => 'mock-admin-token'),
+  verifyToken: vi.fn(() => ({ role: 'admin', userId: 'u-admin' })),
+}));
+
+// ── PermissionService mock ─────────────────────────────────────────────────────
+// Mock checkPermission; use vi.mocked() to configure per-test.
+const checkPermissionMock = vi.fn(async () => true);
+vi.mock('@/server/services/permission-service', () => ({
+  PermissionService: class { checkPermission = checkPermissionMock; },
+}));
+
+// ── api-utils stub ───────────────────────────────────────────────────────────
+// Stub extractUserRole so it returns 'admin' without calling the real JWT module.
+// api-utils imports extractTokenFromCookies at module level (closing over the real
+// module), so mocking the JWT module does NOT affect api-utils's copy.
+// We provide a partial stub that keeps the rest of the module real.
 vi.mock('@/lib/api-utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api-utils')>();
   return {
     ...actual,
-    requireRole: vi.fn((_request: unknown, _allowedRoles: string[]) => null),
-    extractUserRole: vi.fn(),
+    extractUserRole: vi.fn(() => 'admin'),
+    requirePermission: vi.fn(async () => null),
   };
 });
 
 // ── route import ───────────────────────────────────────────────────────────────
 import { POST } from './route';
 import { NextRequest } from 'next/server';
-import { requireRole } from '@/lib/api-utils';
+import { requirePermission } from '@/lib/api-utils';
 import { getSettingsRepository } from '@/server/repositories/settings-repository';
 import { RepositoryError } from '@/server/repositories/repository-error';
 
@@ -80,11 +95,11 @@ function buildMalformedReq(rawBody: string): NextRequest {
 
 describe('POST /api/settings/reset — auth', () => {
   beforeEach(() => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReset();
+    (requirePermission as ReturnType<typeof vi.fn>).mockReset();
   });
 
-  it('returns 403 when requireRole denies access', async () => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+  it('returns 403 when requirePermission denies access', async () => {
+    (requirePermission as ReturnType<typeof vi.fn>).mockReturnValueOnce(
       new Response(JSON.stringify({ success: false, code: 'FORBIDDEN' }), {
         status: 403,
         headers: { 'content-type': 'application/json' },
@@ -94,8 +109,8 @@ describe('POST /api/settings/reset — auth', () => {
     expect(resp.status).toBe(403);
   });
 
-  it('proceeds past auth gate when requireRole returns null', async () => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+  it('proceeds past auth gate when requirePermission returns null', async () => {
+    (requirePermission as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
     const repo = getSettingsRepository();
     const original = repo.resetToDefaults.bind(repo);
     repo.resetToDefaults = vi.fn().mockResolvedValue(undefined);
@@ -107,8 +122,8 @@ describe('POST /api/settings/reset — auth', () => {
 
 describe('POST /api/settings/reset — payload contract', () => {
   beforeEach(() => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReset();
-    (requireRole as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+    (requirePermission as ReturnType<typeof vi.fn>).mockReset();
+    (requirePermission as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
     const repo = getSettingsRepository();
     repo.resetToDefaults = vi.fn().mockResolvedValue(undefined);
   });
@@ -117,7 +132,7 @@ describe('POST /api/settings/reset — payload contract', () => {
     const resp = await POST(buildReq(undefined) as never);
     expect(resp.status).toBe(200);
     const body = await resp.json();
-    expect(body.success).toBe(true);
+    expect(body.ok).toBe(true);
     expect(body.resetCount).toBeGreaterThan(0);
   });
 
@@ -125,21 +140,21 @@ describe('POST /api/settings/reset — payload contract', () => {
     const resp = await POST(buildReq(null) as never);
     expect(resp.status).toBe(200);
     const body = await resp.json();
-    expect(body.success).toBe(true);
+    expect(body.ok).toBe(true);
   });
 
   it('accepts empty object body {} and triggers factory reset', async () => {
     const resp = await POST(buildReq({}) as never);
     expect(resp.status).toBe(200);
     const body = await resp.json();
-    expect(body.success).toBe(true);
+    expect(body.ok).toBe(true);
   });
 
   it('rejects non-empty body with 400 RESET_PAYLOAD_NOT_EMPTY', async () => {
     const resp = await POST(buildReq({ theme: 'dark' }) as never);
     expect(resp.status).toBe(400);
     const body = await resp.json();
-    expect(body.success).toBe(false);
+    expect(body.ok).toBe(false);
     expect(body.code).toBe('RESET_PAYLOAD_NOT_EMPTY');
   });
 
@@ -158,8 +173,8 @@ describe('POST /api/settings/reset — payload contract', () => {
 
 describe('POST /api/settings/reset — malformed JSON', () => {
   beforeEach(() => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReset();
-    (requireRole as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+    (requirePermission as ReturnType<typeof vi.fn>).mockReset();
+    (requirePermission as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
     const repo = getSettingsRepository();
     repo.resetToDefaults = vi.fn().mockResolvedValue(undefined);
   });
@@ -168,7 +183,7 @@ describe('POST /api/settings/reset — malformed JSON', () => {
     const resp = await POST(buildMalformedReq('{ "theme": ') as never);
     expect(resp.status).toBe(400);
     const body = await resp.json();
-    expect(body.success).toBe(false);
+    expect(body.ok).toBe(false);
     expect(body.code).toBe('RESET_PAYLOAD_MALFORMED');
   });
 
@@ -182,8 +197,8 @@ describe('POST /api/settings/reset — malformed JSON', () => {
 
 describe('POST /api/settings/reset — RPC wiring', () => {
   beforeEach(() => {
-    (requireRole as ReturnType<typeof vi.fn>).mockReset();
-    (requireRole as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
+    (requirePermission as ReturnType<typeof vi.fn>).mockReset();
+    (requirePermission as ReturnType<typeof vi.fn>).mockReturnValueOnce(null);
     const repo = getSettingsRepository();
     repo.resetToDefaults = vi.fn().mockResolvedValue(undefined);
   });
@@ -219,17 +234,18 @@ describe('POST /api/settings/reset — RPC wiring', () => {
     const resp = await POST(buildReq(undefined) as never);
     expect(resp.status).toBe(500);
     const body = await resp.json();
-    expect(body.success).toBe(false);
+    expect(body.ok).toBe(false);
     expect(body.code).toBe('RESET_RPC_FAILED');
   });
 
   it('survives non-RepositoryError as INTERNAL_ERROR 500', async () => {
     const repo = getSettingsRepository();
+    // non-RepositoryError is thrown and withApi catches it → returns 500 problem+json
     repo.resetToDefaults = vi.fn().mockRejectedValue(new Error('unexpected network error'));
 
     const resp = await POST(buildReq(undefined) as never);
     expect(resp.status).toBe(500);
     const body = await resp.json();
-    expect(body.success).toBe(false);
+    expect(body.code).toBe('INTERNAL_ERROR');
   });
 });

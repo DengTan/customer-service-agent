@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { UserAvatarTooltip } from '@/components/common/user-avatar-tooltip';
 import { AGENT_STATUS_LABELS, AGENT_STATUS_COLORS } from '@/lib/types';
+import { apiFetch } from '@/lib/api-fetch';
 
 const navItems = [
   { href: '/dashboard', label: '数据分析', icon: BarChart3, roles: ['admin', 'agent', 'observer'], shortcut: '1' },
@@ -104,7 +105,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const fetchNotifications = async () => {
       setNotificationsLoading(true);
       try {
-        const res = await fetch('/api/alerts?resolved=false&limit=1', { credentials: 'include' });
+        const res = await apiFetch('/api/alerts?resolved=false&limit=1');
         if (res.ok) {
           const data = await res.json();
           // Get total count from headers if available

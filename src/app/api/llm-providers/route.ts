@@ -1,44 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LlmProviderService } from '@/server/services/llm-provider-service';
-import { requireRole } from '@/lib/api-utils';
 import { getLogger } from '@/lib/logger';
+import { GET, POST } from '@/lib/api/with-api';
+import { HttpStatus } from '@/lib/api-utils';
 
 const service = new LlmProviderService();
 const logger = getLogger('LLMProviders');
 
-/**
- * GET /api/llm-providers
- * List all LLM providers
- */
-export async function GET(request: NextRequest) {
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'read' },
+  },
+  async ({ request }) => {
   try {
-    // Check authentication
-    const userId = await requireRole(request, ['admin', 'agent', 'observer']);
-    if (userId instanceof NextResponse) {
-      return userId;
-    }
-
     const { searchParams } = new URL(request.url);
     const enabledOnly = searchParams.get('enabled') === 'true';
     const providerId = searchParams.get('provider_id');
 
-    // Get models for a specific provider
     if (providerId) {
       const models = await service.listProviderModels(providerId);
       return NextResponse.json({ models });
     }
 
-    // List providers
-    const providers = enabledOnly 
+    const providers = enabledOnly
       ? await service.listEnabledProviders()
       : await service.listProviders();
 
-    // Get default provider
-    const defaultProvider = await service.getDefaultProvider();
-
-    return NextResponse.json({ 
+    return NextResponse.json({
       providers,
-      default_provider: defaultProvider,
     });
   } catch (error) {
     logger.error('Failed to list LLM providers', { error });
@@ -47,20 +37,17 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, );
 
-/**
- * POST /api/llm-providers
- * Create a new LLM provider
- */
-export async function POST(request: NextRequest) {
+export { GETHandler as GET };
+
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'settings', action: 'write' },
+  },
+  async ({ request }) => {
   try {
-    // Only admin can create providers
-    const userId = await requireRole(request, ['admin']);
-    if (userId instanceof NextResponse) {
-      return userId;
-    }
-
     let body;
     try {
       body = await request.json();
@@ -70,7 +57,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
     const provider = await service.createProvider({
       name: body.name,
       display_name: body.display_name,
@@ -78,15 +65,12 @@ export async function POST(request: NextRequest) {
       base_url: body.base_url,
       api_key: body.api_key,
       models: body.models,
-      default_model: body.default_model,
       supports_vision: body.supports_vision,
       supports_streaming: body.supports_streaming,
       max_context_tokens: body.max_context_tokens,
       auth_config: body.auth_config,
       request_config: body.request_config,
       is_enabled: body.is_enabled,
-      is_default: body.is_default,
-      priority: body.priority,
     });
 
     return NextResponse.json({ provider }, { status: 201 });
@@ -98,4 +82,6 @@ export async function POST(request: NextRequest) {
       { status }
     );
   }
-}
+}, );
+
+export { POSTHandler as POST };

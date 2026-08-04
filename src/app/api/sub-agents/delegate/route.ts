@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError } from '@/lib/api-utils';
+import { POST } from '@/lib/api/with-api';
 
 const service = new SubAgentService();
 
@@ -13,11 +14,12 @@ const DelegateBodySchema = z.object({
   trigger_intent: z.string().max(200).optional(),
 });
 
-// POST /api/sub-agents/delegate - Delegate a task to a sub-agent
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'write');
-  if (denied) return denied;
-
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: rawBody, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -45,4 +47,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
       collaborations: result.collaborations,
     },
   });
-});
+}, );
+
+export { POSTHandler as POST };

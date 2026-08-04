@@ -9,89 +9,74 @@
  */
 
 import { NextRequest } from 'next/server';
-import {
-  apiSuccess,
-  apiError,
-  parseJsonBody,
-  withErrorHandlerSimple,
-  requireRole,
-  HttpStatus,
-  getAuthenticatedUserId,
-} from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { RegressionGateService } from '@/server/services/eval/regression-gate-service';
 import type { CalibrationConfig } from '@/server/services/eval/calibration-service';
 import { logger } from '@/lib/logger';
+import { getAuthenticatedUserId } from '@/lib/api-utils';
 
-const ADMIN_ONLY = ['admin'];
+export const POST = withApi(
+  { auth: 'required', perm: { resource: 'settings', action: 'write' } },
+  async ({ request }) => {
+    const userId = getAuthenticatedUserId(request) ?? 'unknown';
 
-// Sprint 7 scope-creep triage: this route was added outside the Sprint 6 plan and has not been Standards-axis reviewed. See Sprint 7 review notes.
+    const body = await request.json().catch(() => ({}));
+    const { datasetVersionId, candidateConfig, runKind } = body as {
+      datasetVersionId?: string;
+      candidateConfig?: CalibrationConfig;
+      runKind?: 'ci' | 'continuous' | 'manual';
+    };
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // --- Admin-only gate ---
-  const forbidden = await requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
+    if (!datasetVersionId || typeof datasetVersionId !== 'string') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 datasetVersionId', code: 'MISSING_DATASET_VERSION_ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const userId = getAuthenticatedUserId(request) ?? 'unknown';
+    if (!candidateConfig || typeof candidateConfig !== 'object') {
+      return new Response(JSON.stringify({ error: '缺少或无效的 candidateConfig', code: 'MISSING_CANDIDATE_CONFIG' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  // --- Parse body ---
-  const { data: body, error: parseError } = await parseJsonBody<{
-    datasetVersionId?: string;
-    candidateConfig?: CalibrationConfig;
-    runKind?: 'ci' | 'continuous' | 'manual';
-  }>(request);
+    const { min_score, rerank_backend, claim_verifier_threshold, confidence_gate } = candidateConfig;
 
-  if (parseError) return parseError;
+    if (typeof min_score !== 'number' || typeof rerank_backend !== 'string' ||
+        typeof claim_verifier_threshold !== 'number' || typeof confidence_gate !== 'number') {
+      return new Response(JSON.stringify({ error: 'candidateConfig 包含无效字段', code: 'INVALID_CANDIDATE_CONFIG' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  const { datasetVersionId, candidateConfig, runKind } = body ?? {};
+    const triggeredBy = runKind ?? 'manual';
 
-  // --- Validate required fields ---
-  if (!datasetVersionId || typeof datasetVersionId !== 'string') {
-    return apiError('缺少或无效的 datasetVersionId', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_DATASET_VERSION_ID',
+    logger.info('[Eval/Regression/Run] Starting regression gate', {
+      userId,
+      datasetVersionId,
+      triggeredBy,
     });
-  }
 
-  if (!candidateConfig || typeof candidateConfig !== 'object') {
-    return apiError('缺少或无效的 candidateConfig', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'MISSING_CANDIDATE_CONFIG',
+    const service = new RegressionGateService();
+    const result = await service.run({
+      datasetVersionId,
+      candidateConfig,
+      triggeredBy,
+      triggeredByUserId: userId,
     });
-  }
 
-  const { min_score, rerank_backend, claim_verifier_threshold, confidence_gate } = candidateConfig;
-
-  if (typeof min_score !== 'number' || typeof rerank_backend !== 'string' ||
-      typeof claim_verifier_threshold !== 'number' || typeof confidence_gate !== 'number') {
-    return apiError('candidateConfig 包含无效字段', {
-      status: HttpStatus.BAD_REQUEST,
-      code: 'INVALID_CANDIDATE_CONFIG',
+    logger.info('[Eval/Regression/Run] Regression gate complete', {
+      userId,
+      datasetVersionId,
+      runId: result.id,
+      status: result.status,
     });
-  }
 
-  const triggeredBy = runKind ?? 'manual';
-
-  logger.info('[Eval/Regression/Run] Starting regression gate', {
-    userId,
-    datasetVersionId,
-    triggeredBy,
-  });
-
-  // --- Run regression gate ---
-  const service = new RegressionGateService();
-  const result = await service.run({
-    datasetVersionId,
-    candidateConfig,
-    triggeredBy,
-    triggeredByUserId: userId,
-  });
-
-  logger.info('[Eval/Regression/Run] Regression gate complete', {
-    userId,
-    datasetVersionId,
-    runId: result.id,
-    status: result.status,
-  });
-
-  return apiSuccess(result, HttpStatus.OK);
-});
+    return new Response(JSON.stringify({ ok: true, ...result }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+);

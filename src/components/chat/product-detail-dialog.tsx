@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { X, Package, Tag, Layers, FileText, Info } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface ProductDetailData {
   id: string;
@@ -44,7 +45,7 @@ export function ProductDetailDialog({ open, productId, onClose }: ProductDetailD
   const loadProductDetail = async (id: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/knowledge/products/${id}`);
+      const res = await apiFetch(`/api/knowledge/products/${id}`);
       if (res.ok) {
         const data = await res.json();
         setProduct(data.product || data);

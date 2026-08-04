@@ -1,19 +1,28 @@
 import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, requirePermission } from '@/lib/api-utils';
+import { apiSuccess } from '@/lib/api-utils';
 import { CustomerTagService } from '@/server/services/customer-tag-service';
+import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
 
 const customerTagService = new CustomerTagService();
 
-export const GET = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'customers', 'read');
-  if (denied) return denied;
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'customers', action: 'read' },
+  },
+  async () => {
   const tags = await customerTagService.listTags();
   return apiSuccess({ tags });
-});
+}, );
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'customers', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
+
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'customers', action: 'write' },
+  },
+  async ({ request }) => {
   const body = await request.json();
   const name = (body?.name as string) || '';
   const color = (body?.color as string) || '#2F6BFF';
@@ -21,11 +30,16 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const tag = await customerTagService.createTag({ name, color, category });
   return apiSuccess({ tag }, 201);
-});
+}, );
 
-export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'customers', 'write');
-  if (denied) return denied;
+export { POSTHandler as POST };
+
+export const PUTHandler = PUT(
+  {
+    auth: 'required',
+    perm: { resource: 'customers', action: 'write' },
+  },
+  async ({ request }) => {
   const body = await request.json();
   const id = (body?.id as string) || '';
   const updates: { id: string; name?: string; color?: string; category?: string } = { id };
@@ -35,13 +49,20 @@ export const PUT = withErrorHandlerSimple(async (request: NextRequest) => {
 
   const tag = await customerTagService.updateTag(updates);
   return apiSuccess({ tag });
-});
+}, );
 
-export const DELETE = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'customers', 'delete');
-  if (denied) return denied;
+export { PUTHandler as PUT };
+
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'customers', action: 'delete' },
+  },
+  async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id') || '';
   await customerTagService.deleteTag(id);
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };

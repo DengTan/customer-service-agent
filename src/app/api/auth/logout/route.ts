@@ -2,36 +2,28 @@
  * POST /api/auth/logout
  * Clear authentication cookie and log out user
  */
-
-import { NextRequest } from 'next/server';
-import { withErrorHandlerSimple, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils';
+import { withApi } from '@/lib/api/with-api';
 import { getIsHttps, isSameOriginRequest } from '@/lib/auth/proxy-utils';
 import { HTTP } from '@/lib/constants';
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  // CSRF defense: reject cross-origin POST requests
-  // SameSite=lax cookies already provide primary protection;
-  // this adds defense in depth against CSRF.
-  if (!isSameOriginRequest(request)) {
-    return apiError('禁止跨站请求', {
-      status: HttpStatus.FORBIDDEN,
-      code: 'CSRF_VIOLATION',
+export const POST = withApi(
+  { auth: 'public' },
+  async ({ request }) => {
+    if (!isSameOriginRequest(request)) {
+      return new Response(JSON.stringify({ ok: false, error: '禁止跨站请求', code: 'CSRF_VIOLATION' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const isHttps = getIsHttps(request);
+
+    return new Response(JSON.stringify({ ok: true, success: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': `${HTTP.JWT_COOKIE_NAME}=; HttpOnly; Secure=${isHttps}; SameSite=Lax; Path=/; Max-Age=0`,
+      },
     });
-  }
-
-  const response = apiSuccess({ success: true });
-
-  // Determine if request is HTTPS for secure cookie
-  const isHttps = getIsHttps(request);
-
-  // Clear auth_token cookie
-  response.cookies.set(HTTP.JWT_COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: isHttps,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 0,  // Expire immediately
-  });
-
-  return response;
-});
+  },
+);

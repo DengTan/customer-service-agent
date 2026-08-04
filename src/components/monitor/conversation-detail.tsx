@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Headphones,
   PhoneOff,
@@ -112,7 +113,7 @@ export function ConversationDetail({
   useEffect(() => {
     async function loadAgents() {
       try {
-        const res = await fetch('/api/users?role=agent&status=active');
+        const res = await apiFetch('/api/users?role=agent&status=active');
         if (res.ok) {
           const data = await res.json();
           setAgents(

@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export function KnowledgeTab() {
     let aborted = false;
     ac.signal.addEventListener('abort', () => { aborted = true; }, { once: true });
     try {
-      const res = await fetch(`/api/knowledge/items/${itemId}/chunks?page=${page}&limit=${CHUNKS_PAGE_SIZE}`, { signal: ac.signal });
+      const res = await apiFetch(`/api/knowledge/items/${itemId}/chunks?page=${page}&limit=${CHUNKS_PAGE_SIZE}`, { signal: ac.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const next = (data.chunks || []) as ChunkItem[];
@@ -284,7 +285,7 @@ export function KnowledgeTab() {
 
   const loadCategoryOptions = useCallback(async () => {
     try {
-      const res = await fetch('/api/knowledge/categories');
+      const res = await apiFetch('/api/knowledge/categories');
       if (!res.ok) return;
       const data = await res.json();
       setCategoryOptions(data.categories || []);
@@ -305,7 +306,7 @@ export function KnowledgeTab() {
     if (!search.trim()) return;
     setSearching(true);
     try {
-      const res = await fetch(`/api/knowledge?query=${encodeURIComponent(search)}&topK=5`);
+      const res = await apiFetch(`/api/knowledge?query=${encodeURIComponent(search)}&topK=5`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setSearchResults(data.results || []);
@@ -352,7 +353,7 @@ export function KnowledgeTab() {
         if (actualCategory) body.category = actualCategory;
         if (actualParentCategory) body.parent_category = actualParentCategory;
         
-        const res = await fetch('/api/knowledge/import', { 
+        const res = await apiFetch('/api/knowledge/import', { 
           method: 'POST', 
           headers: { 'Content-Type': 'application/json' }, 
           body: JSON.stringify(body) 
@@ -375,7 +376,7 @@ export function KnowledgeTab() {
         formData.append('name', importName || importFile.name);
         if (actualCategory) formData.append('category', actualCategory);
         if (actualParentCategory) formData.append('parent_category', actualParentCategory);
-        const res = await fetch('/api/knowledge/import-jobs', { method: 'POST', body: formData });
+        const res = await apiFetch('/api/knowledge/import-jobs', { method: 'POST', body: formData });
         if (!res.ok) { const e = await res.json(); throw new Error(e.message || `HTTP ${res.status}`); }
         const data = await res.json();
         if (data.code === 0 && data.data?.job_id) setImportJobId(data.data.job_id);
@@ -388,7 +389,7 @@ export function KnowledgeTab() {
         else { body.url = importUrl; body.name = importName || '导入网页'; }
         if (actualCategory) body.category = actualCategory;
         if (actualParentCategory) body.parent_category = actualParentCategory;
-        const res = await fetch('/api/knowledge/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const res = await apiFetch('/api/knowledge/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (data.success) { resetImportState(); loadKnowledgeItems(1, pageSize); toast.success('资料导入成功！'); }
@@ -426,7 +427,7 @@ export function KnowledgeTab() {
     const confirmed = await confirm({ title: '删除知识库资料', description: '确定要删除这条知识库资料吗？此操作无法撤销。', confirmText: '删除', cancelText: '取消', destructive: true });
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/knowledge/items?id=${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/knowledge/items?id=${id}`, { method: 'DELETE' });
       if (!res.ok) { toast.error('删除失败'); return; }
       toast.success('已删除');
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -448,11 +449,11 @@ export function KnowledgeTab() {
   const handleSaveEdit = async (id: string) => {
     setSaving(true);
     try {
-      const res = await fetch('/api/knowledge/items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: editName, content: editContent, category: editCategory, expires_at: editExpiresAt ? new Date(editExpiresAt).toISOString() : null }) });
+      const res = await apiFetch('/api/knowledge/items', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name: editName, content: editContent, category: editCategory, expires_at: editExpiresAt ? new Date(editExpiresAt).toISOString() : null }) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.success) {
-        await fetch('/api/knowledge/versions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: id, title: editName, content: editContent, change_summary: '编辑更新' }) })
+        await apiFetch('/api/knowledge/versions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: id, title: editName, content: editContent, change_summary: '编辑更新' }) })
           .then(r => { if (!r.ok) toast.error('版本记录创建失败'); });
         cancelEdit(); reloadCurrentPage(); toast.success('已保存');
       } else toast.error(data.error || '更新失败');
@@ -464,7 +465,7 @@ export function KnowledgeTab() {
   const loadVersionHistory = useCallback(async (itemId: string) => {
     setVersionHistoryItemId(itemId); setLoadingVersions(true);
     try {
-      const res = await fetch(`/api/knowledge/versions?item_id=${itemId}`);
+      const res = await apiFetch(`/api/knowledge/versions?item_id=${itemId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setVersions(data.versions || []);
@@ -476,7 +477,7 @@ export function KnowledgeTab() {
     const confirmed = await confirm({ title: '回滚到历史版本', description: '确认回滚到此版本？将创建新版本记录。', confirmText: '确认回滚', cancelText: '取消' });
     if (!confirmed) return;
     try {
-      const res = await fetch('/api/knowledge/versions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version_id: versionId }) });
+      const res = await apiFetch('/api/knowledge/versions', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version_id: versionId }) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (data.version) { loadVersionHistory(versionHistoryItemId!); reloadCurrentPage(); setViewingVersion(null); toast.success('已回滚到指定版本'); }
@@ -486,7 +487,7 @@ export function KnowledgeTab() {
 
   const handleViewVersion = async (versionId: string) => {
     try {
-      const res = await fetch(`/api/knowledge/versions?item_id=${versionHistoryItemId}`);
+      const res = await apiFetch(`/api/knowledge/versions?item_id=${versionHistoryItemId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const v = (data.versions || []).find((ver: { id: string }) => ver.id === versionId);
@@ -501,7 +502,7 @@ export function KnowledgeTab() {
     const confirmed = await confirm({ title: '归档知识库资料', description: '确定要归档这条知识库资料吗？归档后默认不参与检索。', confirmText: '归档', cancelText: '取消' });
     if (!confirmed) return;
     try {
-      const res = await fetch('/api/knowledge/items/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+      const res = await apiFetch('/api/knowledge/items/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
       if (!res.ok) { toast.error('归档失败'); return; }
       toast.success('已归档');
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -511,7 +512,7 @@ export function KnowledgeTab() {
 
   const handleUnarchiveItem = async (id: string) => {
     try {
-      const res = await fetch('/api/knowledge/items/unarchive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+      const res = await apiFetch('/api/knowledge/items/unarchive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
       if (!res.ok) { toast.error('恢复失败'); return; }
       toast.success('已恢复');
       await new Promise(resolve => setTimeout(resolve, 200));
@@ -525,7 +526,7 @@ export function KnowledgeTab() {
     if (!confirmed) return;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/knowledge/items/bulk-archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
+      const res = await apiFetch('/api/knowledge/items/bulk-archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || '批量归档失败'); return; }
       toast.success(`已归档 ${data.count} 条`);
@@ -540,7 +541,7 @@ export function KnowledgeTab() {
     if (selectedIds.size === 0) return;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/knowledge/items/bulk-unarchive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
+      const res = await apiFetch('/api/knowledge/items/bulk-unarchive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || '批量恢复失败'); return; }
       toast.success(`已恢复 ${data.count} 条`);
@@ -556,7 +557,7 @@ export function KnowledgeTab() {
     if (!batchCategory.trim()) { toast.error('请输入新分类'); return; }
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/knowledge/items/bulk-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds), category: batchCategory.trim(), parent_category: batchParentCategory.trim() || null }) });
+      const res = await apiFetch('/api/knowledge/items/bulk-update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds), category: batchCategory.trim(), parent_category: batchParentCategory.trim() || null }) });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || '批量修改分类失败'); return; }
       toast.success(`已修改 ${data.count} 条的分类`);
@@ -572,7 +573,7 @@ export function KnowledgeTab() {
     if (!confirmed) return;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/knowledge/items/bulk-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
+      const res = await apiFetch('/api/knowledge/items/bulk-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) }) });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || '批量删除失败'); return; }
       toast.success(`已删除 ${data.count} 条`);
@@ -590,7 +591,7 @@ export function KnowledgeTab() {
     if (!confirmed) return;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/knowledge/items/merge-category', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: mergeFrom.trim(), to: mergeTo.trim() }) });
+      const res = await apiFetch('/api/knowledge/items/merge-category', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: mergeFrom.trim(), to: mergeTo.trim() }) });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || '合并分类失败'); return; }
       toast.success(`已将 ${data.count} 条从「${mergeFrom}」合并到「${mergeTo}」`);

@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { SubAgentService } from '@/server/services/sub-agent-service';
-import { parseJsonBody, HttpStatus, withErrorHandlerSimple, apiError, requirePermission } from '@/lib/api-utils';
+import { parseJsonBody, HttpStatus, apiError } from '@/lib/api-utils';
+import { POST } from '@/lib/api/with-api';
 
 const service = new SubAgentService();
 
@@ -15,11 +16,12 @@ const CollaborateBodySchema = z.object({
   context: z.record(z.string(), z.unknown()).optional(),
 });
 
-// POST /api/sub-agents/collaborate - Send a collaboration message between sub-agents
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const denied = await requirePermission(request, 'sub_agents', 'write');
-  if (denied) return denied;
-
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'sub_agents', action: 'write' },
+  },
+  async ({ request }) => {
   const { data: rawBody, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
@@ -45,4 +47,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     success: true,
     data: result.collaboration,
   });
-});
+}, );
+
+export { POSTHandler as POST };

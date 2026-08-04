@@ -1,15 +1,17 @@
 import type { NextRequest } from 'next/server';
-import { apiSuccess, requireRole, withErrorHandlerSimple } from '@/lib/api-utils';
+import { apiSuccess } from '@/lib/api-utils';
+import { POST } from '@/lib/api/with-api';
 import { logger } from '@/lib/logger';
 import { PushSecretService } from '@/server/services/push-secret-service';
 
-const ADMIN_ONLY = ['admin'];
 const pushSecretService = new PushSecretService();
 
-export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
-  const forbidden = requireRole(request, ADMIN_ONLY);
-  if (forbidden) return forbidden;
-
+export const POSTHandler = POST(
+  {
+    auth: 'required',
+    perm: { resource: 'push', action: 'write' },
+  },
+  async () => {
   try {
     const result = await pushSecretService.rotate();
     logger.security.info('Push webhook secret rotated', {
@@ -23,4 +25,6 @@ export const POST = withErrorHandlerSimple(async (request: NextRequest) => {
     });
     throw error;
   }
-});
+}, );
+
+export { POSTHandler as POST };

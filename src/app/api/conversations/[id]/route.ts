@@ -1,19 +1,19 @@
 import { NextRequest } from 'next/server';
-import { apiSuccess, parseJsonBody, withErrorHandler, requirePermission } from '@/lib/api-utils';
+import { apiSuccess, parseJsonBody, requirePermission } from '@/lib/api-utils';
+import { GET, PATCH, DELETE } from '@/lib/api/with-api';
 import { ConversationService } from '@/server/services/conversation-service';
 import { SettingsService } from '@/server/services/settings-service';
 import { logger } from '@/lib/logger';
 
 const conversationService = new ConversationService();
 
-export const GET = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) => {
-  const denied = await requirePermission(request, 'conversations', 'read');
-  if (denied) return denied;
-
-  const { id } = await params;
+export const GETHandler = GET(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'read' },
+  },
+  async ({ request, params }) => {
+  const { id } = params as { id: string };
   const { searchParams } = new URL(request.url);
   const messageLimit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
   const messagePage = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
@@ -22,10 +22,6 @@ export const GET = withErrorHandler(async (
 
   const detail = await conversationService.getConversationDetail(id, messageLimit, messagePage, messageOffset, messageOrder);
 
-  // Phase 4: Surface minimal per-conversation capabilities so the chat page
-  // can avoid reading the admin-only /api/settings endpoint.
-  // rating_enabled defaults to true when the setting is missing or unreadable
-  // — preserving the prior behaviour where the rating UI was always shown.
   let ratingEnabled = true;
   try {
     const settings = await new SettingsService().getSettingsMap();
@@ -37,34 +33,35 @@ export const GET = withErrorHandler(async (
   }
 
   return apiSuccess({ ...detail, capabilities: { rating_enabled: ratingEnabled } });
-});
+}, );
 
-export const PATCH = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) => {
-  // Fine-grained permission check
-  const denied = await requirePermission(request, 'conversations', 'write');
-  if (denied) return denied;
+export { GETHandler as GET };
 
-  const { id } = await params;
+export const PATCHHandler = PATCH(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'write' },
+  },
+  async ({ request, params }) => {
+  const { id } = params as { id: string };
   const { data: body, error: parseError } = await parseJsonBody(request);
   if (parseError) return parseError;
 
   await conversationService.updateConversation(id, body ?? {});
   return apiSuccess({ success: true });
-});
+}, );
 
-export const DELETE = withErrorHandler(async (
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) => {
-  // Fine-grained permission check
-  const denied = await requirePermission(request, 'conversations', 'delete');
-  if (denied) return denied;
+export { PATCHHandler as PATCH };
 
-  const { id } = await params;
-
+export const DELETEHandler = DELETE(
+  {
+    auth: 'required',
+    perm: { resource: 'conversations', action: 'delete' },
+  },
+  async ({ params }) => {
+  const { id } = params as { id: string };
   await conversationService.deleteConversation(id);
   return apiSuccess({ success: true });
-});
+}, );
+
+export { DELETEHandler as DELETE };
