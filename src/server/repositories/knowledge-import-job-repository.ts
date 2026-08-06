@@ -135,6 +135,53 @@ export class KnowledgeImportJobRepository {
     } as unknown as KnowledgeImportJob));
   }
 
+  /**
+   * Paginated variant of findActiveByUser with count query.
+   * Filters by created_by and/or status.
+   */
+  async findActiveByUserPaginated(opts: {
+    userId?: string | null;
+    status?: string[];
+    page: number;
+    limit: number;
+  }): Promise<{ jobs: KnowledgeImportJob[]; total: number }> {
+    const { userId, status, page, limit } = opts;
+    const offset = (page - 1) * limit;
+
+    let countQuery = this.supabase
+      .from(this.tableName)
+      .select('id', { count: 'exact', head: true })
+      .in('status', status ?? ['pending', 'processing']);
+
+    let dataQuery = this.supabase
+      .from(this.tableName)
+      .select('*', { count: 'exact' })
+      .in('status', status ?? ['pending', 'processing'])
+      .order('created_at', { ascending: false });
+
+    if (userId) {
+      countQuery = countQuery.eq('created_by', userId);
+      dataQuery = dataQuery.eq('created_by', userId);
+    }
+
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.range(offset, offset + limit - 1),
+    ]);
+
+    if (countError) {
+      throw new Error(`统计进行中任务失败: ${countError.message}`);
+    }
+    if (dataError) {
+      throw new Error(`查询进行中任务失败: ${dataError.message}`);
+    }
+
+    return {
+      jobs: (data || []).map(item => this.mapToModel(item)),
+      total: count ?? 0,
+    };
+  }
+
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase
       .from(this.tableName)

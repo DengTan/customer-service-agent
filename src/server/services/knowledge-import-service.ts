@@ -447,6 +447,38 @@ export class KnowledgeImportService {
   }
 
   /**
+   * Paginated variant of getActiveJobs with count query.
+   */
+  async getActiveJobsPaginated(opts: {
+    userId?: string | null;
+    status?: string[];
+    page: number;
+    limit: number;
+  }): Promise<{ jobs: Array<{
+    id: string;
+    status: string;
+    progress: number;
+    currentStage: string;
+    fileName: string;
+    createdAt: string;
+    updatedAt: string;
+  }>; total: number }> {
+    const result = await this.jobRepository.findActiveByUserPaginated(opts);
+    return {
+      jobs: result.jobs.map(job => ({
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        currentStage: job.stage || '',
+        fileName: job.file_name || '导入文件',
+        createdAt: job.created_at,
+        updatedAt: job.updated_at,
+      })),
+      total: result.total,
+    };
+  }
+
+  /**
    * 删除任务
    */
   async deleteJob(jobId: string): Promise<void> {

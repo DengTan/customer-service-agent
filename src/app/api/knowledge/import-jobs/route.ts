@@ -1,7 +1,7 @@
-import { NextRequest } from 'next/server';
 import { knowledgeImportService } from '@/server/services/knowledge-import-service';
-import { apiError, apiSuccess, HttpStatus, checkRateLimit } from '@/lib/api-utils';
+import { apiError, apiSuccess, HttpStatus, checkRateLimit, getAuthenticatedUserId } from '@/lib/api-utils';
 import { GET, POST } from '@/lib/api/with-api';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 /**
  * POST /api/knowledge/import-jobs - 创建导入任务
@@ -76,16 +76,26 @@ export const POSTHandler = POST(
 export { POSTHandler as POST };
 
 /**
- * GET /api/knowledge/import-jobs - 获取用户进行中的导入任务
+ * GET /api/knowledge/import-jobs - 获取用户进行中的导入任务（分页）
  */
 export const GETHandler = GET(
   {
     auth: 'required',
     perm: { resource: 'knowledge', action: 'read' },
   },
-  async () => {
-  const jobs = await knowledgeImportService.getActiveJobs(undefined);
-  return apiSuccess({ jobs });
-}, );
+  async ({ request }) => {
+    const userId = getAuthenticatedUserId(request);
+    const { searchParams } = new URL(request.url);
+    const { page, limit } = parsePageParams(searchParams);
+
+    const result = await knowledgeImportService.getActiveJobsPaginated({
+      userId: userId ?? null,
+      status: ['pending', 'processing'],
+      page,
+      limit,
+    });
+    return apiSuccess(buildPageResult({ items: result.jobs, total: result.total, page, limit }));
+  },
+);
 
 export { GETHandler as GET };
