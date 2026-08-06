@@ -33,6 +33,7 @@ export const ALERT_TYPE_LOW_CONFIDENCE = 'low_confidence';
 export const ALERT_TYPE_HIGH_ROUNDS = 'high_rounds';
 export const ALERT_TYPE_QUALITY_CHECK_FAILED = 'quality_check_failed';
 export const ALERT_TYPE_SATISFACTION_BELOW = 'satisfaction_below';
+export const ALERT_TYPE_ASSISTANT_PERSISTENCE_FAILED = 'assistant_persistence_failed';
 
 // Default dedup window: 30 minutes (kept as fallback for tests / when settings
 // table is unreachable). The runtime value is read from `alert_dedup_window_minutes`
@@ -483,6 +484,11 @@ export class AlertService {
     }
   }
 
+  async createAssistantPersistenceFailed(
+    conversationId: string,
+    content: string,
+    reason: unknown,
+  ): Promise<void> {
   /**
    * Create an alert when satisfaction rating is below threshold.
    * @param conversationId - The conversation ID
