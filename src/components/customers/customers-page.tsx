@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -33,7 +33,7 @@ import { stripInternalMarkersFromResponse } from '@/lib/strip-markers';
 import { SOURCE_PLATFORM_LABELS } from '@/lib/types';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useConfirmDialog } from '@/components/common/confirm-dialog';
-import { Pagination } from '@/components/common/pagination';
+import { useLazyList } from '@/hooks/use-lazy-list';
 
 const MAX_TAG_NAME_LENGTH = 50;
 const CONVERSATION_PAGE_SIZE = 10;
@@ -57,7 +57,6 @@ const TAG_COLORS_MAP: Record<string, string> = {
 
 export default function CustomersPage() {
   const [activeTab, setActiveTab] = useState<'customers' | 'tags'>('customers');
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [tags, setTags] = useState<CustomerTag[]>([]);
   const [searchInput, setSearchInput] = useState('');
   const searchQuery = useDebounce(searchInput, 300);
@@ -65,14 +64,47 @@ export default function CustomersPage() {
   const [platformFilter, setPlatformFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [includeAnonymous, setIncludeAnonymous] = useState<boolean>(false);
-  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{ total: number; byPlatform: Record<string, number> }>({ total: 0, byPlatform: {} });
 
-  // Pagination state
-  const pageSize = 20;
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const totalPages = Math.ceil(totalCount / pageSize) || 1;
+  // Filter refs for useLazyList fetchFn
+  const searchRef = useRef(searchQuery);
+  const platformRef = useRef(platformFilter);
+  const tagFilterRef = useRef(tagFilter);
+  const anonRef = useRef(includeAnonymous);
+  useEffect(() => { searchRef.current = searchQuery; }, [searchQuery]);
+  useEffect(() => { platformRef.current = platformFilter; }, [platformFilter]);
+  useEffect(() => { tagFilterRef.current = tagFilter; }, [tagFilter]);
+  useEffect(() => { anonRef.current = includeAnonymous; }, [includeAnonymous]);
+
+  // Lazy list: customers
+  const customersList = useLazyList<Customer>({
+    fetchFn: async (page, pageSize) => {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      if (platformRef.current !== 'all') params.set('platform', platformRef.current);
+      if (tagFilterRef.current !== 'all') params.set('tag', tagFilterRef.current);
+      if (searchRef.current) params.set('search', searchRef.current);
+      if (anonRef.current) params.set('include_anonymous', 'true');
+      const res = await apiFetch(`/api/customers?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.stats) {
+        setStats({
+          total: data.stats.total ?? data.total ?? 0,
+          byPlatform: data.stats.byPlatform ?? {},
+        });
+      }
+      return {
+        items: (data.customers ?? []) as Customer[],
+        total: (data.total ?? 0) as number,
+      };
+    },
+    pageSize: 20,
+  });
+
+  const customers = customersList.items;
+  const totalCount = customersList.total;
 
   // Detail drawer
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -139,33 +171,7 @@ export default function CustomersPage() {
   });
   const [createCustomerLoading, setCreateCustomerLoading] = useState(false);
 
-  // Fetch customers
-  const fetchCustomers = useCallback(async (page: number = 1) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (platformFilter !== 'all') params.set('platform', platformFilter);
-      if (tagFilter !== 'all') params.set('tag', tagFilter);
-      if (searchQuery) params.set('search', searchQuery);
-      if (includeAnonymous) params.set('include_anonymous', 'true');
-      params.set('page', String(page));
-      params.set('pageSize', String(pageSize));
-
-      const res = await apiFetch(`/api/customers?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      setCustomers(data.customers || []);
-      if (data.total !== undefined) setTotalCount(data.total || 0);
-      if (data.stats) setStats(data.stats);
-    } catch {
-      toast.error('获取客户列表失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [platformFilter, tagFilter, searchQuery, includeAnonymous, pageSize]);
-
-  // Fetch tags
+    // Fetch tags
   const fetchTags = useCallback(async () => {
     try {
       const res = await apiFetch('/api/customer-tags');
@@ -177,17 +183,29 @@ export default function CustomersPage() {
     }
   }, []);
 
+  // Initial load + react to filter changes (reset list, re-fetch from page 1)
   useEffect(() => {
-    setCurrentPage(1);
-  }, [platformFilter, tagFilter, searchQuery, includeAnonymous]);
+    customersList.loadInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    fetchCustomers(currentPage);
-  }, [currentPage, fetchCustomers]);
+    // Skip first render: loadInitial already runs on mount
+    if (customersList.items.length === 0 && customersList.total === 0 && !customersList.isInitialLoading) {
+      return;
+    }
+    customersList.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, platformFilter, tagFilter, includeAnonymous]);
 
   useEffect(() => {
     fetchTags();
   }, [fetchTags]);
+
+  useEffect(() => {
+    if (customersList.error) toast.error('获取客户列表失败');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customersList.error]);
 
   // Open customer detail drawer
   const openCustomerDetail = async (customer: Customer) => {
@@ -228,7 +246,7 @@ export default function CustomersPage() {
       const data = await res.json();
       if (data.customer) {
         toast.success('备注已保存');
-        fetchCustomers();
+        customersList.refresh();
       }
     } catch {
       toast.error('保存失败');
@@ -268,7 +286,7 @@ export default function CustomersPage() {
           await handleAddTagToCustomer('新客户');
         }
 
-        fetchCustomers();
+        customersList.refresh();
       }
     } catch {
       toast.error('升级失败');
@@ -289,7 +307,7 @@ export default function CustomersPage() {
       const data = await res.json();
       if (data.customer) {
         setSelectedCustomer({ ...selectedCustomer, tags: newTags });
-        fetchCustomers();
+        customersList.refresh();
         toast.success('标签已添加');
       }
     } catch {
@@ -311,7 +329,7 @@ export default function CustomersPage() {
       const data = await res.json();
       if (data.customer) {
         setSelectedCustomer({ ...selectedCustomer, tags: newTags });
-        fetchCustomers();
+        customersList.refresh();
         toast.success('标签已移除');
       }
     } catch {
@@ -593,7 +611,7 @@ export default function CustomersPage() {
         toast.success('客户创建成功');
         setCreateCustomerModalOpen(false);
         setCreateCustomerForm({ name: '', phone: '', email: '', source_platform: 'web', notes: '' });
-        fetchCustomers();
+        customersList.refresh();
       } else {
         toast.error(data.error || '创建失败');
       }
@@ -640,7 +658,7 @@ export default function CustomersPage() {
       if (data.success) {
         toast.success('客户已删除');
         closeDrawer();
-        fetchCustomers();
+        customersList.refresh();
       } else {
         toast.error(data.error || '删除失败');
       }
@@ -854,9 +872,9 @@ export default function CustomersPage() {
 
             {/* Customer Cards Grid */}
             <div className="grid grid-cols-1 gap-3">
-              {loading ? (
+              {customersList.isInitialLoading ? (
                 // Loading skeletons
-                Array.from({ length: pageSize }).map((_, i) => (
+                Array.from({ length: 20 }).map((_, i) => (
                   <div key={i} className="bg-card rounded-xl p-4 shadow-card">
                     <div className="flex items-center gap-4">
                       <Skeleton className="w-12 h-12 rounded-full" />
@@ -960,16 +978,26 @@ export default function CustomersPage() {
               )}
             </div>
 
-            {/* Pagination */}
-            {totalCount > pageSize && (
-              <Pagination
-                page={currentPage}
-                totalPages={totalPages}
-                total={totalCount}
-                pageSize={pageSize}
-                onPageChange={(page) => setCurrentPage(page)}
-                disabled={loading}
-              />
+            {/* Load More Button */}
+            {customersList.hasMore && !customersList.isInitialLoading && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => customersList.loadMore()}
+                  disabled={customersList.isLoadingMore}
+                  className="gap-1.5"
+                >
+                  {customersList.isLoadingMore ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      加载中...
+                    </>
+                  ) : (
+                    <>加载更多（已加载 {customers.length} / {totalCount}）</>
+                  )}
+                </Button>
+              </div>
             )}
           </div>
         )}
