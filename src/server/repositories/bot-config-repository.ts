@@ -81,6 +81,74 @@ export class BotConfigRepository {
     })) as BotConfigRow[];
   }
 
+  /**
+   * Paginated variant of list(). Accepts the same `includeSubAgents` filter
+   * and additionally supports a `status` filter.
+   */
+  async listPaginated(opts: {
+    includeSubAgents: boolean;
+    status?: string | null;
+    search?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ bots: BotConfigRow[]; total: number }> {
+    const { includeSubAgents, status, search, page, limit } = opts;
+    const offset = (page - 1) * limit;
+
+    if (isDemoMode()) {
+      let all = includeSubAgents ? [...DEMO_MAIN_BOTS, ...DEMO_SUB_AGENTS] : DEMO_MAIN_BOTS;
+      if (status) all = all.filter(b => b.status === status);
+      if (search) {
+        const q = search.toLowerCase();
+        all = all.filter(b =>
+          b.name.toLowerCase().includes(q) ||
+          (b.description ?? '').toLowerCase().includes(q)
+        );
+      }
+      const sorted = all.sort((a, b) => a.created_at.localeCompare(b.created_at));
+      return { bots: sorted.slice(offset, offset + limit), total: sorted.length };
+    }
+
+    let countQuery = this.client
+      .from('bot_configs')
+      .select('id', { count: 'exact', head: true });
+
+    let dataQuery = this.client
+      .from('bot_configs')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: true });
+
+    if (!includeSubAgents) {
+      countQuery = countQuery.eq('is_sub_agent', false);
+      dataQuery = dataQuery.eq('is_sub_agent', false);
+    }
+    if (status) {
+      countQuery = countQuery.eq('status', status);
+      dataQuery = dataQuery.eq('status', status);
+    }
+    if (search) {
+      const pattern = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+      countQuery = countQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+    }
+
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.range(offset, offset + limit - 1),
+    ]);
+
+    if (countError) throw new RepositoryError('count bot configs', countError.message, countError.code);
+    if (dataError) throw new RepositoryError('list bot configs', dataError.message, dataError.code);
+
+    return {
+      bots: (data ?? []).map(row => ({
+        ...row,
+        platform_connection_id: (row as Record<string, unknown>).platform_connection_id as string | null,
+      })) as BotConfigRow[],
+      total: count ?? 0,
+    };
+  }
+
   async findById(id: string): Promise<BotConfigRow | null> {
     if (isDemoMode()) {
       const bots = await this.list();

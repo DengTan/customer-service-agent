@@ -4,6 +4,7 @@ import { BotConfigService } from '@/server/services/bot-config-service';
 import { parseJsonBody, HttpStatus, apiError, apiSuccess, getAuthenticatedUserId } from '@/lib/api-utils';
 import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const service = new BotConfigService();
 const supabase = getSupabaseClient();
@@ -65,8 +66,18 @@ export const GETHandler = GET(
   async ({ request }) => {
   const { searchParams } = new URL(request.url);
   const includeSubAgents = searchParams.get('include_sub_agents') !== 'false';
-  const result = await service.listBots(includeSubAgents);
-  return apiSuccess(result);
+  const { page, limit } = parsePageParams(searchParams);
+  const status = searchParams.get('status') ?? undefined;
+  const search = searchParams.get('search') ?? undefined;
+
+  const result = await service.listBotsPaginated({
+    includeSubAgents,
+    status: status ?? null,
+    search: search ?? null,
+    page,
+    limit,
+  });
+  return apiSuccess(buildPageResult({ items: result.bots, total: result.total, page, limit }));
 }, );
 
 export { GETHandler as GET };

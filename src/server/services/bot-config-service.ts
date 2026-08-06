@@ -84,6 +84,20 @@ export class BotConfigService {
     }
   }
 
+  async listBotsPaginated(opts: {
+    includeSubAgents: boolean;
+    status?: string | null;
+    search?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ bots: BotConfigRow[]; total: number }> {
+    try {
+      return await this.repo.listPaginated(opts);
+    } catch (error) {
+      throw toServiceError(error, '获取Bot配置列表失败', 'DB_ERROR');
+    }
+  }
+
   async createBot(input: CreateBotConfigInput, actor?: AuditActor): Promise<{ bot: BotConfigRow }> {
     if (!input.name || !input.system_prompt) {
       throw new ServiceError('名称和系统提示词为必填项', { status: 400, code: 'VALIDATION_ERROR' });
