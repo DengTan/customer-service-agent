@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   Search, Shield, Users, Edit3, Trash2, UserPlus,
-  ToggleLeft, ToggleRight, Check, X, RotateCcw, UsersRound,
+  ToggleLeft, ToggleRight, Check, X, RotateCcw, UsersRound, Loader2,
 } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -20,6 +20,7 @@ import { ROLE_LABELS, PERMISSION_RESOURCES, PERMISSION_ACTIONS } from '@/lib/typ
 import { useAuth } from '@/lib/auth';
 import { DEFAULT_PERMISSIONS } from '@/config/default-permissions';
 import { apiFetch } from '@/lib/api-fetch';
+import { useLazyList } from '@/hooks/use-lazy-list';
 
 const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-primary/10 text-primary',
@@ -30,12 +31,44 @@ const ROLE_COLORS: Record<UserRole, string> = {
 export default function TeamPage() {
   const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<'members' | 'permissions'>('members');
-  const [users, setUsers] = useState<User[]>([]);
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [loading, setLoading] = useState(true);
+
+  // Filter refs: useLazyList's fetchFn signature only takes (page, pageSize),
+  // so we read latest filter values from refs at request time.
+  const searchRef = useRef(searchQuery);
+  const roleRef = useRef(roleFilter);
+  const statusRef = useRef(statusFilter);
+  useEffect(() => { searchRef.current = searchQuery; }, [searchQuery]);
+  useEffect(() => { roleRef.current = roleFilter; }, [roleFilter]);
+  useEffect(() => { statusRef.current = statusFilter; }, [statusFilter]);
+
+  const usersList = useLazyList<User>({
+    fetchFn: async (page, pageSize) => {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('limit', String(pageSize));
+      const r = roleRef.current;
+      const s = statusRef.current;
+      const q = searchRef.current;
+      if (r !== 'all') params.set('role', r);
+      if (s !== 'all') params.set('status', s);
+      if (q) params.set('search', q);
+      const res = await apiFetch(`/api/users?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return {
+        items: (data.users ?? []) as User[],
+        total: (data.total ?? 0) as number,
+      };
+    },
+    pageSize: 10,
+  });
+
+  const users = usersList.items;
+  const totalUsers = usersList.total;
 
   // Modal states
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -58,24 +91,6 @@ export default function TeamPage() {
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  // Fetch users
-  const fetchUsers = useCallback(async () => {
-    try {
-      const params = new URLSearchParams();
-      if (roleFilter !== 'all') params.set('role', roleFilter);
-      if (statusFilter !== 'all') params.set('status', statusFilter);
-      if (searchQuery) params.set('search', searchQuery);
-      const res = await apiFetch(`/api/users?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data.users) setUsers(data.users);
-    } catch {
-      toast.error('获取成员列表失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [roleFilter, statusFilter, searchQuery]);
-
   // Fetch permissions
   const fetchPermissions = useCallback(async () => {
     try {
@@ -88,15 +103,32 @@ export default function TeamPage() {
     }
   }, []);
 
+  // Initial load + react to filter changes (reset list, re-fetch from page 1)
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    usersList.loadInitial();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Skip first run (mount) since loadInitial already runs
+    if (usersList.items.length === 0 && usersList.total === 0 && !usersList.isInitialLoading) {
+      return;
+    }
+    usersList.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, roleFilter, statusFilter]);
 
   useEffect(() => {
     if (activeTab === 'permissions') {
       fetchPermissions();
     }
   }, [activeTab, fetchPermissions]);
+
+  // Show toast on lazy-list errors (other than abort)
+  useEffect(() => {
+    if (usersList.error) toast.error('获取成员列表失败');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usersList.error]);
 
   // Add user
   const handleAddUser = async () => {
@@ -121,7 +153,7 @@ export default function TeamPage() {
           setCreatedUserPassword(data.tempPassword);
           setShowPasswordModal(true);
         }
-        fetchUsers();
+        usersList.refresh();
       } else {
         toast.error(data.error || '添加失败');
       }
@@ -157,7 +189,7 @@ export default function TeamPage() {
         setEditModalOpen(false);
         setEditingUser(null);
         setEditName('');
-        fetchUsers();
+        usersList.refresh();
       } else {
         toast.error(data.error || '更新失败');
       }
@@ -184,7 +216,7 @@ export default function TeamPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success('成员已删除');
-        fetchUsers();
+        usersList.refresh();
       } else {
         // Handle specific error codes
         if (data.code === 'LAST_ADMIN_PROTECTION') {
@@ -217,7 +249,7 @@ export default function TeamPage() {
       const data = await res.json();
       if (data.user) {
         toast.success(newStatus === 'active' ? '成员已启用' : '成员已禁用');
-        fetchUsers();
+        usersList.refresh();
       }
     } catch {
       toast.error('操作失败');
@@ -302,7 +334,7 @@ export default function TeamPage() {
       if (success) {
         setSelectedUsers(new Set());
         setShowBatchConfirmDialog(false);
-        fetchUsers();
+        usersList.refresh();
       } else {
         toast.error('操作部分失败，请刷新后重试');
       }
@@ -360,7 +392,7 @@ export default function TeamPage() {
     return DEFAULT_PERMISSIONS[role]?.[resource]?.[action] ?? false;
   };
 
-  // Note: User filtering is done server-side via fetchUsers(), so this is just an alias
+  // Note: User filtering is done server-side via useLazyList, so this is just an alias
   const filteredUsers = users;
   const activeUsers = users.filter(u => u.status === 'active');
   const onlineUsers = activeUsers.filter(u => {
@@ -502,7 +534,7 @@ export default function TeamPage() {
 
             {/* Stats */}
             <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border/30 text-xs">
-              <span className="text-muted-foreground">成员总数 <span className="font-semibold text-foreground">{filteredUsers.length}</span></span>
+              <span className="text-muted-foreground">成员总数 <span className="font-semibold text-foreground">{totalUsers}</span></span>
               <span className="text-muted-foreground">在线 <span className="font-semibold text-emerald-500">{onlineUsers.length}</span></span>
               <span className="text-muted-foreground">管理员 <span className="font-semibold text-foreground">{filteredUsers.filter(u => u.role === 'admin').length}</span></span>
               <span className="text-muted-foreground">坐席 <span className="font-semibold text-foreground">{filteredUsers.filter(u => u.role === 'agent').length}</span></span>
@@ -558,7 +590,7 @@ export default function TeamPage() {
           <div className="flex-1 overflow-y-auto px-6 py-4">
             <div className="space-y-2 max-w-4xl">
               {/* Select All Header */}
-              {!loading && users.length > 0 && (
+              {!usersList.isInitialLoading && users.length > 0 && (
                 <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
@@ -566,10 +598,10 @@ export default function TeamPage() {
                     onChange={toggleSelectAll}
                     className="w-4 h-4 rounded border-border"
                   />
-                  <span>全选</span>
+                  <span>全选（已加载 {users.length} / {totalUsers}）</span>
                 </div>
               )}
-              {loading ? (
+              {usersList.isInitialLoading ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">加载中...</div>
               ) : filteredUsers.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground text-sm">暂无成员</div>
@@ -654,6 +686,28 @@ export default function TeamPage() {
                     </div>
                   </div>
                 ))
+              )}
+
+              {/* Load more button */}
+              {usersList.hasMore && !usersList.isInitialLoading && (
+                <div className="flex justify-center pt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => usersList.loadMore()}
+                    disabled={usersList.isLoadingMore}
+                    className="gap-1.5"
+                  >
+                    {usersList.isLoadingMore ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        加载中...
+                      </>
+                    ) : (
+                      <>加载更多（{users.length} / {totalUsers}）</>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
           </div>

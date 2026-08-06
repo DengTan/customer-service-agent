@@ -2,6 +2,7 @@ import { apiSuccess, apiError, HttpStatus, parseJsonBody, requireRole } from '@/
 import { GET, POST, PATCH, DELETE } from '@/lib/api/with-api';
 import { UserService } from '@/server/services/user-service';
 import type { UpdateUserInput } from '@/server/repositories/user-repository';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const userService = new UserService();
 
@@ -21,8 +22,17 @@ export const GETHandler = GET(
       status: searchParams.get('status') ?? undefined,
       search: searchParams.get('search') ?? undefined,
     };
-    const result = await userService.listUsers(filters);
-    return apiSuccess({ users: result.users, total: result.total });
+
+    // P3: 支持分页 — fetchFn 调用方传入 page/limit
+    const { page, limit } = parsePageParams(searchParams);
+    const result = await userService.listUsers(filters, { page, pageSize: limit });
+
+    // 兼容旧调用：保留顶层 users/total 字段
+    return apiSuccess({
+      users: result.users,
+      total: result.total,
+      ...buildPageResult(result.users, result.total, page, limit),
+    });
   },
 );
 
