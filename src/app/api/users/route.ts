@@ -27,10 +27,8 @@ export const GETHandler = GET(
     const { page, limit } = parsePageParams(searchParams);
     const result = await userService.listUsers(filters, { page, pageSize: limit });
 
-    // 兼容旧调用：保留顶层 users/total 字段
     return apiSuccess({
       users: result.users,
-      total: result.total,
       ...buildPageResult(result.users, result.total, page, limit),
     });
   },
