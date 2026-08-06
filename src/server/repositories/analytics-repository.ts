@@ -5,6 +5,22 @@ import type { AlertRow } from './types';
 import { toAlertRow } from './types';
 import { logger } from '@/lib/logger';
 
+/**
+ * Analytics Repository
+ * 
+ * 提供数据分析和统计相关的数据访问方法。
+ * 核心指标、趋势图、来源分布、告警统计等。
+ * 
+ * 性能策略：
+ * - 聚合统计优先使用 Supabase RPC 函数（避免全表扫描）
+ * - Demo 模式返回空数据结构（不返回假数据）
+ * 
+ * 错误处理策略：
+ * - 默认抛出异常（RepositoryError），由上层（Service/Route）决定如何处理
+ * - 可通过 fallbackOnError 参数启用静默降级（返回空数据），用于非关键查询
+ * - 日志记录始终执行，无论是否启用 fallback
+ */
+
 export interface ConversationMessage {
   created_at: string;
   rating: number | null;
@@ -54,10 +70,25 @@ export interface ConversationSource {
   source: string | null;
 }
 
+/**
+ * AnalyticsRepository 数据分析仓储类
+ * 
+ * 封装所有数据分析相关的数据库查询，包括：
+ * - 核心指标（对话数/消息数/活跃会话/平均评分）
+ * - 来源分布（web/qianniu/doudian）
+ * - 告警统计（总数/未处理/严重等级）
+ * - 趋势数据（满意度趋势/工单趋势）
+ * - 工单统计（按状态/分类/优先级/坐席）
+ */
 export class AnalyticsRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseClient()) {}
 
-  async getCoreMetrics(): Promise<{
+  /**
+   * 获取核心指标数据
+   * @param fallbackOnError 设为 true 时，查询失败返回零值而非抛出异常（用于非关键指标展示）
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getCoreMetrics(fallbackOnError = false): Promise<{
     totalConversations: number;
     totalMessages: number;
     activeConversations: number;
@@ -110,19 +141,28 @@ export class AnalyticsRepository {
 
       return { totalConversations, totalMessages, activeConversations, todayConversations, ratings, avgRating };
     } catch (error) {
-      logger.database.error('getCoreMetrics failed, returning empty metrics', { error });
-      return {
-        totalConversations: 0,
-        totalMessages: 0,
-        activeConversations: 0,
-        todayConversations: 0,
-        ratings: [],
-        avgRating: 0,
-      };
+      logger.database.error('getCoreMetrics failed', { error });
+      if (fallbackOnError) {
+        return {
+          totalConversations: 0,
+          totalMessages: 0,
+          activeConversations: 0,
+          todayConversations: 0,
+          ratings: [],
+          avgRating: 0,
+        };
+      }
+      throw error;
     }
   }
 
-  async getRecentConversations(sinceIso: string): Promise<RecentConversation[]> {
+  /**
+   * 获取近期对话列表
+   * @param sinceIso ISO 8601 时间戳
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getRecentConversations(sinceIso: string, fallbackOnError = false): Promise<RecentConversation[]> {
     // Demo 模式返回空数组，趋势图将显示"暂无数据"
     if (isDemoMode()) {
       return [];
@@ -138,37 +178,42 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent conversations', error.message, error.code);
       return (data ?? []) as RecentConversation[];
     } catch (error) {
-      logger.database.error('getRecentConversations failed, returning empty array', { error });
-      return [];
+      logger.database.error('getRecentConversations failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 
-  async getSourceDistribution(): Promise<Record<string, number>> {
+  /**
+   * 获取来源分布统计
+   * @param fallbackOnError 设为 true 时，查询失败返回空对象而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getSourceDistribution(fallbackOnError = false): Promise<Record<string, number>> {
     // Demo 模式返回空对象，饼图将显示"暂无数据"
     if (isDemoMode()) {
       return {};
     }
-    
-    try {
-      const { data, error } = await this.client
-        .from('conversations')
-        .select('source')
-        .returns<ConversationSource[]>();
-      if (error) throw new RepositoryError('get source distribution', error.message, error.code);
 
-      const distribution: Record<string, number> = {};
-      (data || []).forEach((c) => {
-        const source = c.source || 'web';
-        distribution[source] = (distribution[source] || 0) + 1;
-      });
-      return distribution;
+    try {
+      // Use RPC for database-level aggregation (P2 performance fix: replaces full scan + JS forEach)
+      const { data, error } = await this.client.rpc('get_source_distribution');
+      if (error) throw new RepositoryError('get source distribution', error.message, error.code);
+      return (data as Record<string, number>) || {};
     } catch (error) {
-      logger.database.error('getSourceDistribution failed, returning empty', { error });
-      return {};
+      logger.database.error('getSourceDistribution failed', { error });
+      if (fallbackOnError) return {};
+      throw error;
     }
   }
 
-  async getRecentMessages(sinceIso: string): Promise<RecentMessage[]> {
+  /**
+   * 获取近期消息列表
+   * @param sinceIso ISO 8601 时间戳
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getRecentMessages(sinceIso: string, fallbackOnError = false): Promise<RecentMessage[]> {
     if (isDemoMode()) {
       return [];
     }
@@ -183,12 +228,18 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent messages', error.message, error.code);
       return (data ?? []) as RecentMessage[];
     } catch (error) {
-      logger.database.error('getRecentMessages failed, returning empty array', { error });
-      return [];
+      logger.database.error('getRecentMessages failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 
-  async getAutoReplyHits(): Promise<number> {
+  /**
+   * 获取自动回复命中次数
+   * @param fallbackOnError 设为 true 时，查询失败返回 0 而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getAutoReplyHits(fallbackOnError = false): Promise<number> {
     // Demo 模式返回 0，避免假数据误导
     if (isDemoMode()) {
       return 0;
@@ -211,12 +262,18 @@ export class AnalyticsRepository {
         );
       }).length;
     } catch (error) {
-      logger.database.error('getAutoReplyHits failed, returning 0', { error });
-      return 0;
+      logger.database.error('getAutoReplyHits failed', { error });
+      if (fallbackOnError) return 0;
+      throw error;
     }
   }
 
-  async getAlertStats(): Promise<{
+  /**
+   * 获取告警统计数据
+   * @param fallbackOnError 设为 true 时，查询失败返回零值而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getAlertStats(fallbackOnError = false): Promise<{
     total: number;
     unresolved: number;
     critical: number;
@@ -254,18 +311,26 @@ export class AnalyticsRepository {
         info: infoResult.count || 0,
       };
     } catch (error) {
-      logger.database.error('getAlertStats failed, returning empty stats', { error });
-      return {
-        total: 0,
-        unresolved: 0,
-        critical: 0,
-        warning: 0,
-        info: 0,
-      };
+      logger.database.error('getAlertStats failed', { error });
+      if (fallbackOnError) {
+        return {
+          total: 0,
+          unresolved: 0,
+          critical: 0,
+          warning: 0,
+          info: 0,
+        };
+      }
+      throw error;
     }
   }
 
-  async getRecentAlerts(): Promise<AlertRow[]> {
+  /**
+   * 获取近期告警列表
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getRecentAlerts(fallbackOnError = false): Promise<AlertRow[]> {
     // Demo 模式返回空数组
     if (isDemoMode()) {
       return [];
@@ -283,32 +348,45 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get recent alerts', error.message, error.code);
       return (data ?? []).map(toAlertRow);
     } catch (error) {
-      logger.database.error('getRecentAlerts failed, returning empty array', { error });
-      return [];
+      logger.database.error('getRecentAlerts failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 
-  async getHandoffCount(): Promise<number> {
+  /**
+   * 获取转人工次数
+   * @param fallbackOnError 设为 true 时，查询失败返回 0 而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getHandoffCount(fallbackOnError = false): Promise<number> {
     // Demo 模式返回 0
     if (isDemoMode()) {
       return 0;
     }
-    
+
     try {
-      const { data, error } = await this.client
+      const { count, error } = await this.client
         .from('conversations')
-        .select('id')
+        .select('id', { count: 'exact', head: true })
         .eq('status', 'handoff');
 
       if (error) throw new RepositoryError('get handoff count', error.message, error.code);
-      return data?.length || 0;
+      return count ?? 0;
     } catch (error) {
-      logger.database.error('getHandoffCount failed, returning 0', { error });
-      return 0;
+      logger.database.error('getHandoffCount failed', { error });
+      if (fallbackOnError) return 0;
+      throw error;
     }
   }
 
-  async getRatingsWithDate(sinceIso: string): Promise<RatingWithDate[]> {
+  /**
+   * 获取带日期的评分列表
+   * @param sinceIso ISO 8601 时间戳
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getRatingsWithDate(sinceIso: string, fallbackOnError = false): Promise<RatingWithDate[]> {
     // Demo 模式返回空数组，满意度趋势图将显示"暂无满意度数据"
     if (isDemoMode()) {
       return [];
@@ -325,12 +403,18 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get ratings with date', error.message, error.code);
       return (data ?? []) as RatingWithDate[];
     } catch (error) {
-      logger.database.error('getRatingsWithDate failed, returning empty array', { error });
-      return [];
+      logger.database.error('getRatingsWithDate failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 
-  async getRatingsBySource(): Promise<RatingBySource[]> {
+  /**
+   * 获取按来源分组的评分列表
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getRatingsBySource(fallbackOnError = false): Promise<RatingBySource[]> {
     // Demo 模式返回空数组，各渠道满意度将显示"暂无数据"
     if (isDemoMode()) {
       return [];
@@ -350,15 +434,23 @@ export class AnalyticsRepository {
       if (error) throw new RepositoryError('get ratings by source', error.message, error.code);
       return (data ?? []) as RatingBySource[];
     } catch (error) {
-      logger.database.error('getRatingsBySource failed, returning empty array', { error });
-      return [];
+      logger.database.error('getRatingsBySource failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 
   // ============ Ticket Statistics ============
 
+  /**
+   * 获取工单统计数据
+   * @param slaResolveMinutes SLA 配置，按优先级设置超时阈值（分钟）
+   * @param fallbackOnError 设为 true 时，查询失败返回零值而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
   async getTicketStats(
     slaResolveMinutes: Record<string, number> = {},
+    fallbackOnError = false,
   ): Promise<{
     total: number;
     by_status: Record<string, number>;
@@ -369,63 +461,39 @@ export class AnalyticsRepository {
     overdue_count: number;
   }> {
     try {
-      // 基础统计使用 count() 聚合，避免全表扫描
-      const [ticketsCountResult, statusCountsResult, categoryCountsResult, priorityCountsResult] = await Promise.all([
-        this.client.from('tickets').select('id', { count: 'exact', head: true }),
-        this.client.from('tickets').select('status', { count: 'exact', head: true }),
-        this.client.from('tickets').select('category', { count: 'exact', head: true }),
-        this.client.from('tickets').select('priority', { count: 'exact', head: true }),
-      ]);
+      // Use RPC for database-level aggregation (P2 performance fix: replaces count + JS loop)
+      const { data: statsData, error: statsError } = await this.client.rpc('get_ticket_stats');
+      if (statsError) throw new RepositoryError('get ticket stats', statsError.message, statsError.code);
 
-      const total = ticketsCountResult.count || 0;
-
-      const byStatus: Record<string, number> = {};
-      if (statusCountsResult.data) {
-        for (const t of statusCountsResult.data as Array<{ status: string }>) {
-          byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-        }
-      }
-
-      const byCategory: Record<string, number> = {};
-      if (categoryCountsResult.data) {
-        for (const t of categoryCountsResult.data as Array<{ category: string }>) {
-          byCategory[t.category] = (byCategory[t.category] || 0) + 1;
-        }
-      }
-
-      const byPriority: Record<string, number> = {};
-      if (priorityCountsResult.data) {
-        for (const t of priorityCountsResult.data as Array<{ priority: string }>) {
-          byPriority[t.priority] = (byPriority[t.priority] || 0) + 1;
-        }
-      }
+      const byStatus = (statsData?.by_status as Record<string, number>) || {};
+      const byCategory = (statsData?.by_category as Record<string, number>) || {};
+      const byPriority = (statsData?.by_priority as Record<string, number>) || {};
+      const total = (statsData?.total as number) || 0;
 
       // 计算超时工单：按优先级 SLA 动态判断
+      // P2-2 fix: 一律走数据库侧聚合，避免拉所有 open+in_progress 工单到 JS 循环
       let overdue_count = 0;
       if (Object.keys(slaResolveMinutes).length > 0) {
-        // 有 SLA 配置，按优先级阈值计算超时
-        const openTicketsResult = await this.client
-          .from('tickets')
-          .select('id, priority, created_at')
-          .in('status', ['open', 'in_progress']);
-
-        if (!openTicketsResult.error && openTicketsResult.data) {
-          const now = Date.now();
-          for (const t of openTicketsResult.data as Array<{ id: string; priority: string; created_at: string }>) {
-            const slaMinutes = slaResolveMinutes[t.priority] ?? slaResolveMinutes['low'] ?? 2880;
-            const slaMs = slaMinutes * 60 * 1000;
-            if (now - new Date(t.created_at).getTime() > slaMs) {
-              overdue_count++;
-            }
-          }
+        // 有 SLA 配置：调用 RPC 用 SQL 侧 JOIN 计算
+        const { data: overdueData, error: overdueError } = await this.client.rpc(
+          'get_ticket_overdue_count',
+          { p_sla_config: slaResolveMinutes as unknown as never },
+        );
+        if (overdueError) {
+          // RPC 失败：抛出，由 fallbackOnError 决定是否降级
+          throw new RepositoryError('get_ticket_overdue_count', overdueError.message, overdueError.code);
         }
+        overdue_count = (overdueData as number) ?? 0;
       } else {
-        // 无 SLA 配置，回退到默认 24h 阈值
+        // 无 SLA 配置：回退到数据库 count 查询（24h 默认），保留相同精确值
         const overdueResult = await this.client
           .from('tickets')
           .select('id', { count: 'exact', head: true })
-          .or(`status.eq.open,status.eq.in_progress`)
+          .or('status.eq.open,status.eq.in_progress')
           .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        if (overdueResult.error) {
+          throw new RepositoryError('get overdue count', overdueResult.error.message, overdueResult.error.code);
+        }
         overdue_count = overdueResult.count || 0;
       }
 
@@ -509,97 +577,68 @@ export class AnalyticsRepository {
       };
     } catch (error) {
       logger.database.error('getTicketStats failed', { error });
-      return {
-        total: 0,
-        by_status: {},
-        by_category: {},
-        by_priority: {},
-        avg_resolution_hours: null,
-        avg_first_response_hours: null,
-        overdue_count: 0,
-      };
+      if (fallbackOnError) {
+        return {
+          total: 0,
+          by_status: {},
+          by_category: {},
+          by_priority: {},
+          avg_resolution_hours: null,
+          avg_first_response_hours: null,
+          overdue_count: 0,
+        };
+      }
+      throw error;
     }
   }
 
-  async getTicketTrend(days: number = 7): Promise<Array<{ date: string; created: number; closed: number }>> {
-    try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
-      const { data, error } = await this.client
-        .from('tickets')
-        .select('created_at, updated_at, status')
-        .gte('created_at', startDate.toISOString());
-
-      if (error) throw new RepositoryError('get ticket trend', error.message, error.code);
-
-      const tickets = data || [];
-      const trend: Array<{ date: string; created: number; closed: number }> = [];
-
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        // 使用日期范围比较，避免时区问题
-        const dayStart = `${dateStr}T00:00:00`;
-        const dayEnd = `${dateStr}T23:59:59`;
-
-        const created = tickets.filter(t => 
-          t.created_at >= dayStart && t.created_at <= dayEnd
-        ).length;
-        const closed = tickets.filter(t =>
-          (t.status === 'closed' || t.status === 'resolved') && 
-          t.updated_at >= dayStart && t.updated_at <= dayEnd
-        ).length;
-
-        trend.push({ date: dateStr, created, closed });
-      }
-
-      return trend;
-    } catch (error) {
-      logger.database.error('getTicketTrend failed', { error });
+  /**
+   * 获取工单趋势数据
+   * @param days 统计天数，默认 7 天
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getTicketTrend(days: number = 7, fallbackOnError = false): Promise<Array<{ date: string; created: number; closed: number }>> {
+    if (isDemoMode()) {
       return [];
     }
+    try {
+      const { data, error } = await this.client.rpc('get_ticket_trend', { days });
+      if (error) throw new RepositoryError('get ticket trend', error.message, error.code);
+      return (data as Array<{ date: string; created: number; closed: number }>) || [];
+    } catch (error) {
+      logger.database.error('getTicketTrend failed', { error });
+      if (fallbackOnError) return [];
+      throw error;
+    }
   }
 
-  async getAgentTicketStats(): Promise<Array<{ assignee_id: string; total: number; resolved: number; avg_resolution_hours: number }>> {
+  /**
+   * 获取坐席工单统计
+   * @param fallbackOnError 设为 true 时，查询失败返回空数组而非抛出异常
+   * @throws {RepositoryError} 当 fallbackOnError=false 且数据库查询失败时
+   */
+  async getAgentTicketStats(fallbackOnError = false): Promise<Array<{ assignee_id: string; total: number; resolved: number; avg_resolution_hours: number }>> {
+    if (isDemoMode()) {
+      return [];
+    }
     try {
-      // 只查询已关闭工单（有限数量），避免全表扫描
-      const { data, error } = await this.client
-        .from('tickets')
-        .select('assignee_id, status, created_at, updated_at')
-        .not('assignee_id', 'is', null)
-        .in('status', ['closed', 'resolved'])
-        .order('updated_at', { ascending: false })
-        .limit(5000);
-
+      const { data, error } = await this.client.rpc('get_agent_ticket_stats');
       if (error) throw new RepositoryError('get agent ticket stats', error.message, error.code);
 
-      const tickets = data || [];
-      const agentMap = new Map<string, { total: number; resolved: number; totalResolutionMs: number }>();
+      const raw = data as Record<string, { completed: number; avg_handle_time: number; overdue_count: number }> | null;
+      if (!raw) return [];
 
-      for (const t of tickets) {
-        const aid = t.assignee_id!;
-        if (!agentMap.has(aid)) {
-          agentMap.set(aid, { total: 0, resolved: 0, totalResolutionMs: 0 });
-        }
-        const stats = agentMap.get(aid)!;
-        stats.total++;
-        if (t.status === 'closed' || t.status === 'resolved') {
-          stats.resolved++;
-          stats.totalResolutionMs += new Date(t.updated_at).getTime() - new Date(t.created_at).getTime();
-        }
-      }
-
-      return Array.from(agentMap.entries()).map(([assignee_id, stats]) => ({
+      return Object.entries(raw).map(([assignee_id, stats]) => ({
         assignee_id,
-        total: stats.total,
-        resolved: stats.resolved,
-        avg_resolution_hours: stats.resolved > 0 ? (stats.totalResolutionMs / stats.resolved) / (1000 * 60 * 60) : 0,
+        total: stats.completed,
+        resolved: stats.completed,
+        avg_resolution_hours: stats.avg_handle_time ?? 0,
       }));
     } catch (error) {
       logger.database.error('getAgentTicketStats failed', { error });
-      return [];
+      if (fallbackOnError) return [];
+      throw error;
     }
   }
 }
