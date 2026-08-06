@@ -17,6 +17,14 @@ export class SkillGroupService {
     }
   }
 
+  async listGroupsPaginated(opts: { search?: string | null; page: number; limit: number }) {
+    try {
+      return await this.repo.listPaginated(opts);
+    } catch (error) {
+      throw toServiceError(error, '获取技能组列表失败', 'DB_ERROR');
+    }
+  }
+
   async createGroup(input: CreateSkillGroupInput) {
     if (!input.name) {
       throw toServiceError(

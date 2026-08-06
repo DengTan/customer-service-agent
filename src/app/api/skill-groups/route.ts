@@ -2,6 +2,7 @@ import { parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils
 import { GET, POST, PATCH, DELETE } from '@/lib/api/with-api';
 import { SkillGroupService } from '@/server/services/skill-group-service';
 import { z } from 'zod';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const service = new SkillGroupService();
 
@@ -18,9 +19,17 @@ export const GETHandler = GET(
     auth: 'required',
     perm: { resource: 'conversations', action: 'write' },
   },
-  async () => {
-    const groups = await service.listGroups();
-    return apiSuccess({ groups });
+  async ({ request }) => {
+    const { searchParams } = new URL(request.url);
+    const { page, limit } = parsePageParams(searchParams);
+    const search = searchParams.get('search') ?? undefined;
+
+    const result = await service.listGroupsPaginated({
+      search: search ?? null,
+      page,
+      limit,
+    });
+    return apiSuccess(buildPageResult({ items: result.groups, total: result.total, page, limit }));
   },
 );
 

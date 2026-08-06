@@ -44,6 +44,63 @@ export class SkillGroupRepository {
     }));
   }
 
+  async listPaginated(opts: {
+    search?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ groups: unknown[]; total: number }> {
+    const { search, page, limit } = opts;
+    const offset = (page - 1) * limit;
+
+    if (isDemoMode()) {
+      let all: unknown[] = [
+        { id: 'demo-sg-1', name: '售前咨询组', description: '处理产品咨询和售前问题', member_ids: ['demo-user-2', 'demo-user-3'], is_default: true, member_count: 2, created_at: '2026-01-01T00:00:00Z' },
+        { id: 'demo-sg-2', name: '售后组', description: '处理退货、退款、售后问题', member_ids: ['demo-user-2'], is_default: false, member_count: 1, created_at: '2026-02-01T00:00:00Z' },
+      ];
+      if (search) {
+        const q = search.toLowerCase();
+        all = (all as Array<{ name: string; description: string }>).filter(g =>
+          g.name.toLowerCase().includes(q) || (g.description ?? '').toLowerCase().includes(q)
+        );
+      }
+      const sorted = (all as Array<{ created_at: string }>).sort((a, b) =>
+        a.created_at.localeCompare(b.created_at)
+      );
+      return { groups: sorted.slice(offset, offset + limit), total: sorted.length };
+    }
+
+    let countQuery = this.client
+      .from('skill_groups')
+      .select('id', { count: 'exact', head: true });
+
+    let dataQuery = this.client
+      .from('skill_groups')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: true });
+
+    if (search) {
+      const pattern = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+      countQuery = countQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+    }
+
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.range(offset, offset + limit - 1),
+    ]);
+
+    if (countError) throw new RepositoryError('count skill groups', countError.message, countError.code);
+    if (dataError) throw new RepositoryError('list skill groups', dataError.message, dataError.code);
+
+    return {
+      groups: (data ?? []).map((group: { member_ids: unknown[]; created_at: string }) => ({
+        ...group,
+        member_count: Array.isArray(group.member_ids) ? group.member_ids.length : 0,
+      })),
+      total: count ?? 0,
+    };
+  }
+
   async create(input: CreateSkillGroupInput): Promise<unknown> {
     if (isDemoMode()) return { id: 'demo-sg-new', name: input.name, description: input.description, member_ids: input.member_ids || [], is_default: input.is_default ?? false, member_count: (input.member_ids || []).length };
     const { data, error } = await this.client
