@@ -43,6 +43,65 @@ export class CustomerTagRepository {
     return data ?? [];
   }
 
+  async listPaginated(opts: {
+    search?: string | null;
+    category?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ tags: unknown[]; total: number }> {
+    const { search, category, page, limit } = opts;
+    const offset = (page - 1) * limit;
+
+    if (isDemoMode()) {
+      let all = [
+        { id: 'demo-ctag-1', name: 'VIP', color: '#FF6B35', category: 'auto', is_system: true, customer_count: 156, created_at: '2026-01-01T00:00:00Z' },
+        { id: 'demo-ctag-2', name: '高频', color: '#2F6BFF', category: 'auto', is_system: false, customer_count: 89, created_at: '2026-01-01T00:00:00Z' },
+        { id: 'demo-ctag-3', name: '退换货', color: '#FF4444', category: 'manual', is_system: false, customer_count: 34, created_at: '2026-02-10T00:00:00Z' },
+        { id: 'demo-ctag-4', name: '新客户', color: '#4CAF50', category: 'auto', is_system: false, customer_count: 210, created_at: '2026-03-01T00:00:00Z' },
+      ];
+      if (category) all = all.filter(t => t.category === category);
+      if (search) {
+        const q = search.toLowerCase();
+        all = all.filter(t => t.name.toLowerCase().includes(q));
+      }
+      const sorted = all.sort((a, b) => a.created_at.localeCompare(b.created_at));
+      return { tags: sorted.slice(offset, offset + limit), total: sorted.length };
+    }
+
+    let countQuery = this.client
+      .from('customer_tags')
+      .select('id', { count: 'exact', head: true });
+
+    let dataQuery = this.client
+      .from('customer_tags')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: true });
+
+    if (category) {
+      countQuery = countQuery.eq('category', category);
+      dataQuery = dataQuery.eq('category', category);
+    }
+    if (search) {
+      const pattern = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+      countQuery = countQuery.ilike('name', pattern);
+      dataQuery = dataQuery.ilike('name', pattern);
+    }
+
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.range(offset, offset + limit - 1),
+    ]);
+
+    if (countError) {
+      throw new RepositoryError('count customer tags', countError.message, countError.code);
+    }
+    if (dataError) {
+      throw new RepositoryError('list customer tags', dataError.message, dataError.code);
+    }
+
+    return { tags: data ?? [], total: count ?? 0 };
+  }
+
   async create(input: CreateCustomerTagInput): Promise<unknown> {
     if (isDemoMode()) return { id: 'demo-ctag-new', name: input.name, color: input.color ?? '#2F6BFF', category: input.category ?? 'manual', is_system: false, customer_count: 0, created_at: new Date().toISOString() };
     const { data, error } = await this.client

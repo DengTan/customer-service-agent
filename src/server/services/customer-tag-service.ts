@@ -18,6 +18,19 @@ export class CustomerTagService {
     }
   }
 
+  async listTagsPaginated(opts: {
+    search?: string | null;
+    category?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ tags: unknown[]; total: number }> {
+    try {
+      return await this.tags.listPaginated(opts);
+    } catch (error) {
+      throw toServiceError(error, '获取标签列表失败', 'DB_QUERY_ERROR');
+    }
+  }
+
   async createTag(input: CreateCustomerTagInput): Promise<unknown> {
     if (!input.name) {
       throw new ServiceError('标签名称不能为空', {

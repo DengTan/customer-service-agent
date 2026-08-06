@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/api-utils';
 import { CustomerTagService } from '@/server/services/customer-tag-service';
 import { GET, POST, PUT, DELETE } from '@/lib/api/with-api';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const customerTagService = new CustomerTagService();
 
@@ -10,10 +11,21 @@ export const GETHandler = GET(
     auth: 'required',
     perm: { resource: 'customers', action: 'read' },
   },
-  async () => {
-  const tags = await customerTagService.listTags();
-  return apiSuccess({ tags });
-}, );
+  async ({ request }) => {
+    const { searchParams } = new URL(request.url);
+    const { page, limit } = parsePageParams(searchParams);
+    const search = searchParams.get('search') ?? undefined;
+    const category = searchParams.get('category') ?? undefined;
+
+    const result = await customerTagService.listTagsPaginated({
+      search: search ?? null,
+      category: category ?? null,
+      page,
+      limit,
+    });
+    return apiSuccess(buildPageResult({ items: result.tags, total: result.total, page, limit }));
+  },
+);
 
 export { GETHandler as GET };
 
