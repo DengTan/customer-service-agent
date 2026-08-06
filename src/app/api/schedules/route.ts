@@ -2,6 +2,7 @@ import { parseJsonBody, apiSuccess, apiError, HttpStatus } from '@/lib/api-utils
 import { GET, POST, DELETE } from '@/lib/api/with-api';
 import { ScheduleService } from '@/server/services/schedule-service';
 import { z } from 'zod';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const service = new ScheduleService();
 
@@ -20,12 +21,17 @@ export const GETHandler = GET(
   },
   async ({ request }) => {
     const { searchParams } = new URL(request.url);
+    const { page, limit } = parsePageParams(searchParams);
     const date = searchParams.get('date');
     const user_id = searchParams.get('user_id');
     const skill_group_id = searchParams.get('skill_group_id');
 
-    const schedules = await service.listSchedules({ date, user_id, skill_group_id });
-    return apiSuccess({ schedules });
+    const result = await service.listSchedulesPaginated({
+      filters: { date: date ?? null, user_id: user_id ?? null, skill_group_id: skill_group_id ?? null },
+      page,
+      limit,
+    });
+    return apiSuccess(buildPageResult({ items: result.schedules, total: result.total, page, limit }));
   },
 );
 

@@ -18,6 +18,14 @@ export class ScheduleService {
     }
   }
 
+  async listSchedulesPaginated(opts: { filters: ScheduleFilters; page: number; limit: number }) {
+    try {
+      return await this.repo.listPaginated(opts);
+    } catch (error) {
+      throw toServiceError(error, '获取排班列表失败', 'DB_ERROR');
+    }
+  }
+
   async createSchedules(items: ScheduleItem[]) {
     if (!items || items.length === 0) {
       throw toServiceError(
