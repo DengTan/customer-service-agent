@@ -70,6 +70,59 @@ export class ConversationTagRepository {
     }
   }
 
+  async listDefinitionsPaginated(opts: {
+    category?: string | null;
+    search?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ tags: unknown[]; total: number }> {
+    const { category, search, page, limit } = opts;
+    const offset = (page - 1) * limit;
+
+    if (isDemoMode()) {
+      let all = [...DEMO_TAGS];
+      if (category) all = all.filter(t => t.category === category);
+      if (search) {
+        const q = search.toLowerCase();
+        all = all.filter((t) => t.name.toLowerCase().includes(q) || ((t as { description?: string }).description ?? '').toLowerCase().includes(q));
+      }
+      const sorted = all.sort((a, b) => {
+        const catDiff = a.category.localeCompare(b.category);
+        return catDiff !== 0 ? catDiff : a.name.localeCompare(b.name);
+      });
+      return { tags: sorted.slice(offset, offset + limit), total: sorted.length };
+    }
+
+    let countQuery = this.client
+      .from('conversation_tags_def')
+      .select('id', { count: 'exact', head: true });
+
+    let dataQuery = this.client
+      .from('conversation_tags_def')
+      .select('*', { count: 'exact' })
+      .order('category')
+      .order('name');
+
+    if (category) {
+      countQuery = countQuery.eq('category', category);
+      dataQuery = dataQuery.eq('category', category);
+    }
+    if (search) {
+      const pattern = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+      countQuery = countQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+      dataQuery = dataQuery.or(`name.ilike.${pattern},description.ilike.${pattern}`);
+    }
+
+    const [{ count, error: countError }, { data, error: dataError }] = await Promise.all([
+      countQuery,
+      dataQuery.range(offset, offset + limit - 1),
+    ]);
+
+    if (countError) throw new RepositoryError('count conversation tag definitions', countError.message, countError.code);
+    if (dataError) throw new RepositoryError('list conversation tag definitions', dataError.message, dataError.code);
+    return { tags: data ?? [], total: count ?? 0 };
+  }
+
   async listForConversation(conversationId: string): Promise<unknown[]> {
     if (isDemoMode()) {
       return [];

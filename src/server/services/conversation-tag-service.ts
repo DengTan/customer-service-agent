@@ -18,6 +18,19 @@ export class ConversationTagService {
     }
   }
 
+  async listDefinitionsPaginated(opts: {
+    category?: string | null;
+    search?: string | null;
+    page: number;
+    limit: number;
+  }) {
+    try {
+      return await this.repo.listDefinitionsPaginated(opts);
+    } catch (error) {
+      throw toServiceError(error, '获取标签列表失败', 'DB_ERROR');
+    }
+  }
+
   async listForConversation(conversationId: string) {
     try {
       return await this.repo.listForConversation(conversationId);

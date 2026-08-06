@@ -3,6 +3,7 @@
  */
 import { withApi } from '@/lib/api/with-api';
 import { ConversationTagService } from '@/server/services/conversation-tag-service';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const service = new ConversationTagService();
 
@@ -10,7 +11,6 @@ export const GET = withApi(
   { auth: 'required', perm: { resource: 'quality', action: 'write' } },
   async ({ request }) => {
     const { searchParams } = new URL(request.url);
-    const category = searchParams.get('category');
     const conversation_id = searchParams.get('conversation_id');
 
     if (conversation_id) {
@@ -21,8 +21,20 @@ export const GET = withApi(
       });
     }
 
-    const tags = await service.listDefinitions({ category: category ?? undefined });
-    return new Response(JSON.stringify({ ok: true, tags }), {
+    const { page, limit } = parsePageParams(searchParams);
+    const category = searchParams.get('category') ?? undefined;
+    const search = searchParams.get('search') ?? undefined;
+
+    const result = await service.listDefinitionsPaginated({
+      category: category ?? null,
+      search: search ?? null,
+      page,
+      limit,
+    });
+    return new Response(JSON.stringify({
+      ok: true,
+      ...buildPageResult({ items: result.tags, total: result.total, page, limit }),
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
