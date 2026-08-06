@@ -4,6 +4,7 @@ import { SubAgentService } from '@/server/services/sub-agent-service';
 import { parseJsonBody, HttpStatus, apiError, apiSuccess } from '@/lib/api-utils';
 import { GET, POST, PUT, PATCH, DELETE } from '@/lib/api/with-api';
 import { getLogger } from '@/lib/logger';
+import { parsePageParams, buildPageResult } from '@/lib/api/pagination';
 
 const logger = getLogger('SubAgents');
 
@@ -98,10 +99,26 @@ export const GETHandler = GET(
     }
   }
 
-  return apiError('请提供 parent_bot_id、bot_tree 或 main_bots 参数', {
-    status: HttpStatus.BAD_REQUEST,
-    code: 'VALIDATION_ERROR',
-  });
+  // Paginated list of all sub-agents (no parent filter)
+  const { page, limit } = parsePageParams(searchParams);
+  const status = searchParams.get('status') ?? undefined;
+  const search = searchParams.get('search') ?? undefined;
+  try {
+    const result = await service.listSubAgentsPaginated({
+      status: status ?? null,
+      search: search ?? null,
+      page,
+      limit,
+    });
+    return apiSuccess(buildPageResult({ items: result.subAgents, total: result.total, page, limit }));
+  } catch (err) {
+    const detail = (err as Error)?.message ?? String(err);
+    logger.error('[sub-agents] listSubAgentsPaginated failed', { detail });
+    return apiError(`加载子Agent列表失败: ${detail}`, {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      code: 'SUB_AGENT_LIST_ERROR',
+    });
+  }
 }, );
 
 export { GETHandler as GET };

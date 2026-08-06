@@ -191,6 +191,33 @@ export class SubAgentService {
   }
 
   /**
+   * Paginated list of all sub-agents (is_sub_agent=true), optionally filtered by status/search.
+   * Returns bot_configs rows in the sub-agent role.
+   */
+  async listSubAgentsPaginated(opts: {
+    status?: string | null;
+    search?: string | null;
+    page: number;
+    limit: number;
+  }): Promise<{ subAgents: BotConfigRow[]; total: number }> {
+    try {
+      const result = await this.botConfigRepo.listPaginated({
+        includeSubAgents: true,
+        status: opts.status ?? null,
+        search: opts.search ?? null,
+        page: opts.page,
+        limit: opts.limit,
+      });
+      return {
+        subAgents: result.bots.filter(b => b.is_sub_agent),
+        total: result.total,
+      };
+    } catch (error) {
+      throw toServiceError(error, '获取子Agent列表失败', 'DB_ERROR');
+    }
+  }
+
+  /**
    * Create a new sub-agent under a parent bot
    */
   async createSubAgent(input: {
