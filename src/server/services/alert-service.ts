@@ -484,11 +484,6 @@ export class AlertService {
     }
   }
 
-  async createAssistantPersistenceFailed(
-    conversationId: string,
-    content: string,
-    reason: unknown,
-  ): Promise<void> {
   /**
    * Create an alert when satisfaction rating is below threshold.
    * @param conversationId - The conversation ID

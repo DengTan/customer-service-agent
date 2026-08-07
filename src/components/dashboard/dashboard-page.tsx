@@ -106,6 +106,13 @@ function DashboardPageInner() {
   const [ratingDist, setRatingDist] = useState<Array<{ star: number; count: number }>>([]);
   const [sourceDist, setSourceDist] = useState<Record<string, number>>({});
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertStats, setAlertStats] = useState<{
+    total: number;
+    unresolved: number;
+    critical: number;
+    warning: number;
+    info: number;
+  } | null>(null);
   const [pushRecords, setPushRecords] = useState<PushRecord[]>([]);
   const [pushEvents, setPushEvents] = useState<PushEventLog[]>([]);
   const [satisfactionTrend, setSatisfactionTrend] = useState<Array<{ date: string; avgRating: number; count: number }>>([]);
@@ -142,6 +149,9 @@ function DashboardPageInner() {
         setRatingDist(data.ratingDistribution || []);
         setSourceDist(data.sourceDistribution || {});
         setAlerts(data.recentAlerts || []);
+        if (data.alertStats) {
+          setAlertStats(data.alertStats);
+        }
         setSatisfactionTrend(data.satisfactionTrend || []);
         setSatisfactionBySource(data.satisfactionBySource || {});
       }
@@ -183,6 +193,9 @@ function DashboardPageInner() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setAlerts(data.recentAlerts || []);
+      if (data.alertStats) {
+        setAlertStats(data.alertStats);
+      }
     } catch (err) {
       logger.error('加载告警数据失败', { error: err });
       toast.error('加载告警数据失败');
@@ -537,9 +550,9 @@ function DashboardPageInner() {
             <div className="flex items-center gap-2">
               <Bell className="w-4 h-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">异常告警</h3>
-              {alerts.filter(a => !a.is_resolved).length > 0 && (
+              {(alertStats?.unresolved ?? 0) > 0 && (
                 <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-destructive/10 text-destructive text-[10px] font-semibold px-1.5 animate-scale-in">
-                  {alerts.filter(a => !a.is_resolved).length}
+                  {alertStats?.unresolved ?? 0}
                 </span>
               )}
             </div>
@@ -629,6 +642,7 @@ function DashboardPageInner() {
                             return;
                           }
                           setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, is_resolved: true, status: 'resolved' } : a));
+                          setAlertStats(prev => prev ? { ...prev, unresolved: Math.max(0, prev.unresolved - 1) } : prev);
                         } catch { /* ignore */ }
                         finally {
                           setResolvingIds(prev => {

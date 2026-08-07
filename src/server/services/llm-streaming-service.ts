@@ -463,28 +463,63 @@ export class LLMStreamingService {
           // Check if using extended LLM provider
           const useExtendedProvider = !!(effectiveBaseUrl && effectiveApiKey);
 
-          // Provide friendly error message if provider is not configured
-          // Prioritize model selection error over provider configuration error
-          if (modelSelectionError) {
-            // If we have a model selection error but also missing provider config,
-            // show the more specific model error (provider config error would be confusing)
-            if (!useExtendedProvider) {
-              // Return as SSE event for toast instead of throwing
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-                error: true,
-                errorMessage: modelSelectionError,
-                type: 'model_unavailable',
-              })}\n\n`));
-              controller.close();
-              return;
+          // Provider not configured → trigger handoff automatically
+          const triggerModelHandoff = async (message: string) => {
+            try {
+              const handoffService = new (await import('./handoff-service')).HandoffService();
+              await handoffService.requestHandoff({
+                conversationId,
+                reason: message,
+                priority: 'normal',
+              });
+            } catch (handoffError) {
+              logger.agent.error('Failed to trigger handoff for model unavailable', {
+                conversationId,
+                error: handoffError,
+              });
             }
-            // Provider is configured but model selection failed
+            const handoffMessage = 'AI 客服暂时不可用（模型未配置），已为您转接人工客服，请稍候。';
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-              error: true,
-              errorMessage: modelSelectionError,
+              content: handoffMessage,
+              handoff: true,
               type: 'model_unavailable',
             })}\n\n`));
+            const fallbackBreakdown: ConfidenceBreakdown = {
+              knowledge_score: 0,
+              tool_score: 0,
+              sub_agent_score: 0,
+              handoff_intent: true,
+              no_support: true,
+              final: 0,
+            };
+            handlePostStreamOperations(
+              conversationId,
+              userMessage,
+              handoffMessage,
+              0,
+              [],
+              [],
+              customHeaders,
+              [],
+              fallbackBreakdown,
+              options.abortSignal,
+            );
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              done: true,
+              sources: [],
+              confidence: 0,
+              confidence_breakdown: fallbackBreakdown,
+              has_tool_calls: false,
+              handoff: true,
+              botId: options.parentBotId,
+              botName: options.parentBotName,
+            })}\n\n`));
             controller.close();
+          };
+
+          // Model unavailable (disabled or not found) → trigger handoff
+          if (modelSelectionError) {
+            await triggerModelHandoff(modelSelectionError);
             return;
           }
 
@@ -496,16 +531,17 @@ export class LLMStreamingService {
             let errorMessage = 'LLM Provider 未配置';
             if (hasProviderId) {
               if (!hasBaseUrl && !hasApiKey) {
-                errorMessage = 'LLM 提供商未设置 Base URL 和 API Key，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+                errorMessage = 'LLM 提供商未设置 Base URL 和 API Key';
               } else if (!hasBaseUrl) {
-                errorMessage = 'LLM 提供商未设置 Base URL，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+                errorMessage = 'LLM 提供商未设置 Base URL';
               } else if (!hasApiKey) {
-                errorMessage = 'LLM 提供商未设置 API Key，请进入「设置 → AI 模型」完善 LLM 提供商配置';
+                errorMessage = 'LLM 提供商未设置 API Key';
               }
             } else {
-              errorMessage = '未配置 LLM 提供商，请进入「设置 → AI 模型」添加并配置 LLM 提供商';
+              errorMessage = '未配置 LLM 提供商';
             }
-            throw new Error(errorMessage);
+            await triggerModelHandoff(errorMessage);
+            return;
           }
 
           // Create adapter and stream iterator
@@ -904,7 +940,34 @@ if (claimVerificationResult !== null) {
           }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : '生成回复失败';
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: errorMessage })}\n\n`));
+          logger.agent.error('[LLMStreamingService] Stream failed, triggering handoff', {
+            conversationId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          try {
+            const handoffService = new (await import('./handoff-service')).HandoffService();
+            await handoffService.requestHandoff({
+              conversationId,
+              reason: `AI 回复失败: ${errorMessage}`,
+              priority: 'normal',
+            });
+          } catch (handoffError) {
+            logger.agent.error('Failed to trigger handoff after stream error', {
+              conversationId,
+              error: handoffError,
+            });
+          }
+          const handoffMessage = 'AI 客服暂时不可用，已为您转接人工客服，请稍候。';
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            content: handoffMessage,
+            handoff: true,
+          })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            done: true,
+            sources: [],
+            confidence: 0,
+            handoff: true,
+          })}\n\n`));
         } finally {
           controller.close();
         }

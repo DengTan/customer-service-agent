@@ -1,6 +1,6 @@
 'use client';
 
-import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler, ArrowLeft, Sparkles, ShoppingBag } from 'lucide-react';
+import { X, BookOpen, Zap, Network, Wrench, FileText, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Ruler, ArrowLeft, Sparkles, ShoppingBag, ExternalLink } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api-fetch';
 
 interface SourceItem {
   type?: string; // optional for backward compatibility, defaults handled in processing
+  source_type?: 'internal' | 'external'; // P2: distinguish internal vs external KB
   content?: string;
   score?: number;
   keyword?: string;
@@ -70,9 +71,13 @@ interface SourcePanelProps {
   onSelectMessage?: (msg: SourceMessageItem) => void;
 }
 
-function getSourceIcon(type: string | undefined) {
+function getSourceIcon(type: string | undefined, sourceType?: 'internal' | 'external') {
   switch (type) {
     case 'knowledge':
+      // 外部知识库用 ExternalLink 图标，内部用 BookOpen
+      if (sourceType === 'external') {
+        return <ExternalLink className="w-3.5 h-3.5 text-blue-500" />;
+      }
       return <BookOpen className="w-3.5 h-3.5 text-primary" />;
     case 'auto_reply':
       return <Zap className="w-3.5 h-3.5 text-amber-500" />;
@@ -89,10 +94,11 @@ function getSourceIcon(type: string | undefined) {
   }
 }
 
-function getSourceLabel(type: string | undefined) {
+function getSourceLabel(type: string | undefined, sourceType?: 'internal' | 'external') {
   switch (type) {
     case 'knowledge':
-      return '知识库';
+      // 外部知识库添加 "外部" 前缀
+      return sourceType === 'external' ? '外部知识库' : '知识库';
     case 'auto_reply':
       return '自动回复';
     case 'sub_agent_delegation':
@@ -378,15 +384,26 @@ export function SourcePanel({
                   <div className={`flex items-start gap-2.5 px-2 py-2.5 rounded-lg transition-colors hover:bg-muted/50 ${expandedIndex === index ? 'bg-muted/50' : ''}`}>
                     {/* Icon */}
                     <div className="shrink-0 mt-0.5">
-                      {getSourceIcon(source.type)}
+                      {getSourceIcon(source.type, source.source_type)}
                     </div>
                     {/* Content preview */}
                     <div className="flex-1 min-w-0">
                       {/* Header row: type badge, score, category */}
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                          {getSourceLabel(source.type)}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                          source.source_type === 'external' 
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
+                            : 'bg-primary/10 text-primary'
+                        }`}>
+                          {getSourceLabel(source.type, source.source_type)}
                         </span>
+                        {/* 外部知识库添加外部角标 */}
+                        {source.source_type === 'external' && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            外部
+                          </span>
+                        )}
                         {source.score !== undefined && source.score > 0 && (
                           <span
                             className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${getScoreTextColor(source.score)} bg-current/5`}
@@ -405,7 +422,7 @@ export function SourcePanel({
                             {Math.round(source.score * 100)}%
                           </span>
                         )}
-                        {source.category && (
+                        {source.category && source.category !== 'external' && (
                           <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground truncate max-w-[80px]">
                             {source.category}
                           </span>
@@ -592,8 +609,17 @@ export function SourcePanel({
                     ) : (
                       <>
                         <div className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                          <FileText className="w-3 h-3" />
-                          原文内容
+                          {source.source_type === 'external' ? (
+                            <>
+                              <ExternalLink className="w-3 h-3 text-blue-500" />
+                              外部知识库原文
+                            </>
+                          ) : (
+                            <>
+                              <FileText className="w-3 h-3" />
+                              原文内容
+                            </>
+                          )}
                         </div>
                         <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                           {source.content}
